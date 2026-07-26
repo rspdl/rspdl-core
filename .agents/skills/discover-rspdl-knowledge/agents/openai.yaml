@@ -1,0 +1,4 @@
+interface:
+  display_name: "Discover RSPDL Knowledge"
+  short_description: "Navigate indexed RSPDL docs progressively"
+  default_prompt: "Use $discover-rspdl-knowledge to find the RSPDL documents relevant to this task before reading their bodies."
