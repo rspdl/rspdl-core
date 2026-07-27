@@ -6,3 +6,5 @@ edition.workspace = true
 rspdl-core = { path = "../rspdl-core" }
 thiserror.workspace = true
 z3.workspace = true
+[dev-dependencies]
+rspdl-datalog = { path = "../rspdl-datalog" }

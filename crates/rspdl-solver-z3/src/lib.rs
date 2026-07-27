@@ -6,8 +6,9 @@ use rspdl_core::{
 };
 use std::{collections::BTreeMap, str::FromStr};
 use z3::{
-    FuncDecl, Params, SatResult, Solver, Sort, Symbol,
+    Config, FuncDecl, Params, SatResult, Solver, Sort, Symbol,
     ast::{Bool, Dynamic, Int, String as Z3String},
+    with_z3_config,
 };
 #[derive(Debug, thiserror::Error)]
 pub enum Z3SolverError {
@@ -33,6 +34,15 @@ impl Z3Solver {
 impl ConstraintSolver for Z3Solver {
     type Error = Z3SolverError;
     fn solve(&self, p: &ConstraintProblem, o: SolveOptions) -> Result<SolveResult, Self::Error> {
+        let config = Config::new();
+        with_z3_config(&config, || Self::solve_in_context(p, o))
+    }
+}
+impl Z3Solver {
+    fn solve_in_context(
+        p: &ConstraintProblem,
+        o: SolveOptions,
+    ) -> Result<SolveResult, Z3SolverError> {
         let solver = Solver::new();
         let mut params = Params::new();
         params.set_u32(
