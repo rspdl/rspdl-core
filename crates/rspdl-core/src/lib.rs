@@ -9,7 +9,9 @@
 pub mod domain;
 pub mod error;
 pub mod logic;
+pub mod rule;
 pub mod set;
+pub mod solver;
 pub mod types;
 pub mod value;
 
@@ -18,7 +20,15 @@ pub use domain::{
     InfiniteDomain, SymbolicSupport,
 };
 pub use error::ModelError;
-pub use logic::{Atom, BooleanExpression, PredicateSignature, Term, Variable};
+pub use logic::{
+    Atom, AtomView, BooleanExpression, BooleanExpressionView, ComparisonOperator,
+    PredicateSignature, Term, Variable,
+};
+pub use rule::{DerivationRule, Fact, LogicProgram, PredicateApplication, RuleLiteral};
 pub use set::SetExpression;
+pub use solver::SolverContractError;
+pub use solver::{
+    CanonicalModel, ConstraintProblem, ConstraintSolver, SolveOptions, SolveResult, VariableDomain,
+};
 pub use types::{BuiltinRefinement, CanonicalId, CanonicalType, EnumType, RefinementType};
 pub use value::{CanonicalInteger, CanonicalValue};

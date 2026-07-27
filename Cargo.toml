@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/rspdl-core"]
+members = ["crates/rspdl-core", "crates/rspdl-datalog", "crates/rspdl-solver-z3"]
 resolver = "3"
 
 [workspace.package]
@@ -13,3 +13,4 @@ num-traits = "0.2.19"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.17"
+z3 = { version = "0.20.1", features = ["vendored"] }

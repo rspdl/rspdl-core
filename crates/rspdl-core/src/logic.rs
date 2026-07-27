@@ -80,6 +80,27 @@ enum AtomKind {
         signature: PredicateSignature,
         arguments: Vec<Term>,
     },
+    IntegerComparison {
+        operator: ComparisonOperator,
+        left: Term,
+        right: Term,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComparisonOperator {
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+pub enum AtomView<'a> {
+    Equal(&'a Term, &'a Term),
+    MemberOf(&'a Term, &'a SetExpression),
+    Predicate(&'a PredicateSignature, &'a [Term]),
+    IntegerComparison(ComparisonOperator, &'a Term, &'a Term),
 }
 
 /// A type-checked atomic logical proposition.
@@ -129,6 +150,44 @@ impl Atom {
             },
         })
     }
+    pub fn integer_comparison(
+        operator: ComparisonOperator,
+        left: Term,
+        right: Term,
+    ) -> Result<Self, ModelError> {
+        ensure_type(
+            "integer comparison",
+            &CanonicalType::Integer,
+            left.value_type(),
+        )?;
+        ensure_type(
+            "integer comparison",
+            &CanonicalType::Integer,
+            right.value_type(),
+        )?;
+        Ok(Self {
+            atom: AtomKind::IntegerComparison {
+                operator,
+                left,
+                right,
+            },
+        })
+    }
+    pub fn view(&self) -> AtomView<'_> {
+        match &self.atom {
+            AtomKind::Equal { left, right } => AtomView::Equal(left, right),
+            AtomKind::MemberOf { term, set } => AtomView::MemberOf(term, set),
+            AtomKind::Predicate {
+                signature,
+                arguments,
+            } => AtomView::Predicate(signature, arguments),
+            AtomKind::IntegerComparison {
+                operator,
+                left,
+                right,
+            } => AtomView::IntegerComparison(*operator, left, right),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -139,6 +198,13 @@ enum BooleanKind {
     And(Vec<BooleanExpression>),
     Or(Vec<BooleanExpression>),
     Not(Box<BooleanExpression>),
+}
+pub enum BooleanExpressionView<'a> {
+    Literal(bool),
+    Atom(&'a Atom),
+    And(&'a [BooleanExpression]),
+    Or(&'a [BooleanExpression]),
+    Not(&'a BooleanExpression),
 }
 
 /// A normalized boolean expression shared by rules, policies, and constraints.
@@ -207,6 +273,15 @@ impl BooleanExpression {
             expression => Self {
                 expression: BooleanKind::Not(Box::new(Self { expression })),
             },
+        }
+    }
+    pub fn view(&self) -> BooleanExpressionView<'_> {
+        match &self.expression {
+            BooleanKind::Literal(v) => BooleanExpressionView::Literal(*v),
+            BooleanKind::Atom(a) => BooleanExpressionView::Atom(a),
+            BooleanKind::And(xs) => BooleanExpressionView::And(xs),
+            BooleanKind::Or(xs) => BooleanExpressionView::Or(xs),
+            BooleanKind::Not(x) => BooleanExpressionView::Not(x),
         }
     }
 }
