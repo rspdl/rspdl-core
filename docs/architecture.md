@@ -16,6 +16,7 @@ related:
   - rspdl-language-prd
   - rust-korean-first-frontend
   - controlled-korean-surface-grammar
+  - typed-domains-and-logic-core
 last_updated: "2026-07-27"
 owners:
   - rspdl-maintainers
@@ -150,6 +151,8 @@ Locale에 독립적인 compiler domain을 소유한다.
 - Canonical IR과 진단의 안정적인 serialization
 
 사람에게 표시할 번역 문장은 core diagnostic에 저장하지 않는다. Core는 message key와 구조화된 argument를 반환한다.
+
+초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. 유한 도메인과 계산 가능한 무한 도메인은 ground membership과 backend별 symbolic support를 명시해, Datalog/SMT lowering이 지원하지 않는 의미를 근사하지 않게 한다.
 
 ### `rspdl-ko`
 

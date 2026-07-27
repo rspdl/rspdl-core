@@ -1,0 +1,15 @@
+[workspace]
+members = ["crates/rspdl-core"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+repository = "https://github.com/rspdl/rspdl-core"
+rust-version = "1.85"
+
+[workspace.dependencies]
+num-bigint = "0.4.6"
+num-traits = "0.2.19"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2.0.17"
