@@ -1,5 +1,5 @@
 use rspdl_core::{
-    CanonicalId, CanonicalType, CanonicalValue, DerivationRule, Fact, LogicProgram,
+    Atom, CanonicalId, CanonicalType, CanonicalValue, DerivationRule, Fact, LogicProgram,
     PredicateApplication, PredicateSignature, RuleLiteral, Term, Variable,
 };
 use rspdl_datalog::DatalogEvaluator;
@@ -155,4 +155,29 @@ fn mutual_recursion_is_independent_of_rule_order() {
     let db = DatalogEvaluator::evaluate(&b).unwrap();
     assert_eq!(da, db);
     assert_eq!(da.tuples(q.id()).unwrap().len(), 1);
+}
+
+#[test]
+fn body_filter_order_does_not_change_derivation() {
+    let p = PredicateSignature::new(id("p"), vec![CanonicalType::Integer]);
+    let q = PredicateSignature::new(id("q"), vec![CanonicalType::Integer]);
+    let x = Term::Variable(Variable::new(id("x"), CanonicalType::Integer));
+    let a = PredicateApplication::new(p.clone(), vec![x.clone()]).unwrap();
+    let h = PredicateApplication::new(q.clone(), vec![x.clone()]).unwrap();
+    let eq = Atom::equal(x.clone(), Term::Constant(CanonicalValue::integer(1))).unwrap();
+    let rule = DerivationRule::new(
+        id("r"),
+        h,
+        vec![RuleLiteral::Constraint(eq), RuleLiteral::Positive(a)],
+    )
+    .unwrap();
+    let fact = Fact::new(
+        PredicateApplication::new(p.clone(), vec![Term::Constant(CanonicalValue::integer(1))])
+            .unwrap(),
+    );
+    let db = DatalogEvaluator::evaluate(
+        &LogicProgram::new(vec![p, q.clone()], vec![fact], vec![rule]).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(db.tuples(q.id()).unwrap().len(), 1);
 }

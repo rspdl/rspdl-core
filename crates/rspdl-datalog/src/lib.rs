@@ -290,7 +290,13 @@ fn derive_delta(
     delta_index: usize,
 ) -> Vec<Vec<CanonicalValue>> {
     let mut envs = vec![BTreeMap::new()];
-    for (index, lit) in rule.body().iter().enumerate() {
+    let mut plan: Vec<_> = rule.body().iter().enumerate().collect();
+    plan.sort_by_key(|(_, literal)| match literal {
+        RuleLiteral::Positive(_) => 0_u8,
+        RuleLiteral::Negative(_) => 1,
+        RuleLiteral::Constraint(_) => 2,
+    });
+    for (index, lit) in plan {
         match lit {
             RuleLiteral::Positive(a) => {
                 let mut next = vec![];
