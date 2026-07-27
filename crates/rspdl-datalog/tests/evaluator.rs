@@ -54,3 +54,26 @@ fn derives_transitive_closure_to_a_fixed_point() {
     let db = DatalogEvaluator::evaluate(&p).unwrap();
     assert_eq!(db.tuples(path.id()).unwrap().len(), 3);
 }
+
+#[test]
+fn rejects_an_indirect_negative_cycle() {
+    let base = PredicateSignature::new(id("base"), vec![CanonicalType::Integer]);
+    let p = PredicateSignature::new(id("p"), vec![CanonicalType::Integer]);
+    let q = PredicateSignature::new(id("q"), vec![CanonicalType::Integer]);
+    let x = Term::Variable(Variable::new(id("x"), CanonicalType::Integer));
+    let app =
+        |s: &PredicateSignature| PredicateApplication::new(s.clone(), vec![x.clone()]).unwrap();
+    let r1 = DerivationRule::new(
+        id("p_rule"),
+        app(&p),
+        vec![
+            RuleLiteral::Positive(app(&base)),
+            RuleLiteral::Negative(app(&q)),
+        ],
+    )
+    .unwrap();
+    let r2 =
+        DerivationRule::new(id("q_rule"), app(&q), vec![RuleLiteral::Positive(app(&p))]).unwrap();
+    let program = LogicProgram::new(vec![base, p, q], vec![], vec![r1, r2]).unwrap();
+    assert!(DatalogEvaluator::evaluate(&program).is_err());
+}

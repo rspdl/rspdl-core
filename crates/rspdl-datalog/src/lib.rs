@@ -67,6 +67,41 @@ impl DatalogEvaluator {
         Ok(db)
     }
     fn validate(program: &LogicProgram) -> Result<(), DatalogError> {
+        let mut edges: BTreeMap<CanonicalId, BTreeSet<CanonicalId>> = BTreeMap::new();
+        let mut negative = Vec::new();
+        for rule in program.rules() {
+            let head = rule.head().signature().id().clone();
+            for literal in rule.body() {
+                match literal {
+                    RuleLiteral::Positive(application) => {
+                        edges
+                            .entry(head.clone())
+                            .or_default()
+                            .insert(application.signature().id().clone());
+                    }
+                    RuleLiteral::Negative(application) => {
+                        edges
+                            .entry(head.clone())
+                            .or_default()
+                            .insert(application.signature().id().clone());
+                        negative.push((
+                            rule.id().clone(),
+                            head.clone(),
+                            application.signature().id().clone(),
+                        ));
+                    }
+                    RuleLiteral::Constraint(_) => {}
+                }
+            }
+        }
+        for (rule, head, target) in negative {
+            if reachable(&edges, &target, &head, &mut BTreeSet::new()) {
+                return Err(DatalogError::NegativeCycle {
+                    rule,
+                    predicate: target,
+                });
+            }
+        }
         for rule in program.rules() {
             let mut bound = BTreeSet::new();
             for lit in rule.body() {
@@ -106,19 +141,24 @@ impl DatalogEvaluator {
                     });
                 }
             }
-            for lit in rule.body() {
-                if let RuleLiteral::Negative(a) = lit
-                    && a.signature().id() == rule.head().signature().id()
-                {
-                    return Err(DatalogError::NegativeCycle {
-                        rule: rule.id().clone(),
-                        predicate: a.signature().id().clone(),
-                    });
-                }
-            }
         }
         Ok(())
     }
+}
+
+fn reachable(
+    edges: &BTreeMap<CanonicalId, BTreeSet<CanonicalId>>,
+    current: &CanonicalId,
+    goal: &CanonicalId,
+    seen: &mut BTreeSet<CanonicalId>,
+) -> bool {
+    if current == goal {
+        return true;
+    }
+    seen.insert(current.clone())
+        && edges
+            .get(current)
+            .is_some_and(|next| next.iter().any(|node| reachable(edges, node, goal, seen)))
 }
 fn term(t: &Term, out: &mut Vec<CanonicalId>) {
     if let Term::Variable(v) = t {
