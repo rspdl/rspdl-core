@@ -302,3 +302,58 @@ fn membership_filters_bound_values_without_enumeration() {
     assert_eq!(db.tuples(prime.id()).unwrap().len(), 2);
     assert!(CanonicalValue::prime(4).is_err());
 }
+
+#[test]
+fn integer_filters_select_exact_bound_tuples() {
+    let p = PredicateSignature::new(id("numbers"), vec![CanonicalType::Integer]);
+    let finite = PredicateSignature::new(id("finite_out"), vec![CanonicalType::Integer]);
+    let all = PredicateSignature::new(id("all_out"), vec![CanonicalType::Integer]);
+    let eq = PredicateSignature::new(id("eq_out"), vec![CanonicalType::Integer]);
+    let x = Term::Variable(Variable::new(id("x"), CanonicalType::Integer));
+    let make = |h: &PredicateSignature, set| {
+        DerivationRule::new(
+            id("filter"),
+            PredicateApplication::new(h.clone(), vec![x.clone()]).unwrap(),
+            vec![
+                RuleLiteral::Positive(
+                    PredicateApplication::new(p.clone(), vec![x.clone()]).unwrap(),
+                ),
+                RuleLiteral::Constraint(Atom::member_of(x.clone(), set).unwrap()),
+            ],
+        )
+        .unwrap()
+    };
+    let f = |n| {
+        Fact::new(
+            PredicateApplication::new(p.clone(), vec![Term::Constant(CanonicalValue::integer(n))])
+                .unwrap(),
+        )
+    };
+    let rules = vec![
+        make(
+            &finite,
+            SetExpression::literal(
+                CanonicalType::Integer,
+                [CanonicalValue::integer(1), CanonicalValue::integer(4)],
+            )
+            .unwrap(),
+        ),
+        make(&all, SetExpression::domain(Domain::integers())),
+        make(
+            &eq,
+            SetExpression::literal(CanonicalType::Integer, [CanonicalValue::integer(2)]).unwrap(),
+        ),
+    ];
+    let db = DatalogEvaluator::evaluate(
+        &LogicProgram::new(
+            vec![p.clone(), finite.clone(), all.clone(), eq.clone()],
+            vec![f(1), f(2), f(4), f(5)],
+            rules,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(db.tuples(finite.id()).unwrap().len(), 2);
+    assert_eq!(db.tuples(all.id()).unwrap().len(), 4);
+    assert_eq!(db.tuples(eq.id()).unwrap().len(), 1);
+}
