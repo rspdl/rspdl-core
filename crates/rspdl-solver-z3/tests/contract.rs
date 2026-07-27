@@ -133,3 +133,48 @@ fn options_contract() {
         7
     );
 }
+
+#[test]
+fn model_completion_returns_all_declared_types_in_key_order() {
+    let e = EnumType::new(id("enum_type"), [id("a"), id("b")]).unwrap();
+    let p = ConstraintProblem::new(
+        vec![
+            VariableDomain::new(
+                id("z_bool"),
+                Domain::finite(
+                    CanonicalType::Boolean,
+                    [
+                        CanonicalValue::boolean(false),
+                        CanonicalValue::boolean(true),
+                    ],
+                )
+                .unwrap(),
+            ),
+            VariableDomain::new(id("a_int"), Domain::integers()),
+            VariableDomain::new(id("m_string"), Domain::strings()),
+            VariableDomain::new(
+                id("n_enum"),
+                Domain::finite(
+                    CanonicalType::Enum(e.clone()),
+                    [
+                        CanonicalValue::enum_variant(e.clone(), id("a")).unwrap(),
+                        CanonicalValue::enum_variant(e.clone(), id("b")).unwrap(),
+                    ],
+                )
+                .unwrap(),
+            ),
+        ],
+        BooleanExpression::literal(true),
+    );
+    let SolveResult::Sat(CanonicalModel(model)) =
+        Z3Solver::new().solve(&p, SolveOptions::default()).unwrap()
+    else {
+        panic!()
+    };
+    let keys: Vec<_> = model.keys().cloned().collect();
+    assert_eq!(
+        keys,
+        vec![id("a_int"), id("m_string"), id("n_enum"), id("z_bool")]
+    );
+    assert_eq!(model.len(), 4);
+}
