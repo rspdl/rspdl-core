@@ -76,22 +76,17 @@ impl DatalogEvaluator {
                 }
             }
             for rule in &rules {
-                let recursive = rule.body().iter().any(
-                    |l| matches!(l,RuleLiteral::Positive(a) if a.signature().id()==rule.head().signature().id()),
-                );
-                if !recursive {
-                    for tuple in derive(rule, &db) {
-                        if db
-                            .relations
+                for tuple in derive(rule, &db) {
+                    if db
+                        .relations
+                        .entry(rule.head().signature().id().clone())
+                        .or_default()
+                        .insert(tuple.clone())
+                    {
+                        delta
                             .entry(rule.head().signature().id().clone())
-                            .or_default()
-                            .insert(tuple.clone())
-                        {
-                            delta
-                                .entry(rule.head().signature().id().clone())
-                                .or_insert_with(BTreeSet::new)
-                                .insert(tuple);
-                        }
+                            .or_insert_with(BTreeSet::new)
+                            .insert(tuple);
                     }
                 }
             }
