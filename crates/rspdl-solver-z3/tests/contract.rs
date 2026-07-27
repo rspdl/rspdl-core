@@ -1,5 +1,6 @@
 use rspdl_core::*;
 use rspdl_solver_z3::Z3Solver;
+use rspdl_solver_z3::Z3SolverError;
 fn id(x: &str) -> CanonicalId {
     CanonicalId::new(x).unwrap()
 }
@@ -177,4 +178,37 @@ fn model_completion_returns_all_declared_types_in_key_order() {
         vec![id("a_int"), id("m_string"), id("n_enum"), id("z_bool")]
     );
     assert_eq!(model.len(), 4);
+}
+
+#[test]
+fn declaration_validation_is_structured() {
+    let duplicate = ConstraintProblem::new(
+        vec![
+            VariableDomain::new(id("x"), Domain::integers()),
+            VariableDomain::new(id("x"), Domain::integers()),
+        ],
+        BooleanExpression::literal(true),
+    );
+    assert!(
+        matches!(Z3Solver::new().solve(&duplicate,SolveOptions::default()),Err(Z3SolverError::DuplicateVariable(ref x))if x==&id("x"))
+    );
+    let b = Variable::new(id("x"), CanonicalType::Boolean);
+    let mismatch = ConstraintProblem::new(
+        vec![VariableDomain::new(id("x"), Domain::integers())],
+        BooleanExpression::atom(
+            Atom::equal(
+                Term::Variable(b),
+                Term::Constant(CanonicalValue::boolean(true)),
+            )
+            .unwrap(),
+        ),
+    );
+    assert!(matches!(
+        Z3Solver::new().solve(&mismatch, SolveOptions::default()),
+        Err(Z3SolverError::VariableTypeMismatch {
+            declared: CanonicalType::Integer,
+            actual: CanonicalType::Boolean,
+            ..
+        })
+    ));
 }
