@@ -157,7 +157,10 @@ impl Z3Solver {
                 CanonicalType::Boolean => Dynamic::from_ast(&Bool::new_const(name)),
                 CanonicalType::Integer => Dynamic::from_ast(&Int::new_const(name)),
                 CanonicalType::String => Dynamic::from_ast(&Z3String::new_const(name)),
-                CanonicalType::Enum(kind) => Dynamic::new_const(name, &enums[kind].sort),
+                CanonicalType::Enum(kind) => Dynamic::new_const(
+                    name,
+                    &enums.get(kind).ok_or(Z3SolverError::InvalidModel)?.sort,
+                ),
                 _ => return Err(Z3SolverError::Unsupported("refinement domain".into())),
             };
             vars.insert(v.id().clone(), ast);
@@ -189,12 +192,15 @@ impl Z3Solver {
                         .map(|v| v.domain().value_type())
                         .ok_or(Z3SolverError::InvalidModel)?;
                     let cv = if let CanonicalType::Enum(kind) = kind {
-                        let encoding = &enums[kind];
+                        let encoding = enums.get(kind).ok_or(Z3SolverError::InvalidModel)?;
                         let variant = kind
                             .variants()
                             .iter()
                             .find(|variant| {
-                                m.eval(&encoding.testers[*variant].apply(&[&value]), true)
+                                encoding
+                                    .testers
+                                    .get(*variant)
+                                    .and_then(|tester| m.eval(&tester.apply(&[&value]), true))
                                     .and_then(|x| x.as_bool())
                                     .and_then(|x| x.as_bool())
                                     .unwrap_or(false)
@@ -287,11 +293,17 @@ impl Z3Solver {
                 CanonicalType::String => Ok(Dynamic::from_ast(
                     &Z3String::from_str(x.as_string().unwrap()).unwrap(),
                 )),
-                CanonicalType::Enum(kind) => Ok(Dynamic::from_ast(
-                    &e[kind].constructors
-                        [x.as_enum_variant().ok_or(Z3SolverError::InvalidModel)?]
-                    .apply(&[]),
-                )),
+                CanonicalType::Enum(kind) => {
+                    let encoding = e.get(kind).ok_or(Z3SolverError::InvalidModel)?;
+                    let variant = x.as_enum_variant().ok_or(Z3SolverError::InvalidModel)?;
+                    Ok(Dynamic::from_ast(
+                        &encoding
+                            .constructors
+                            .get(variant)
+                            .ok_or(Z3SolverError::InvalidModel)?
+                            .apply(&[]),
+                    ))
+                }
                 _ => Err(Z3SolverError::Unsupported("refinement value".into())),
             },
         }
