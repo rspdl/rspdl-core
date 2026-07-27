@@ -1,6 +1,6 @@
 use rspdl_core::{
-    Atom, CanonicalId, CanonicalType, CanonicalValue, DerivationRule, Fact, LogicProgram,
-    PredicateApplication, PredicateSignature, RuleLiteral, Term, Variable,
+    Atom, CanonicalId, CanonicalType, CanonicalValue, DerivationRule, Domain, Fact, LogicProgram,
+    PredicateApplication, PredicateSignature, RuleLiteral, SetExpression, Term, Variable,
 };
 use rspdl_datalog::DatalogEvaluator;
 fn id(s: &str) -> CanonicalId {
@@ -265,4 +265,40 @@ fn unsafe_variables_include_rule_and_variable() {
     assert!(
         matches!(error,rspdl_datalog::DatalogError::UnsafeVariable{rule,variable} if rule==id("unsafe")&&variable==id("x"))
     );
+}
+
+#[test]
+fn membership_filters_bound_values_without_enumeration() {
+    let p = PredicateSignature::new(id("p"), vec![CanonicalType::prime()]);
+    let prime = PredicateSignature::new(id("prime_out"), vec![CanonicalType::prime()]);
+    let x = Term::Variable(Variable::new(id("x"), CanonicalType::prime()));
+    let rule = DerivationRule::new(
+        id("prime_filter"),
+        PredicateApplication::new(prime.clone(), vec![x.clone()]).unwrap(),
+        vec![
+            RuleLiteral::Positive(PredicateApplication::new(p.clone(), vec![x.clone()]).unwrap()),
+            RuleLiteral::Constraint(
+                Atom::member_of(x, SetExpression::domain(Domain::primes())).unwrap(),
+            ),
+        ],
+    )
+    .unwrap();
+    let facts = [2, 5]
+        .into_iter()
+        .map(|n| {
+            Fact::new(
+                PredicateApplication::new(
+                    p.clone(),
+                    vec![Term::Constant(CanonicalValue::prime(n).unwrap())],
+                )
+                .unwrap(),
+            )
+        })
+        .collect();
+    let db = DatalogEvaluator::evaluate(
+        &LogicProgram::new(vec![p, prime.clone()], facts, vec![rule]).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(db.tuples(prime.id()).unwrap().len(), 2);
+    assert!(CanonicalValue::prime(4).is_err());
 }
