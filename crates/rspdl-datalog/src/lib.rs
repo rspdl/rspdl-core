@@ -34,6 +34,8 @@ pub enum DatalogError {
     },
     #[error("non-ground fact")]
     NonGroundFact,
+    #[error("unsupported constraint in rule `{rule}`")]
+    UnsupportedConstraint { rule: CanonicalId },
 }
 pub struct DatalogEvaluator;
 impl DatalogEvaluator {
@@ -48,18 +50,26 @@ impl DatalogEvaluator {
                 .or_default()
                 .insert(tuple);
         }
-        let mut changed = true;
-        while changed {
-            changed = false;
-            for rule in program.rules() {
-                for tuple in derive(rule, &db) {
-                    if db
-                        .relations
-                        .entry(rule.head().signature().id().clone())
-                        .or_default()
-                        .insert(tuple)
-                    {
-                        changed = true;
+        let strata = strata(program);
+        let highest = strata.values().copied().max().unwrap_or(0);
+        for stratum in 0..=highest {
+            let mut changed = true;
+            while changed {
+                changed = false;
+                for rule in program
+                    .rules()
+                    .iter()
+                    .filter(|rule| strata[rule.head().signature().id()] == stratum)
+                {
+                    for tuple in derive(rule, &db) {
+                        if db
+                            .relations
+                            .entry(rule.head().signature().id().clone())
+                            .or_default()
+                            .insert(tuple)
+                        {
+                            changed = true;
+                        }
                     }
                 }
             }
@@ -128,7 +138,11 @@ impl DatalogEvaluator {
                             term(a, &mut need);
                             term(b, &mut need)
                         }
-                        _ => {}
+                        AtomView::Predicate(_, _) => {
+                            return Err(DatalogError::UnsupportedConstraint {
+                                rule: rule.id().clone(),
+                            });
+                        }
                     },
                     _ => {}
                 }
@@ -144,6 +158,35 @@ impl DatalogEvaluator {
         }
         Ok(())
     }
+}
+
+fn strata(program: &LogicProgram) -> BTreeMap<CanonicalId, usize> {
+    let mut result: BTreeMap<CanonicalId, usize> = program
+        .predicates()
+        .keys()
+        .cloned()
+        .map(|id| (id, 0))
+        .collect();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for rule in program.rules() {
+            let head = rule.head().signature().id();
+            for literal in rule.body() {
+                let (target, extra) = match literal {
+                    RuleLiteral::Positive(a) => (a.signature().id(), 0),
+                    RuleLiteral::Negative(a) => (a.signature().id(), 1),
+                    RuleLiteral::Constraint(_) => continue,
+                };
+                let required = result[target] + extra;
+                if result[head] < required {
+                    result.insert(head.clone(), required);
+                    changed = true;
+                }
+            }
+        }
+    }
+    result
 }
 
 fn reachable(

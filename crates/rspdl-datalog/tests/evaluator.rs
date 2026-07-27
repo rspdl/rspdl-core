@@ -77,3 +77,43 @@ fn rejects_an_indirect_negative_cycle() {
     let program = LogicProgram::new(vec![base, p, q], vec![], vec![r1, r2]).unwrap();
     assert!(DatalogEvaluator::evaluate(&program).is_err());
 }
+
+#[test]
+fn completes_lower_stratum_before_applying_negation() {
+    let base = PredicateSignature::new(id("base"), vec![CanonicalType::Integer]);
+    let forbidden = PredicateSignature::new(id("forbidden"), vec![CanonicalType::Integer]);
+    let allowed = PredicateSignature::new(id("allowed"), vec![CanonicalType::Integer]);
+    let x = Term::Variable(Variable::new(id("x"), CanonicalType::Integer));
+    let app =
+        |s: &PredicateSignature| PredicateApplication::new(s.clone(), vec![x.clone()]).unwrap();
+    let fact = Fact::new(
+        PredicateApplication::new(
+            base.clone(),
+            vec![Term::Constant(CanonicalValue::integer(1))],
+        )
+        .unwrap(),
+    );
+    let lower = DerivationRule::new(
+        id("forbid"),
+        app(&forbidden),
+        vec![RuleLiteral::Positive(app(&base))],
+    )
+    .unwrap();
+    let higher = DerivationRule::new(
+        id("allow"),
+        app(&allowed),
+        vec![
+            RuleLiteral::Positive(app(&base)),
+            RuleLiteral::Negative(app(&forbidden)),
+        ],
+    )
+    .unwrap();
+    let program = LogicProgram::new(
+        vec![base, forbidden, allowed.clone()],
+        vec![fact],
+        vec![higher, lower],
+    )
+    .unwrap();
+    let db = DatalogEvaluator::evaluate(&program).unwrap();
+    assert!(db.tuples(allowed.id()).is_none_or(|xs| xs.is_empty()));
+}
