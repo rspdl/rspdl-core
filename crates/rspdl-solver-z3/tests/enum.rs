@@ -36,6 +36,41 @@ fn enum_symbols_are_collision_free() {
         rspdl_core::SolveResult::Sat(_)
     ));
 }
+
+#[test]
+fn constant_only_enum_equality_is_exact() {
+    let e = EnumType::new(id("constant_role"), [id("admin"), id("user")]).unwrap();
+    let a = CanonicalValue::enum_variant(e.clone(), id("admin")).unwrap();
+    let u = CanonicalValue::enum_variant(e, id("user")).unwrap();
+    let solve = |x, y| {
+        Z3Solver::new()
+            .solve(
+                &ConstraintProblem::new(
+                    vec![],
+                    BooleanExpression::atom(
+                        Atom::equal(Term::Constant(x), Term::Constant(y)).unwrap(),
+                    ),
+                ),
+                SolveOptions::default(),
+            )
+            .unwrap()
+    };
+    assert!(matches!(
+        solve(a.clone(), a),
+        rspdl_core::SolveResult::Sat(_)
+    ));
+    assert!(matches!(
+        solve(
+            u.clone(),
+            CanonicalValue::enum_variant(
+                EnumType::new(id("constant_role"), [id("admin"), id("user")]).unwrap(),
+                id("admin")
+            )
+            .unwrap()
+        ),
+        rspdl_core::SolveResult::Unsat
+    ));
+}
 #[test]
 fn enum_sat_returns_canonical_variant() {
     let e = EnumType::new(id("role"), [id("admin"), id("user")]).unwrap();

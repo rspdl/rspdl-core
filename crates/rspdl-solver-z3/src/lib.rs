@@ -4,7 +4,10 @@ use rspdl_core::{
     CanonicalValue, ConstraintProblem, ConstraintSolver, EnumType, InfiniteDomain, SetExpression,
     SetExpressionView, SolveOptions, SolveResult, Term,
 };
-use std::{collections::BTreeMap, str::FromStr};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    str::FromStr,
+};
 use z3::{
     Config, FuncDecl, Params, SatResult, Solver, Sort, Symbol,
     ast::{Bool, Dynamic, Int, String as Z3String},
@@ -35,6 +38,56 @@ struct EnumEncoding {
     testers: BTreeMap<CanonicalId, FuncDecl>,
 }
 impl Z3Solver {
+    fn collect_enum_types(x: &BooleanExpression, out: &mut BTreeSet<EnumType>) {
+        match x.view() {
+            BooleanExpressionView::Atom(a) => match a.view() {
+                AtomView::Equal(a, b) | AtomView::IntegerComparison(_, a, b) => {
+                    Self::collect_term(a, out);
+                    Self::collect_term(b, out)
+                }
+                AtomView::MemberOf(a, s) => {
+                    Self::collect_term(a, out);
+                    if let CanonicalType::Enum(e) = s.value_type() {
+                        out.insert(e.clone());
+                    }
+                }
+                AtomView::Predicate(_, xs) => {
+                    for x in xs {
+                        Self::collect_term(x, out)
+                    }
+                }
+            },
+            BooleanExpressionView::And(xs) | BooleanExpressionView::Or(xs) => {
+                for x in xs {
+                    Self::collect_enum_types(x, out)
+                }
+            }
+            BooleanExpressionView::Not(x) => Self::collect_enum_types(x, out),
+            _ => {}
+        }
+    }
+    fn collect_term(t: &Term, out: &mut BTreeSet<EnumType>) {
+        if let CanonicalType::Enum(e) = t.value_type() {
+            out.insert(e.clone());
+        }
+    }
+    fn insert_enum(enums: &mut BTreeMap<EnumType, EnumEncoding>, kind: &EnumType) {
+        let names: Vec<Symbol> = kind
+            .variants()
+            .iter()
+            .map(|x| Self::enum_symbol(kind, x).into())
+            .collect();
+        let (sort, constructors, testers) =
+            Sort::enumeration(Self::symbol("rspdl_t", kind.id()).into(), &names);
+        enums.insert(
+            kind.clone(),
+            EnumEncoding {
+                sort,
+                constructors: kind.variants().iter().cloned().zip(constructors).collect(),
+                testers: kind.variants().iter().cloned().zip(testers).collect(),
+            },
+        );
+    }
     fn symbol(prefix: &str, id: &CanonicalId) -> String {
         format!("{prefix}_{}_{}", id.as_str().len(), id)
     }
@@ -128,6 +181,8 @@ impl Z3Solver {
             o.timeout().as_millis().min(u128::from(u32::MAX)) as u32,
         );
         solver.set_params(&params);
+        let mut enum_types = BTreeSet::new();
+        Self::collect_enum_types(p.assertion(), &mut enum_types);
         let mut enums = BTreeMap::new();
         for variable in p.variables() {
             if let CanonicalType::Enum(kind) = variable.domain().value_type()
@@ -148,6 +203,11 @@ impl Z3Solver {
                         testers: kind.variants().iter().cloned().zip(testers).collect(),
                     },
                 );
+            }
+        }
+        for kind in enum_types {
+            if !enums.contains_key(&kind) {
+                Self::insert_enum(&mut enums, &kind);
             }
         }
         let mut vars = BTreeMap::new();
