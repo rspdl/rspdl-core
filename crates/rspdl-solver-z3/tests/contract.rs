@@ -24,10 +24,13 @@ fn unbounded_integer_sat_and_unsat() {
         .unwrap(),
     );
     let p = ConstraintProblem::new(vec![d.clone()], BooleanExpression::and([gt.clone(), lt]));
-    assert!(matches!(
-        Z3Solver::new().solve(&p, SolveOptions::default()).unwrap(),
-        SolveResult::Sat(_)
-    ));
+    let SolveResult::Sat(CanonicalModel(model)) =
+        Z3Solver::new().solve(&p, SolveOptions::default()).unwrap()
+    else {
+        panic!()
+    };
+    let value = model[&id("x")].as_integer().unwrap().as_bigint();
+    assert!(value > &num_bigint::BigInt::from(10) && value < &num_bigint::BigInt::from(20));
     let bad = ConstraintProblem::new(
         vec![d],
         BooleanExpression::and([

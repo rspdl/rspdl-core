@@ -126,6 +126,7 @@ dependencies = [
 name = "rspdl-solver-z3"
 version = "0.1.0"
 dependencies = [
+ "num-bigint",
  "rspdl-core",
  "rspdl-datalog",
  "thiserror",

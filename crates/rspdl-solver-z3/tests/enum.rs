@@ -27,3 +27,32 @@ fn enum_sat_returns_canonical_variant() {
     };
     assert_eq!(values.get(&id("role")), Some(&admin));
 }
+
+#[test]
+fn enum_distinct_equalities_are_unsat_and_reusable() {
+    let e = EnumType::new(id("kind"), [id("a"), id("b")]).unwrap();
+    let v = Variable::new(id("kind"), CanonicalType::Enum(e.clone()));
+    let a = CanonicalValue::enum_variant(e.clone(), id("a")).unwrap();
+    let b = CanonicalValue::enum_variant(e.clone(), id("b")).unwrap();
+    let p = ConstraintProblem::new(
+        vec![VariableDomain::new(
+            id("kind"),
+            Domain::finite(CanonicalType::Enum(e), [a.clone(), b.clone()]).unwrap(),
+        )],
+        BooleanExpression::and([
+            BooleanExpression::atom(
+                Atom::equal(Term::Variable(v.clone()), Term::Constant(a)).unwrap(),
+            ),
+            BooleanExpression::atom(Atom::equal(Term::Variable(v), Term::Constant(b)).unwrap()),
+        ]),
+    );
+    let s = Z3Solver::new();
+    assert!(matches!(
+        s.solve(&p, SolveOptions::default()).unwrap(),
+        rspdl_core::SolveResult::Unsat
+    ));
+    assert!(matches!(
+        s.solve(&p, SolveOptions::default()).unwrap(),
+        rspdl_core::SolveResult::Unsat
+    ));
+}
