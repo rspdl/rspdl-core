@@ -8,6 +8,11 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct MaterializedDatabase {
     relations: BTreeMap<CanonicalId, BTreeSet<Vec<CanonicalValue>>>,
 }
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EvaluationStats {
+    pub rounds: usize,
+    pub delta_rule_evaluations: usize,
+}
 impl MaterializedDatabase {
     pub fn tuples(&self, predicate: &CanonicalId) -> Option<&BTreeSet<Vec<CanonicalValue>>> {
         self.relations.get(predicate)
@@ -40,7 +45,13 @@ pub enum DatalogError {
 pub struct DatalogEvaluator;
 impl DatalogEvaluator {
     pub fn evaluate(program: &LogicProgram) -> Result<MaterializedDatabase, DatalogError> {
+        Self::evaluate_with_stats(program).map(|(database, _)| database)
+    }
+    pub fn evaluate_with_stats(
+        program: &LogicProgram,
+    ) -> Result<(MaterializedDatabase, EvaluationStats), DatalogError> {
         Self::validate(program)?;
+        let mut stats = EvaluationStats::default();
         let mut db = MaterializedDatabase::default();
         for f in program.facts() {
             let a = f.application();
@@ -53,28 +64,77 @@ impl DatalogEvaluator {
         let strata = strata(program);
         let highest = strata.values().copied().max().unwrap_or(0);
         for stratum in 0..=highest {
-            let mut changed = true;
-            while changed {
-                changed = false;
-                for rule in program
-                    .rules()
-                    .iter()
-                    .filter(|rule| strata[rule.head().signature().id()] == stratum)
-                {
+            let rules: Vec<_> = program
+                .rules()
+                .iter()
+                .filter(|rule| strata[rule.head().signature().id()] == stratum)
+                .collect();
+            let mut delta = BTreeMap::new();
+            for (predicate, tuples) in &db.relations {
+                if strata[predicate] == stratum {
+                    delta.insert(predicate.clone(), tuples.clone());
+                }
+            }
+            for rule in &rules {
+                let recursive = rule.body().iter().any(
+                    |l| matches!(l,RuleLiteral::Positive(a) if a.signature().id()==rule.head().signature().id()),
+                );
+                if !recursive {
                     for tuple in derive(rule, &db) {
                         if db
                             .relations
                             .entry(rule.head().signature().id().clone())
                             .or_default()
-                            .insert(tuple)
+                            .insert(tuple.clone())
                         {
-                            changed = true;
+                            delta
+                                .entry(rule.head().signature().id().clone())
+                                .or_insert_with(BTreeSet::new)
+                                .insert(tuple);
                         }
                     }
                 }
             }
+            loop {
+                let mut next = BTreeMap::new();
+                for rule in &rules {
+                    for (index, literal) in rule.body().iter().enumerate() {
+                        let RuleLiteral::Positive(application) = literal else {
+                            continue;
+                        };
+                        if strata[application.signature().id()] != stratum
+                            || !delta.contains_key(application.signature().id())
+                        {
+                            continue;
+                        };
+                        stats.delta_rule_evaluations += 1;
+                        for tuple in derive_delta(rule, &db, &delta, index) {
+                            if !db
+                                .relations
+                                .get(rule.head().signature().id())
+                                .is_some_and(|all| all.contains(&tuple))
+                            {
+                                next.entry(rule.head().signature().id().clone())
+                                    .or_insert_with(BTreeSet::new)
+                                    .insert(tuple);
+                            }
+                        }
+                    }
+                }
+                if next.is_empty() {
+                    break;
+                }
+                stats.rounds += 1;
+                for (p, ts) in &next {
+                    db.relations
+                        .entry(p.clone())
+                        .or_default()
+                        .extend(ts.iter().cloned());
+                }
+                delta = next;
+            }
         }
-        Ok(db)
+        Ok((db, stats))
     }
     fn validate(program: &LogicProgram) -> Result<(), DatalogError> {
         let mut edges: BTreeMap<CanonicalId, BTreeSet<CanonicalId>> = BTreeMap::new();
@@ -226,12 +286,25 @@ fn ground(a: &PredicateApplication) -> Option<Vec<CanonicalValue>> {
         .collect()
 }
 fn derive(rule: &DerivationRule, db: &MaterializedDatabase) -> Vec<Vec<CanonicalValue>> {
+    derive_delta(rule, db, &BTreeMap::new(), usize::MAX)
+}
+fn derive_delta(
+    rule: &DerivationRule,
+    db: &MaterializedDatabase,
+    delta: &BTreeMap<CanonicalId, BTreeSet<Vec<CanonicalValue>>>,
+    delta_index: usize,
+) -> Vec<Vec<CanonicalValue>> {
     let mut envs = vec![BTreeMap::new()];
-    for lit in rule.body() {
+    for (index, lit) in rule.body().iter().enumerate() {
         match lit {
             RuleLiteral::Positive(a) => {
                 let mut next = vec![];
-                for tuple in db.relations.get(a.signature().id()).into_iter().flatten() {
+                let tuples = if index == delta_index {
+                    delta.get(a.signature().id())
+                } else {
+                    db.relations.get(a.signature().id())
+                };
+                for tuple in tuples.into_iter().flatten() {
                     for e in &envs {
                         if let Some(x) = unify(a, tuple, e) {
                             next.push(x)

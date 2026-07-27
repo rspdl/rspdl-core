@@ -14,3 +14,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.17"
 z3 = { version = "0.20.1", features = ["vendored"] }
+
+[profile.dev.package.z3-sys]
+opt-level = 1
+debug = false

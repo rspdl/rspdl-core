@@ -51,8 +51,9 @@ fn derives_transitive_closure_to_a_fixed_point() {
     )
     .unwrap();
     let p = LogicProgram::new(vec![edge, path.clone()], facts, vec![r1, r2]).unwrap();
-    let db = DatalogEvaluator::evaluate(&p).unwrap();
+    let (db, stats) = DatalogEvaluator::evaluate_with_stats(&p).unwrap();
     assert_eq!(db.tuples(path.id()).unwrap().len(), 3);
+    assert!(stats.delta_rule_evaluations > 0);
 }
 
 #[test]
