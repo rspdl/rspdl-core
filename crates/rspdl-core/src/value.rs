@@ -134,6 +134,24 @@ impl CanonicalValue {
             _ => None,
         }
     }
+    pub fn as_boolean(&self) -> Option<bool> {
+        match self.representation {
+            ValueRepresentation::Boolean(value) => Some(value),
+            _ => None,
+        }
+    }
+    pub fn as_string(&self) -> Option<&str> {
+        match &self.representation {
+            ValueRepresentation::String(value) => Some(value),
+            _ => None,
+        }
+    }
+    pub fn as_enum_variant(&self) -> Option<&CanonicalId> {
+        match &self.representation {
+            ValueRepresentation::EnumVariant(value) => Some(value),
+            _ => None,
+        }
+    }
 
     pub fn satisfies_refinement(&self, refinement: BuiltinRefinement) -> bool {
         match (refinement, self.as_integer()) {

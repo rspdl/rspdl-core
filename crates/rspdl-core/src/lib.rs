@@ -25,7 +25,7 @@ pub use logic::{
     PredicateSignature, Term, Variable,
 };
 pub use rule::{DerivationRule, Fact, LogicProgram, PredicateApplication, RuleLiteral};
-pub use set::SetExpression;
+pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;
 pub use solver::{
     CanonicalModel, ConstraintProblem, ConstraintSolver, SolveOptions, SolveResult, VariableDomain,

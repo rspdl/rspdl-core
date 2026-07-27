@@ -19,6 +19,13 @@ enum SetKind {
         subtrahend: Box<SetExpression>,
     },
 }
+pub enum SetExpressionView<'a> {
+    Domain(&'a Domain),
+    Literal(&'a BTreeSet<CanonicalValue>),
+    Union(&'a [SetExpression]),
+    Intersection(&'a [SetExpression]),
+    Difference(&'a SetExpression, &'a SetExpression),
+}
 
 /// A normalized, typed set expression.
 ///
@@ -121,6 +128,18 @@ impl SetExpression {
 
     pub fn value_type(&self) -> &CanonicalType {
         &self.value_type
+    }
+    pub fn view(&self) -> SetExpressionView<'_> {
+        match &self.expression {
+            SetKind::Domain(x) => SetExpressionView::Domain(x),
+            SetKind::Literal(x) => SetExpressionView::Literal(x),
+            SetKind::Union(x) => SetExpressionView::Union(x),
+            SetKind::Intersection(x) => SetExpressionView::Intersection(x),
+            SetKind::Difference {
+                minuend,
+                subtrahend,
+            } => SetExpressionView::Difference(minuend, subtrahend),
+        }
     }
 
     pub fn contains(&self, value: &CanonicalValue) -> Result<bool, ModelError> {
