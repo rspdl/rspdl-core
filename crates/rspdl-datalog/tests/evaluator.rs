@@ -118,3 +118,41 @@ fn completes_lower_stratum_before_applying_negation() {
     let db = DatalogEvaluator::evaluate(&program).unwrap();
     assert!(db.tuples(allowed.id()).is_none_or(|xs| xs.is_empty()));
 }
+
+#[test]
+fn mutual_recursion_is_independent_of_rule_order() {
+    let seed = PredicateSignature::new(id("seed"), vec![CanonicalType::Integer]);
+    let p = PredicateSignature::new(id("p"), vec![CanonicalType::Integer]);
+    let q = PredicateSignature::new(id("q"), vec![CanonicalType::Integer]);
+    let x = Term::Variable(Variable::new(id("x"), CanonicalType::Integer));
+    let app =
+        |s: &PredicateSignature| PredicateApplication::new(s.clone(), vec![x.clone()]).unwrap();
+    let fact = Fact::new(
+        PredicateApplication::new(
+            seed.clone(),
+            vec![Term::Constant(CanonicalValue::integer(1))],
+        )
+        .unwrap(),
+    );
+    let rp =
+        DerivationRule::new(id("p"), app(&p), vec![RuleLiteral::Positive(app(&seed))]).unwrap();
+    let rq = DerivationRule::new(id("q"), app(&q), vec![RuleLiteral::Positive(app(&p))]).unwrap();
+    let back =
+        DerivationRule::new(id("back"), app(&p), vec![RuleLiteral::Positive(app(&q))]).unwrap();
+    let a = LogicProgram::new(
+        vec![seed.clone(), p.clone(), q.clone()],
+        vec![fact.clone()],
+        vec![rp.clone(), rq.clone(), back.clone()],
+    )
+    .unwrap();
+    let b = LogicProgram::new(
+        vec![seed, p.clone(), q.clone()],
+        vec![fact],
+        vec![back, rq, rp],
+    )
+    .unwrap();
+    let da = DatalogEvaluator::evaluate(&a).unwrap();
+    let db = DatalogEvaluator::evaluate(&b).unwrap();
+    assert_eq!(da, db);
+    assert_eq!(da.tuples(q.id()).unwrap().len(), 1);
+}
