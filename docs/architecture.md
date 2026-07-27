@@ -152,7 +152,7 @@ Locale에 독립적인 compiler domain을 소유한다.
 
 사람에게 표시할 번역 문장은 core diagnostic에 저장하지 않는다. Core는 message key와 구조화된 argument를 반환한다.
 
-초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. 유한 도메인과 계산 가능한 무한 도메인은 ground membership과 backend별 symbolic support를 명시해, Datalog/SMT lowering이 지원하지 않는 의미를 근사하지 않게 한다.
+초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md)와 [Stratified Datalog and Typed Solver RFC](rfcs/0003-stratified-datalog-and-typed-solver.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. `rspdl-datalog`는 안전한 active-domain rules를 결정적으로 materialize하고, `rspdl-solver-z3`는 backend-neutral constraint API를 typed SMT solving으로 연결한다.
 
 ### `rspdl-ko`
 
