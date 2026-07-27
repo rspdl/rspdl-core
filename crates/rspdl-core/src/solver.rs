@@ -3,12 +3,18 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 #[derive(Clone, Debug)]
 pub struct VariableDomain {
-    pub id: CanonicalId,
-    pub domain: Domain,
+    id: CanonicalId,
+    domain: Domain,
 }
 impl VariableDomain {
     pub fn new(id: CanonicalId, domain: Domain) -> Self {
         Self { id, domain }
+    }
+    pub fn id(&self) -> &CanonicalId {
+        &self.id
+    }
+    pub fn domain(&self) -> &Domain {
+        &self.domain
     }
 }
 #[derive(Clone, Debug)]

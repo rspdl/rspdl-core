@@ -12,6 +12,14 @@ use z3::{
 };
 #[derive(Debug, thiserror::Error)]
 pub enum Z3SolverError {
+    #[error("duplicate variable `{0}`")]
+    DuplicateVariable(CanonicalId),
+    #[error("variable `{variable}` declared `{declared}` but used as `{actual}`")]
+    VariableTypeMismatch {
+        variable: CanonicalId,
+        declared: CanonicalType,
+        actual: CanonicalType,
+    },
     #[error("unsupported construct: {0}")]
     Unsupported(String),
     #[error("unknown variable `{0}`")]
@@ -27,6 +35,51 @@ struct EnumEncoding {
     testers: BTreeMap<CanonicalId, FuncDecl>,
 }
 impl Z3Solver {
+    fn validate_expression(
+        x: &BooleanExpression,
+        d: &BTreeMap<CanonicalId, CanonicalType>,
+    ) -> Result<(), Z3SolverError> {
+        match x.view() {
+            BooleanExpressionView::Atom(a) => match a.view() {
+                AtomView::Equal(a, b) | AtomView::IntegerComparison(_, a, b) => {
+                    Self::validate_term(a, d)?;
+                    Self::validate_term(b, d)?;
+                }
+                AtomView::MemberOf(a, _) => Self::validate_term(a, d)?,
+                AtomView::Predicate(_, args) => {
+                    for a in args {
+                        Self::validate_term(a, d)?
+                    }
+                }
+            },
+            BooleanExpressionView::And(xs) | BooleanExpressionView::Or(xs) => {
+                for x in xs {
+                    Self::validate_expression(x, d)?
+                }
+            }
+            BooleanExpressionView::Not(x) => Self::validate_expression(x, d)?,
+            _ => {}
+        }
+        Ok(())
+    }
+    fn validate_term(
+        t: &Term,
+        d: &BTreeMap<CanonicalId, CanonicalType>,
+    ) -> Result<(), Z3SolverError> {
+        if let Term::Variable(v) = t {
+            let declared = d
+                .get(v.id())
+                .ok_or_else(|| Z3SolverError::UnknownVariable(v.id().clone()))?;
+            if declared != v.value_type() {
+                return Err(Z3SolverError::VariableTypeMismatch {
+                    variable: v.id().clone(),
+                    declared: declared.clone(),
+                    actual: v.value_type().clone(),
+                });
+            }
+        }
+        Ok(())
+    }
     pub fn new() -> Self {
         Self
     }
@@ -43,6 +96,19 @@ impl Z3Solver {
         p: &ConstraintProblem,
         o: SolveOptions,
     ) -> Result<SolveResult, Z3SolverError> {
+        let mut declared = BTreeMap::new();
+        for variable in p.variables() {
+            if declared
+                .insert(
+                    variable.id().clone(),
+                    variable.domain().value_type().clone(),
+                )
+                .is_some()
+            {
+                return Err(Z3SolverError::DuplicateVariable(variable.id().clone()));
+            }
+        }
+        Self::validate_expression(p.assertion(), &declared)?;
         let solver = Solver::new();
         let mut params = Params::new();
         params.set_u32(
@@ -52,7 +118,7 @@ impl Z3Solver {
         solver.set_params(&params);
         let mut enums = BTreeMap::new();
         for variable in p.variables() {
-            if let CanonicalType::Enum(kind) = variable.domain.value_type()
+            if let CanonicalType::Enum(kind) = variable.domain().value_type()
                 && !enums.contains_key(kind)
             {
                 let names: Vec<Symbol> = kind
@@ -74,20 +140,20 @@ impl Z3Solver {
         }
         let mut vars = BTreeMap::new();
         for v in p.variables() {
-            let name = format!("rspdl_v_{}_{}", v.id.as_str().len(), v.id);
-            let ast = match v.domain.value_type() {
+            let name = format!("rspdl_v_{}_{}", v.id().as_str().len(), v.id());
+            let ast = match v.domain().value_type() {
                 CanonicalType::Boolean => Dynamic::from_ast(&Bool::new_const(name)),
                 CanonicalType::Integer => Dynamic::from_ast(&Int::new_const(name)),
                 CanonicalType::String => Dynamic::from_ast(&Z3String::new_const(name)),
                 CanonicalType::Enum(kind) => Dynamic::new_const(name, &enums[kind].sort),
                 _ => return Err(Z3SolverError::Unsupported("refinement domain".into())),
             };
-            vars.insert(v.id.clone(), ast);
+            vars.insert(v.id().clone(), ast);
         }
         for variable in p.variables() {
             solver.assert(Self::membership(
-                vars.get(&variable.id).expect("declared variable"),
-                &SetExpression::domain(variable.domain.clone()),
+                vars.get(variable.id()).expect("declared variable"),
+                &SetExpression::domain(variable.domain().clone()),
                 &enums,
             )?);
         }
@@ -107,8 +173,8 @@ impl Z3Solver {
                     let kind = p
                         .variables()
                         .iter()
-                        .find(|v| v.id == id)
-                        .map(|v| v.domain.value_type())
+                        .find(|v| v.id() == &id)
+                        .map(|v| v.domain().value_type())
                         .ok_or(Z3SolverError::InvalidModel)?;
                     let cv = if let CanonicalType::Enum(kind) = kind {
                         let encoding = &enums[kind];
