@@ -1,12 +1,12 @@
 //! Z3-backed typed constraint solving; Z3 values do not escape this crate.
 use rspdl_core::{
     AtomView, BooleanExpression, BooleanExpressionView, CanonicalId, CanonicalModel, CanonicalType,
-    CanonicalValue, ConstraintProblem, ConstraintSolver, InfiniteDomain, SetExpression,
+    CanonicalValue, ConstraintProblem, ConstraintSolver, EnumType, InfiniteDomain, SetExpression,
     SetExpressionView, SolveOptions, SolveResult, Term,
 };
 use std::{collections::BTreeMap, str::FromStr};
 use z3::{
-    Params, SatResult, Solver,
+    FuncDecl, Params, SatResult, Solver, Sort, Symbol,
     ast::{Bool, Dynamic, Int, String as Z3String},
 };
 #[derive(Debug, thiserror::Error)]
@@ -20,6 +20,11 @@ pub enum Z3SolverError {
 }
 #[derive(Default)]
 pub struct Z3Solver;
+struct EnumEncoding {
+    sort: Sort,
+    constructors: BTreeMap<CanonicalId, FuncDecl>,
+    testers: BTreeMap<CanonicalId, FuncDecl>,
+}
 impl Z3Solver {
     pub fn new() -> Self {
         Self
@@ -35,6 +40,28 @@ impl ConstraintSolver for Z3Solver {
             o.timeout().as_millis().min(u128::from(u32::MAX)) as u32,
         );
         solver.set_params(&params);
+        let mut enums = BTreeMap::new();
+        for variable in p.variables() {
+            if let CanonicalType::Enum(kind) = variable.domain.value_type()
+                && !enums.contains_key(kind)
+            {
+                let names: Vec<Symbol> = kind
+                    .variants()
+                    .iter()
+                    .map(|x| format!("rspdl_enum_{}_{}", kind.id(), x).into())
+                    .collect();
+                let (sort, constructors, testers) =
+                    Sort::enumeration(format!("rspdl_type_{}", kind.id()).into(), &names);
+                enums.insert(
+                    kind.clone(),
+                    EnumEncoding {
+                        sort,
+                        constructors: kind.variants().iter().cloned().zip(constructors).collect(),
+                        testers: kind.variants().iter().cloned().zip(testers).collect(),
+                    },
+                );
+            }
+        }
         let mut vars = BTreeMap::new();
         for v in p.variables() {
             let name = format!("rspdl_v_{}_{}", v.id.as_str().len(), v.id);
@@ -42,7 +69,8 @@ impl ConstraintSolver for Z3Solver {
                 CanonicalType::Boolean => Dynamic::from_ast(&Bool::new_const(name)),
                 CanonicalType::Integer => Dynamic::from_ast(&Int::new_const(name)),
                 CanonicalType::String => Dynamic::from_ast(&Z3String::new_const(name)),
-                _ => return Err(Z3SolverError::Unsupported("enum/refinement domain".into())),
+                CanonicalType::Enum(kind) => Dynamic::new_const(name, &enums[kind].sort),
+                _ => return Err(Z3SolverError::Unsupported("refinement domain".into())),
             };
             vars.insert(v.id.clone(), ast);
         }
@@ -50,9 +78,10 @@ impl ConstraintSolver for Z3Solver {
             solver.assert(Self::membership(
                 vars.get(&variable.id).expect("declared variable"),
                 &SetExpression::domain(variable.domain.clone()),
+                &enums,
             )?);
         }
-        solver.assert(Self::lower(p.assertion(), &vars)?);
+        solver.assert(Self::lower(p.assertion(), &vars, &enums)?);
         match solver.check() {
             SatResult::Unsat => Ok(SolveResult::Unsat),
             SatResult::Unknown => Ok(SolveResult::Unknown {
@@ -65,7 +94,27 @@ impl ConstraintSolver for Z3Solver {
                 let mut out = BTreeMap::new();
                 for (id, a) in vars {
                     let value = m.eval(&a, true).ok_or(Z3SolverError::InvalidModel)?;
-                    let cv = if let Some(x) = value.as_bool() {
+                    let kind = p
+                        .variables()
+                        .iter()
+                        .find(|v| v.id == id)
+                        .map(|v| v.domain.value_type())
+                        .ok_or(Z3SolverError::InvalidModel)?;
+                    let cv = if let CanonicalType::Enum(kind) = kind {
+                        let encoding = &enums[kind];
+                        let variant = kind
+                            .variants()
+                            .iter()
+                            .find(|variant| {
+                                m.eval(&encoding.testers[*variant].apply(&[&value]), true)
+                                    .and_then(|x| x.as_bool())
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false)
+                            })
+                            .ok_or(Z3SolverError::InvalidModel)?;
+                        CanonicalValue::enum_variant(kind.clone(), variant.clone())
+                            .map_err(|_| Z3SolverError::InvalidModel)?
+                    } else if let Some(x) = value.as_bool() {
                         CanonicalValue::boolean(x.as_bool().ok_or(Z3SolverError::InvalidModel)?)
                     } else if let Some(x) = value.as_int() {
                         CanonicalValue::integer_from_decimal(x.to_string())
@@ -86,33 +135,34 @@ impl Z3Solver {
     fn lower(
         x: &BooleanExpression,
         v: &BTreeMap<CanonicalId, Dynamic>,
+        e: &BTreeMap<EnumType, EnumEncoding>,
     ) -> Result<Bool, Z3SolverError> {
         match x.view() {
             BooleanExpressionView::Literal(x) => Ok(Bool::from_bool(x)),
             BooleanExpressionView::And(xs) => {
                 let values = xs
                     .iter()
-                    .map(|x| Self::lower(x, v))
+                    .map(|x| Self::lower(x, v, e))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Bool::and(&values))
             }
             BooleanExpressionView::Or(xs) => {
                 let values = xs
                     .iter()
-                    .map(|x| Self::lower(x, v))
+                    .map(|x| Self::lower(x, v, e))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Bool::or(&values))
             }
-            BooleanExpressionView::Not(x) => Ok(Self::lower(x, v)?.not()),
+            BooleanExpressionView::Not(x) => Ok(Self::lower(x, v, e)?.not()),
             BooleanExpressionView::Atom(a) => match a.view() {
-                AtomView::Equal(a, b) => Self::term(a, v)?
-                    .safe_eq(&Self::term(b, v)?)
+                AtomView::Equal(a, b) => Self::term(a, v, e)?
+                    .safe_eq(&Self::term(b, v, e)?)
                     .map_err(|_| Z3SolverError::Unsupported("type mismatch".into())),
                 AtomView::IntegerComparison(op, a, b) => {
-                    let a = Self::term(a, v)?
+                    let a = Self::term(a, v, e)?
                         .as_int()
                         .ok_or_else(|| Z3SolverError::Unsupported("integer comparison".into()))?;
-                    let b = Self::term(b, v)?
+                    let b = Self::term(b, v, e)?
                         .as_int()
                         .ok_or_else(|| Z3SolverError::Unsupported("integer comparison".into()))?;
                     Ok(match op {
@@ -122,14 +172,18 @@ impl Z3Solver {
                         rspdl_core::ComparisonOperator::Ge => a.ge(&b),
                     })
                 }
-                AtomView::MemberOf(term, set) => Self::membership(&Self::term(term, v)?, set),
+                AtomView::MemberOf(term, set) => Self::membership(&Self::term(term, v, e)?, set, e),
                 AtomView::Predicate(_, _) => {
                     Err(Z3SolverError::Unsupported("predicate application".into()))
                 }
             },
         }
     }
-    fn term(t: &Term, v: &BTreeMap<CanonicalId, Dynamic>) -> Result<Dynamic, Z3SolverError> {
+    fn term(
+        t: &Term,
+        v: &BTreeMap<CanonicalId, Dynamic>,
+        e: &BTreeMap<EnumType, EnumEncoding>,
+    ) -> Result<Dynamic, Z3SolverError> {
         match t {
             Term::Variable(x) => v
                 .get(x.id())
@@ -145,11 +199,20 @@ impl Z3Solver {
                 CanonicalType::String => Ok(Dynamic::from_ast(
                     &Z3String::from_str(x.as_string().unwrap()).unwrap(),
                 )),
-                _ => Err(Z3SolverError::Unsupported("enum/refinement value".into())),
+                CanonicalType::Enum(kind) => Ok(Dynamic::from_ast(
+                    &e[kind].constructors
+                        [x.as_enum_variant().ok_or(Z3SolverError::InvalidModel)?]
+                    .apply(&[]),
+                )),
+                _ => Err(Z3SolverError::Unsupported("refinement value".into())),
             },
         }
     }
-    fn membership(value: &Dynamic, set: &SetExpression) -> Result<Bool, Z3SolverError> {
+    fn membership(
+        value: &Dynamic,
+        set: &SetExpression,
+        e: &BTreeMap<EnumType, EnumEncoding>,
+    ) -> Result<Bool, Z3SolverError> {
         match set.view() {
             SetExpressionView::Domain(domain) => match domain.infinite_kind() {
                 Some(InfiniteDomain::Integers | InfiniteDomain::Strings) => {
@@ -158,26 +221,26 @@ impl Z3Solver {
                 Some(InfiniteDomain::Primes) => {
                     Err(Z3SolverError::Unsupported("prime domain".into()))
                 }
-                None => Self::finite_membership(value, domain.finite_values().expect("finite")),
+                None => Self::finite_membership(value, domain.finite_values().expect("finite"), e),
             },
-            SetExpressionView::Literal(values) => Self::finite_membership(value, values),
+            SetExpressionView::Literal(values) => Self::finite_membership(value, values, e),
             SetExpressionView::Union(xs) => {
                 let ys = xs
                     .iter()
-                    .map(|x| Self::membership(value, x))
+                    .map(|x| Self::membership(value, x, e))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Bool::or(&ys))
             }
             SetExpressionView::Intersection(xs) => {
                 let ys = xs
                     .iter()
-                    .map(|x| Self::membership(value, x))
+                    .map(|x| Self::membership(value, x, e))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Bool::and(&ys))
             }
             SetExpressionView::Difference(a, b) => {
-                let left = Self::membership(value, a)?;
-                let right = Self::membership(value, b)?.not();
+                let left = Self::membership(value, a, e)?;
+                let right = Self::membership(value, b, e)?.not();
                 Ok(Bool::and(&[&left, &right]))
             }
         }
@@ -185,11 +248,12 @@ impl Z3Solver {
     fn finite_membership(
         value: &Dynamic,
         values: &std::collections::BTreeSet<CanonicalValue>,
+        e: &BTreeMap<EnumType, EnumEncoding>,
     ) -> Result<Bool, Z3SolverError> {
         let tests = values
             .iter()
             .map(|x| {
-                Self::term(&Term::Constant(x.clone()), &BTreeMap::new()).and_then(|c| {
+                Self::term(&Term::Constant(x.clone()), &BTreeMap::new(), e).and_then(|c| {
                     value
                         .safe_eq(&c)
                         .map_err(|_| Z3SolverError::Unsupported("set type".into()))
