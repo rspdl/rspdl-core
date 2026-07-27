@@ -210,3 +210,59 @@ fn duplicate_facts_and_rules_are_deduplicated() {
     .unwrap();
     assert_eq!(db.tuples(q.id()).unwrap().len(), 1);
 }
+
+#[test]
+fn three_relation_join_excludes_nonmatching_tuples() {
+    let a = PredicateSignature::new(id("a"), vec![CanonicalType::Integer]);
+    let b = PredicateSignature::new(id("b"), vec![CanonicalType::Integer]);
+    let c = PredicateSignature::new(id("c"), vec![CanonicalType::Integer]);
+    let out = PredicateSignature::new(id("out"), vec![CanonicalType::Integer]);
+    let x = Term::Variable(Variable::new(id("x"), CanonicalType::Integer));
+    let app =
+        |p: &PredicateSignature| PredicateApplication::new(p.clone(), vec![x.clone()]).unwrap();
+    let rule = DerivationRule::new(
+        id("join"),
+        app(&out),
+        vec![
+            RuleLiteral::Positive(app(&a)),
+            RuleLiteral::Positive(app(&b)),
+            RuleLiteral::Positive(app(&c)),
+        ],
+    )
+    .unwrap();
+    let f = |p: &PredicateSignature, n| {
+        Fact::new(
+            PredicateApplication::new(p.clone(), vec![Term::Constant(CanonicalValue::integer(n))])
+                .unwrap(),
+        )
+    };
+    let db = DatalogEvaluator::evaluate(
+        &LogicProgram::new(
+            vec![a.clone(), b.clone(), c.clone(), out.clone()],
+            vec![f(&a, 1), f(&a, 2), f(&b, 1), f(&c, 1), f(&c, 3)],
+            vec![rule],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(db.tuples(out.id()).unwrap().len(), 1);
+}
+
+#[test]
+fn unsafe_variables_include_rule_and_variable() {
+    let p = PredicateSignature::new(id("p"), vec![CanonicalType::Integer]);
+    let q = PredicateSignature::new(id("q"), vec![CanonicalType::Integer]);
+    let x = Term::Variable(Variable::new(id("x"), CanonicalType::Integer));
+    let rule = DerivationRule::new(
+        id("unsafe"),
+        PredicateApplication::new(q.clone(), vec![x.clone()]).unwrap(),
+        vec![],
+    )
+    .unwrap();
+    let error =
+        DatalogEvaluator::evaluate(&LogicProgram::new(vec![p, q], vec![], vec![rule]).unwrap())
+            .unwrap_err();
+    assert!(
+        matches!(error,rspdl_datalog::DatalogError::UnsafeVariable{rule,variable} if rule==id("unsafe")&&variable==id("x"))
+    );
+}
