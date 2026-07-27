@@ -6,6 +6,36 @@ use rspdl_solver_z3::Z3Solver;
 fn id(x: &str) -> CanonicalId {
     CanonicalId::new(x).unwrap()
 }
+
+#[test]
+fn enum_symbols_are_collision_free() {
+    let one = EnumType::new(id("a_b"), [id("c")]).unwrap();
+    let two = EnumType::new(id("a"), [id("b_c")]).unwrap();
+    let x = Variable::new(id("x"), CanonicalType::Enum(one.clone()));
+    let y = Variable::new(id("y"), CanonicalType::Enum(two.clone()));
+    let xv = CanonicalValue::enum_variant(one.clone(), id("c")).unwrap();
+    let yv = CanonicalValue::enum_variant(two.clone(), id("b_c")).unwrap();
+    let p = ConstraintProblem::new(
+        vec![
+            VariableDomain::new(
+                id("x"),
+                Domain::finite(CanonicalType::Enum(one), [xv.clone()]).unwrap(),
+            ),
+            VariableDomain::new(
+                id("y"),
+                Domain::finite(CanonicalType::Enum(two), [yv.clone()]).unwrap(),
+            ),
+        ],
+        BooleanExpression::and([
+            BooleanExpression::atom(Atom::equal(Term::Variable(x), Term::Constant(xv)).unwrap()),
+            BooleanExpression::atom(Atom::equal(Term::Variable(y), Term::Constant(yv)).unwrap()),
+        ]),
+    );
+    assert!(matches!(
+        Z3Solver::new().solve(&p, SolveOptions::default()).unwrap(),
+        rspdl_core::SolveResult::Sat(_)
+    ));
+}
 #[test]
 fn enum_sat_returns_canonical_variant() {
     let e = EnumType::new(id("role"), [id("admin"), id("user")]).unwrap();

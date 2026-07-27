@@ -35,6 +35,18 @@ struct EnumEncoding {
     testers: BTreeMap<CanonicalId, FuncDecl>,
 }
 impl Z3Solver {
+    fn symbol(prefix: &str, id: &CanonicalId) -> String {
+        format!("{prefix}_{}_{}", id.as_str().len(), id)
+    }
+    fn enum_symbol(kind: &EnumType, variant: &CanonicalId) -> String {
+        format!(
+            "rspdl_e_{}_{}_{}_{}",
+            kind.id().as_str().len(),
+            kind.id(),
+            variant.as_str().len(),
+            variant
+        )
+    }
     fn validate_expression(
         x: &BooleanExpression,
         d: &BTreeMap<CanonicalId, CanonicalType>,
@@ -124,10 +136,10 @@ impl Z3Solver {
                 let names: Vec<Symbol> = kind
                     .variants()
                     .iter()
-                    .map(|x| format!("rspdl_enum_{}_{}", kind.id(), x).into())
+                    .map(|x| Self::enum_symbol(kind, x).into())
                     .collect();
                 let (sort, constructors, testers) =
-                    Sort::enumeration(format!("rspdl_type_{}", kind.id()).into(), &names);
+                    Sort::enumeration(Self::symbol("rspdl_t", kind.id()).into(), &names);
                 enums.insert(
                     kind.clone(),
                     EnumEncoding {
@@ -140,7 +152,7 @@ impl Z3Solver {
         }
         let mut vars = BTreeMap::new();
         for v in p.variables() {
-            let name = format!("rspdl_v_{}_{}", v.id().as_str().len(), v.id());
+            let name = Self::symbol("rspdl_v", v.id());
             let ast = match v.domain().value_type() {
                 CanonicalType::Boolean => Dynamic::from_ast(&Bool::new_const(name)),
                 CanonicalType::Integer => Dynamic::from_ast(&Int::new_const(name)),
