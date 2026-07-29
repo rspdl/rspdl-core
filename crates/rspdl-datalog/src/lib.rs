@@ -1,7 +1,7 @@
 //! Deterministic active-domain evaluator for safe stratified Datalog programs.
 use rspdl_core::{
-    AtomView, CanonicalId, CanonicalValue, DerivationRule, LogicProgram, PredicateApplication,
-    RuleLiteral, Term,
+    AtomView, CanonicalId, CanonicalValue, DerivationRule, LogicProgram, ModelError,
+    PredicateApplication, RuleLiteral, Term,
 };
 use std::collections::{BTreeMap, BTreeSet};
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -41,6 +41,11 @@ pub enum DatalogError {
     NonGroundFact,
     #[error("unsupported constraint in rule `{rule}`")]
     UnsupportedConstraint { rule: CanonicalId },
+    #[error("constraint evaluation failed in rule `{rule}`: {source}")]
+    ConstraintEvaluation {
+        rule: CanonicalId,
+        source: Box<ModelError>,
+    },
 }
 pub struct DatalogEvaluator;
 impl DatalogEvaluator {
@@ -70,13 +75,8 @@ impl DatalogEvaluator {
                 .filter(|rule| strata[rule.head().signature().id()] == stratum)
                 .collect();
             let mut delta = BTreeMap::new();
-            for (predicate, tuples) in &db.relations {
-                if strata[predicate] == stratum {
-                    delta.insert(predicate.clone(), tuples.clone());
-                }
-            }
             for rule in &rules {
-                for tuple in derive(rule, &db) {
+                for tuple in derive(rule, &db)? {
                     if db
                         .relations
                         .entry(rule.head().signature().id().clone())
@@ -103,7 +103,7 @@ impl DatalogEvaluator {
                             continue;
                         };
                         stats.delta_rule_evaluations += 1;
-                        for tuple in derive_delta(rule, &db, &delta, index) {
+                        for tuple in derive_delta(rule, &db, &delta, Some(index))? {
                             if !db
                                 .relations
                                 .get(rule.head().signature().id())
@@ -215,6 +215,7 @@ impl DatalogEvaluator {
     }
 }
 
+/// Computes strata for a program that has already passed negative-cycle validation.
 fn strata(program: &LogicProgram) -> BTreeMap<CanonicalId, usize> {
     let mut result: BTreeMap<CanonicalId, usize> = program
         .predicates()
@@ -222,9 +223,8 @@ fn strata(program: &LogicProgram) -> BTreeMap<CanonicalId, usize> {
         .cloned()
         .map(|id| (id, 0))
         .collect();
-    let mut changed = true;
-    while changed {
-        changed = false;
+    for _ in 0..program.predicates().len().max(1) {
+        let mut changed = false;
         for rule in program.rules() {
             let head = rule.head().signature().id();
             for literal in rule.body() {
@@ -240,8 +240,11 @@ fn strata(program: &LogicProgram) -> BTreeMap<CanonicalId, usize> {
                 }
             }
         }
+        if !changed {
+            return result;
+        }
     }
-    result
+    panic!("validated Datalog program exceeded the stratification iteration bound")
 }
 
 fn reachable(
@@ -280,15 +283,18 @@ fn ground(a: &PredicateApplication) -> Option<Vec<CanonicalValue>> {
         })
         .collect()
 }
-fn derive(rule: &DerivationRule, db: &MaterializedDatabase) -> Vec<Vec<CanonicalValue>> {
-    derive_delta(rule, db, &BTreeMap::new(), usize::MAX)
+fn derive(
+    rule: &DerivationRule,
+    db: &MaterializedDatabase,
+) -> Result<Vec<Vec<CanonicalValue>>, DatalogError> {
+    derive_delta(rule, db, &BTreeMap::new(), None)
 }
 fn derive_delta(
     rule: &DerivationRule,
     db: &MaterializedDatabase,
     delta: &BTreeMap<CanonicalId, BTreeSet<Vec<CanonicalValue>>>,
-    delta_index: usize,
-) -> Vec<Vec<CanonicalValue>> {
+    delta_index: Option<usize>,
+) -> Result<Vec<Vec<CanonicalValue>>, DatalogError> {
     let mut envs = vec![BTreeMap::new()];
     let mut plan: Vec<_> = rule.body().iter().enumerate().collect();
     plan.sort_by_key(|(_, literal)| match literal {
@@ -300,18 +306,12 @@ fn derive_delta(
         match lit {
             RuleLiteral::Positive(a) => {
                 let mut next = vec![];
-                let tuples = if index == delta_index {
+                let tuples = if Some(index) == delta_index {
                     delta.get(a.signature().id())
                 } else {
                     db.relations.get(a.signature().id())
                 };
-                for tuple in tuples.into_iter().flatten() {
-                    for e in &envs {
-                        if let Some(x) = unify(a, tuple, e) {
-                            next.push(x)
-                        }
-                    }
-                }
+                join(a, tuples, &envs, &mut next);
                 envs = next;
             }
             RuleLiteral::Negative(a) => envs.retain(|e| {
@@ -321,10 +321,19 @@ fn derive_delta(
                     .flatten()
                     .any(|t| unify(a, t, e).is_some())
             }),
-            RuleLiteral::Constraint(atom) => envs.retain(|e| constraint(atom, e)),
+            RuleLiteral::Constraint(atom) => {
+                let mut next = Vec::with_capacity(envs.len());
+                for environment in envs {
+                    if constraint(rule, atom, &environment)? {
+                        next.push(environment);
+                    }
+                }
+                envs = next;
+            }
         }
     }
-    envs.into_iter()
+    Ok(envs
+        .into_iter()
         .filter_map(|e| {
             rule.head()
                 .arguments()
@@ -335,26 +344,94 @@ fn derive_delta(
                 })
                 .collect()
         })
-        .collect()
+        .collect())
+}
+fn join(
+    application: &PredicateApplication,
+    tuples: Option<&BTreeSet<Vec<CanonicalValue>>>,
+    environments: &[BTreeMap<CanonicalId, CanonicalValue>],
+    out: &mut Vec<BTreeMap<CanonicalId, CanonicalValue>>,
+) {
+    let bound_positions: Vec<_> = application
+        .arguments()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, term)| match term {
+            Term::Variable(variable)
+                if environments
+                    .first()
+                    .is_some_and(|environment| environment.contains_key(variable.id())) =>
+            {
+                Some((index, variable.id()))
+            }
+            _ => None,
+        })
+        .collect();
+
+    if bound_positions.is_empty() {
+        for tuple in tuples.into_iter().flatten() {
+            for environment in environments {
+                if let Some(joined) = unify(application, tuple, environment) {
+                    out.push(joined);
+                }
+            }
+        }
+        return;
+    }
+
+    let mut index: BTreeMap<Vec<CanonicalValue>, Vec<&[CanonicalValue]>> = BTreeMap::new();
+    for tuple in tuples.into_iter().flatten() {
+        let key = bound_positions
+            .iter()
+            .map(|(position, _)| tuple[*position].clone())
+            .collect();
+        index.entry(key).or_default().push(tuple);
+    }
+    for environment in environments {
+        let key: Vec<_> = bound_positions
+            .iter()
+            .map(|(_, variable)| {
+                environment
+                    .get(*variable)
+                    .expect("join key variables are bound")
+                    .clone()
+            })
+            .collect();
+        for tuple in index.get(&key).into_iter().flatten() {
+            if let Some(joined) = unify(application, tuple, environment) {
+                out.push(joined);
+            }
+        }
+    }
 }
 fn unify(
     a: &PredicateApplication,
     t: &[CanonicalValue],
     e: &BTreeMap<CanonicalId, CanonicalValue>,
 ) -> Option<BTreeMap<CanonicalId, CanonicalValue>> {
-    let mut out = e.clone();
+    let mut pending: BTreeMap<&CanonicalId, &CanonicalValue> = BTreeMap::new();
     for (x, v) in a.arguments().iter().zip(t) {
         match x {
             Term::Constant(c) if c != v => return None,
             Term::Constant(_) => {}
-            Term::Variable(var) => match out.get(var.id()) {
-                Some(old) if old != v => return None,
-                _ => {
-                    out.insert(var.id().clone(), v.clone());
+            Term::Variable(var) => {
+                if e.get(var.id()).is_some_and(|old| old != v)
+                    || pending.get(var.id()).is_some_and(|old| *old != v)
+                {
+                    return None;
                 }
-            },
+                if !e.contains_key(var.id()) && !pending.contains_key(var.id()) {
+                    pending.insert(var.id(), v);
+                }
+            }
         }
     }
+    let mut out = e.clone();
+    out.extend(
+        pending
+            .into_iter()
+            .map(|(variable, value)| (variable.clone(), value.clone())),
+    );
     Some(out)
 }
 fn val(t: &Term, e: &BTreeMap<CanonicalId, CanonicalValue>) -> Option<CanonicalValue> {
@@ -363,21 +440,39 @@ fn val(t: &Term, e: &BTreeMap<CanonicalId, CanonicalValue>) -> Option<CanonicalV
         Term::Variable(v) => e.get(v.id()).cloned(),
     }
 }
-fn constraint(a: &rspdl_core::Atom, e: &BTreeMap<CanonicalId, CanonicalValue>) -> bool {
+fn constraint(
+    rule: &DerivationRule,
+    a: &rspdl_core::Atom,
+    e: &BTreeMap<CanonicalId, CanonicalValue>,
+) -> Result<bool, DatalogError> {
     match a.view() {
-        AtomView::Equal(x, y) => val(x, e) == val(y, e),
-        AtomView::MemberOf(x, s) => val(x, e).is_some_and(|v| s.contains(&v).unwrap_or(false)),
+        AtomView::Equal(x, y) => Ok(match (val(x, e), val(y, e)) {
+            (Some(x), Some(y)) => x == y,
+            _ => false,
+        }),
+        AtomView::MemberOf(x, s) => {
+            let Some(value) = val(x, e) else {
+                return Ok(false);
+            };
+            s.contains(&value)
+                .map_err(|source| DatalogError::ConstraintEvaluation {
+                    rule: rule.id().clone(),
+                    source: Box::new(source),
+                })
+        }
         AtomView::IntegerComparison(op, x, y) => {
             let (Some(x), Some(y)) = (val(x, e), val(y, e)) else {
-                return false;
+                return Ok(false);
             };
-            match op {
+            Ok(match op {
                 rspdl_core::ComparisonOperator::Lt => x < y,
                 rspdl_core::ComparisonOperator::Le => x <= y,
                 rspdl_core::ComparisonOperator::Gt => x > y,
                 rspdl_core::ComparisonOperator::Ge => x >= y,
-            }
+            })
         }
-        AtomView::Predicate(_, _) => false,
+        AtomView::Predicate(_, _) => Err(DatalogError::UnsupportedConstraint {
+            rule: rule.id().clone(),
+        }),
     }
 }

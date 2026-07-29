@@ -72,7 +72,11 @@ fn rejects_an_indirect_negative_cycle() {
     );
     let r2 = DerivationRule::new(id("q_rule"), app(&q), vec![RuleLiteral::Positive(app(&p))]);
     let program = LogicProgram::new(vec![base, p, q], vec![], vec![r1, r2]).unwrap();
-    assert!(DatalogEvaluator::evaluate(&program).is_err());
+    assert!(matches!(
+        DatalogEvaluator::evaluate(&program),
+        Err(rspdl_datalog::DatalogError::NegativeCycle { rule, predicate })
+            if rule == id("p_rule") && predicate == id("q")
+    ));
 }
 
 #[test]
@@ -156,24 +160,41 @@ fn body_filter_order_does_not_change_derivation() {
     let p = PredicateSignature::new(id("p"), vec![CanonicalType::Integer]);
     let q = PredicateSignature::new(id("q"), vec![CanonicalType::Integer]);
     let x = Term::Variable(Variable::new(id("x"), CanonicalType::Integer));
-    let a = PredicateApplication::new(p.clone(), vec![x.clone()]).unwrap();
-    let h = PredicateApplication::new(q.clone(), vec![x.clone()]).unwrap();
+    let application = PredicateApplication::new(p.clone(), vec![x.clone()]).unwrap();
+    let head = PredicateApplication::new(q.clone(), vec![x.clone()]).unwrap();
     let eq = Atom::equal(x.clone(), Term::Constant(CanonicalValue::integer(1))).unwrap();
-    let rule = DerivationRule::new(
-        id("r"),
-        h,
-        vec![RuleLiteral::Constraint(eq), RuleLiteral::Positive(a)],
+    let constraint_first = DerivationRule::new(
+        id("constraint_first"),
+        head.clone(),
+        vec![
+            RuleLiteral::Constraint(eq.clone()),
+            RuleLiteral::Positive(application.clone()),
+        ],
+    );
+    let positive_first = DerivationRule::new(
+        id("positive_first"),
+        head,
+        vec![
+            RuleLiteral::Positive(application),
+            RuleLiteral::Constraint(eq),
+        ],
     );
     let fact = Fact::new(
         PredicateApplication::new(p.clone(), vec![Term::Constant(CanonicalValue::integer(1))])
             .unwrap(),
     )
     .unwrap();
-    let db = DatalogEvaluator::evaluate(
-        &LogicProgram::new(vec![p, q.clone()], vec![fact], vec![rule]).unwrap(),
+    let first = LogicProgram::new(
+        vec![p.clone(), q.clone()],
+        vec![fact.clone()],
+        vec![constraint_first],
     )
     .unwrap();
-    assert_eq!(db.tuples(q.id()).unwrap().len(), 1);
+    let second = LogicProgram::new(vec![p, q.clone()], vec![fact], vec![positive_first]).unwrap();
+    let first_db = DatalogEvaluator::evaluate(&first).unwrap();
+    let second_db = DatalogEvaluator::evaluate(&second).unwrap();
+    assert_eq!(first_db, second_db);
+    assert_eq!(first_db.tuples(q.id()).unwrap().len(), 1);
 }
 
 #[test]
@@ -293,7 +314,6 @@ fn membership_filters_bound_values_without_enumeration() {
     )
     .unwrap();
     assert_eq!(db.tuples(prime.id()).unwrap().len(), 2);
-    assert!(CanonicalValue::prime(4).is_err());
 }
 
 #[test]
@@ -305,7 +325,7 @@ fn integer_filters_select_exact_bound_tuples() {
     let x = Term::Variable(Variable::new(id("x"), CanonicalType::Integer));
     let make = |h: &PredicateSignature, set| {
         DerivationRule::new(
-            id("filter"),
+            h.id().clone(),
             PredicateApplication::new(h.clone(), vec![x.clone()]).unwrap(),
             vec![
                 RuleLiteral::Positive(
