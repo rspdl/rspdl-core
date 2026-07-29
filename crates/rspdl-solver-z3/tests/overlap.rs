@@ -1,4 +1,9 @@
-use rspdl_core::*;
+use rspdl_core::{
+    Atom, BooleanExpression, CanonicalId, CanonicalModel, CanonicalType, CanonicalValue,
+    ConstraintProblem, ConstraintSolver, DerivationRule, Domain, EnumType, Fact, LogicProgram,
+    PredicateApplication, PredicateSignature, RuleLiteral, SolveOptions, SolveResult, Term,
+    Variable, VariableDomain,
+};
 use rspdl_datalog::DatalogEvaluator;
 use rspdl_solver_z3::Z3Solver;
 fn id(x: &str) -> CanonicalId {
@@ -11,6 +16,7 @@ fn accounting_overlap_is_sat_and_exclusive_is_unsat() {
     let roles = EnumType::new(id("role_type"), [id("accounting_manager"), id("other")]).unwrap();
     let role = Variable::new(id("role"), CanonicalType::Enum(roles.clone()));
     let manager = CanonicalValue::enum_variant(roles.clone(), id("accounting_manager")).unwrap();
+    let other = CanonicalValue::enum_variant(roles.clone(), id("other")).unwrap();
     let permit = BooleanExpression::atom(
         Atom::equal(
             Term::Variable(role.clone()),
@@ -30,7 +36,7 @@ fn accounting_overlap_is_sat_and_exclusive_is_unsat() {
         VariableDomain::new(id("approver"), Domain::strings()),
         VariableDomain::new(
             id("role"),
-            Domain::finite(CanonicalType::Enum(roles), [manager.clone()]).unwrap(),
+            Domain::finite(CanonicalType::Enum(roles), [manager.clone(), other]).unwrap(),
         ),
     ];
     let sat =
@@ -100,6 +106,13 @@ fn ground_accounting_rules_materialize_both_conditions() {
     )
     .unwrap();
     let db = DatalogEvaluator::evaluate(&program).unwrap();
+    let expected = vec![CanonicalValue::string("request_one")];
     assert_eq!(db.tuples(approval.id()).unwrap().len(), 1);
+    assert!(db.tuples(approval.id()).unwrap().contains(&expected));
     assert_eq!(db.tuples(self_application.id()).unwrap().len(), 1);
+    assert!(
+        db.tuples(self_application.id())
+            .unwrap()
+            .contains(&expected)
+    );
 }

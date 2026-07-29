@@ -19,6 +19,7 @@ enum SetKind {
         subtrahend: Box<SetExpression>,
     },
 }
+#[non_exhaustive]
 pub enum SetExpressionView<'a> {
     Domain(&'a Domain),
     Literal(&'a BTreeSet<CanonicalValue>),

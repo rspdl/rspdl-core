@@ -198,6 +198,11 @@ impl DatalogEvaluator {
                                 rule: rule.id().clone(),
                             });
                         }
+                        _ => {
+                            return Err(DatalogError::UnsupportedConstraint {
+                                rule: rule.id().clone(),
+                            });
+                        }
                     },
                     _ => {}
                 }
@@ -472,6 +477,9 @@ fn constraint(
             })
         }
         AtomView::Predicate(_, _) => Err(DatalogError::UnsupportedConstraint {
+            rule: rule.id().clone(),
+        }),
+        _ => Err(DatalogError::UnsupportedConstraint {
             rule: rule.id().clone(),
         }),
     }

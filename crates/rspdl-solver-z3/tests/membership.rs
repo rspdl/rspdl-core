@@ -38,8 +38,15 @@ fn finite_and_composite_membership_is_solved() {
         BooleanExpression::atom(Atom::member_of(Term::Variable(x), set).unwrap()),
     )
     .unwrap();
+    let rspdl_core::SolveResult::Sat(rspdl_core::CanonicalModel(values)) =
+        Z3Solver::new().solve(&p, SolveOptions::default()).unwrap()
+    else {
+        panic!("expected SAT")
+    };
     assert!(matches!(
-        Z3Solver::new().solve(&p, SolveOptions::default()).unwrap(),
-        rspdl_core::SolveResult::Sat(_)
+        values.get(&id("x")),
+        Some(value)
+            if value == &CanonicalValue::integer(1)
+                || value == &CanonicalValue::integer(3)
     ));
 }

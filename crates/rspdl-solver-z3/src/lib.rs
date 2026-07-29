@@ -54,6 +54,7 @@ impl Z3Solver {
                         Self::collect_term(x, out)
                     }
                 }
+                _ => {}
             },
             BooleanExpressionView::And(xs) | BooleanExpressionView::Or(xs) => {
                 for x in xs {
@@ -132,6 +133,9 @@ impl Z3Solver {
                     for a in args {
                         Self::validate_term(a, d)?
                     }
+                }
+                _ => {
+                    return Err(Z3SolverError::Unsupported("unknown atom expression".into()));
                 }
             },
             BooleanExpressionView::And(xs) | BooleanExpressionView::Or(xs) => {
@@ -326,7 +330,11 @@ impl Z3Solver {
                 AtomView::Predicate(_, _) => {
                     Err(Z3SolverError::Unsupported("predicate application".into()))
                 }
+                _ => Err(Z3SolverError::Unsupported("unknown atom expression".into())),
             },
+            _ => Err(Z3SolverError::Unsupported(
+                "unknown boolean expression".into(),
+            )),
         }
     }
     fn term(
@@ -409,6 +417,7 @@ impl Z3Solver {
                 let right = Self::membership(value, b, e)?.not();
                 Ok(Bool::and(&[&left, &right]))
             }
+            _ => Err(Z3SolverError::Unsupported("unknown set expression".into())),
         }
     }
     fn finite_membership(

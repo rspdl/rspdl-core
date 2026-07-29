@@ -96,6 +96,7 @@ pub enum ComparisonOperator {
     Ge,
 }
 
+#[non_exhaustive]
 pub enum AtomView<'a> {
     Equal(&'a Term, &'a Term),
     MemberOf(&'a Term, &'a SetExpression),
@@ -190,6 +191,7 @@ enum BooleanKind {
     Or(Vec<BooleanExpression>),
     Not(Box<BooleanExpression>),
 }
+#[non_exhaustive]
 pub enum BooleanExpressionView<'a> {
     Literal(bool),
     Atom(&'a Atom),

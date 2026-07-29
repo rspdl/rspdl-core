@@ -1,4 +1,8 @@
-use rspdl_core::*;
+use rspdl_core::{
+    Atom, BooleanExpression, CanonicalId, CanonicalModel, CanonicalType, CanonicalValue,
+    ComparisonOperator, ConstraintProblem, ConstraintSolver, Domain, EnumType, PredicateSignature,
+    SolveOptions, SolveResult, SolverContractError, Term, Variable, VariableDomain,
+};
 use rspdl_solver_z3::Z3Solver;
 use rspdl_solver_z3::Z3SolverError;
 fn id(x: &str) -> CanonicalId {
