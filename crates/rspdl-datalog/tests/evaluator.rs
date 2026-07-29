@@ -23,8 +23,8 @@ fn derives_transitive_closure_to_a_fixed_point() {
     let app =
         |p: &PredicateSignature, a: Vec<Term>| PredicateApplication::new(p.clone(), a).unwrap();
     let facts = vec![
-        Fact::new(app(&edge, vec![c(1), c(2)])),
-        Fact::new(app(&edge, vec![c(2), c(3)])),
+        Fact::new(app(&edge, vec![c(1), c(2)])).unwrap(),
+        Fact::new(app(&edge, vec![c(2), c(3)])).unwrap(),
     ];
     let r1 = DerivationRule::new(
         id("base"),
@@ -33,8 +33,7 @@ fn derives_transitive_closure_to_a_fixed_point() {
             &edge,
             vec![x.clone(), y.clone()],
         ))],
-    )
-    .unwrap();
+    );
     let r2 = DerivationRule::new(
         id("step"),
         app(&path, vec![x.clone(), z.clone()]),
@@ -48,8 +47,7 @@ fn derives_transitive_closure_to_a_fixed_point() {
                 ],
             )),
         ],
-    )
-    .unwrap();
+    );
     let p = LogicProgram::new(vec![edge, path.clone()], facts, vec![r1, r2]).unwrap();
     let (db, stats) = DatalogEvaluator::evaluate_with_stats(&p).unwrap();
     assert_eq!(db.tuples(path.id()).unwrap().len(), 3);
@@ -71,10 +69,8 @@ fn rejects_an_indirect_negative_cycle() {
             RuleLiteral::Positive(app(&base)),
             RuleLiteral::Negative(app(&q)),
         ],
-    )
-    .unwrap();
-    let r2 =
-        DerivationRule::new(id("q_rule"), app(&q), vec![RuleLiteral::Positive(app(&p))]).unwrap();
+    );
+    let r2 = DerivationRule::new(id("q_rule"), app(&q), vec![RuleLiteral::Positive(app(&p))]);
     let program = LogicProgram::new(vec![base, p, q], vec![], vec![r1, r2]).unwrap();
     assert!(DatalogEvaluator::evaluate(&program).is_err());
 }
@@ -93,13 +89,13 @@ fn completes_lower_stratum_before_applying_negation() {
             vec![Term::Constant(CanonicalValue::integer(1))],
         )
         .unwrap(),
-    );
+    )
+    .unwrap();
     let lower = DerivationRule::new(
         id("forbid"),
         app(&forbidden),
         vec![RuleLiteral::Positive(app(&base))],
-    )
-    .unwrap();
+    );
     let higher = DerivationRule::new(
         id("allow"),
         app(&allowed),
@@ -107,8 +103,7 @@ fn completes_lower_stratum_before_applying_negation() {
             RuleLiteral::Positive(app(&base)),
             RuleLiteral::Negative(app(&forbidden)),
         ],
-    )
-    .unwrap();
+    );
     let program = LogicProgram::new(
         vec![base, forbidden, allowed.clone()],
         vec![fact],
@@ -133,12 +128,11 @@ fn mutual_recursion_is_independent_of_rule_order() {
             vec![Term::Constant(CanonicalValue::integer(1))],
         )
         .unwrap(),
-    );
-    let rp =
-        DerivationRule::new(id("p"), app(&p), vec![RuleLiteral::Positive(app(&seed))]).unwrap();
-    let rq = DerivationRule::new(id("q"), app(&q), vec![RuleLiteral::Positive(app(&p))]).unwrap();
-    let back =
-        DerivationRule::new(id("back"), app(&p), vec![RuleLiteral::Positive(app(&q))]).unwrap();
+    )
+    .unwrap();
+    let rp = DerivationRule::new(id("p"), app(&p), vec![RuleLiteral::Positive(app(&seed))]);
+    let rq = DerivationRule::new(id("q"), app(&q), vec![RuleLiteral::Positive(app(&p))]);
+    let back = DerivationRule::new(id("back"), app(&p), vec![RuleLiteral::Positive(app(&q))]);
     let a = LogicProgram::new(
         vec![seed.clone(), p.clone(), q.clone()],
         vec![fact.clone()],
@@ -169,12 +163,12 @@ fn body_filter_order_does_not_change_derivation() {
         id("r"),
         h,
         vec![RuleLiteral::Constraint(eq), RuleLiteral::Positive(a)],
-    )
-    .unwrap();
+    );
     let fact = Fact::new(
         PredicateApplication::new(p.clone(), vec![Term::Constant(CanonicalValue::integer(1))])
             .unwrap(),
-    );
+    )
+    .unwrap();
     let db = DatalogEvaluator::evaluate(
         &LogicProgram::new(vec![p, q.clone()], vec![fact], vec![rule]).unwrap(),
     )
@@ -193,12 +187,12 @@ fn duplicate_facts_and_rules_are_deduplicated() {
         vec![RuleLiteral::Positive(
             PredicateApplication::new(p.clone(), vec![x]).unwrap(),
         )],
-    )
-    .unwrap();
+    );
     let fact = Fact::new(
         PredicateApplication::new(p.clone(), vec![Term::Constant(CanonicalValue::integer(1))])
             .unwrap(),
-    );
+    )
+    .unwrap();
     let db = DatalogEvaluator::evaluate(
         &LogicProgram::new(
             vec![p, q.clone()],
@@ -228,13 +222,13 @@ fn three_relation_join_excludes_nonmatching_tuples() {
             RuleLiteral::Positive(app(&b)),
             RuleLiteral::Positive(app(&c)),
         ],
-    )
-    .unwrap();
+    );
     let f = |p: &PredicateSignature, n| {
         Fact::new(
             PredicateApplication::new(p.clone(), vec![Term::Constant(CanonicalValue::integer(n))])
                 .unwrap(),
         )
+        .unwrap()
     };
     let db = DatalogEvaluator::evaluate(
         &LogicProgram::new(
@@ -257,8 +251,7 @@ fn unsafe_variables_include_rule_and_variable() {
         id("unsafe"),
         PredicateApplication::new(q.clone(), vec![x.clone()]).unwrap(),
         vec![],
-    )
-    .unwrap();
+    );
     let error =
         DatalogEvaluator::evaluate(&LogicProgram::new(vec![p, q], vec![], vec![rule]).unwrap())
             .unwrap_err();
@@ -281,8 +274,7 @@ fn membership_filters_bound_values_without_enumeration() {
                 Atom::member_of(x, SetExpression::domain(Domain::primes())).unwrap(),
             ),
         ],
-    )
-    .unwrap();
+    );
     let facts = [2, 5]
         .into_iter()
         .map(|n| {
@@ -293,6 +285,7 @@ fn membership_filters_bound_values_without_enumeration() {
                 )
                 .unwrap(),
             )
+            .unwrap()
         })
         .collect();
     let db = DatalogEvaluator::evaluate(
@@ -321,13 +314,13 @@ fn integer_filters_select_exact_bound_tuples() {
                 RuleLiteral::Constraint(Atom::member_of(x.clone(), set).unwrap()),
             ],
         )
-        .unwrap()
     };
     let f = |n| {
         Fact::new(
             PredicateApplication::new(p.clone(), vec![Term::Constant(CanonicalValue::integer(n))])
                 .unwrap(),
         )
+        .unwrap()
     };
     let rules = vec![
         make(

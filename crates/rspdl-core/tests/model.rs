@@ -231,6 +231,22 @@ fn equality_has_a_canonical_operand_order() {
 }
 
 #[test]
+fn logical_serialization_exposes_the_tagged_expression_directly() {
+    let atom = Atom::equal(
+        Term::Constant(CanonicalValue::integer(1)),
+        Term::Constant(CanonicalValue::integer(1)),
+    )
+    .unwrap();
+    let atom_json = serde_json::to_value(&atom).unwrap();
+    assert_eq!(atom_json["kind"], "equal");
+    assert!(atom_json.get("atom").is_none());
+
+    let expression_json = serde_json::to_value(BooleanExpression::atom(atom)).unwrap();
+    assert_eq!(expression_json["kind"], "atom");
+    assert!(expression_json.get("expression").is_none());
+}
+
+#[test]
 fn canonical_integer_text_has_one_representation() {
     assert!(CanonicalValue::integer_from_decimal("42").is_ok());
     for invalid in ["+42", "042", "-0", " 42"] {

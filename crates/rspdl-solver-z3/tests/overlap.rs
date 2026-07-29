@@ -33,7 +33,8 @@ fn accounting_overlap_is_sat_and_exclusive_is_unsat() {
             Domain::finite(CanonicalType::Enum(roles), [manager.clone()]).unwrap(),
         ),
     ];
-    let sat = ConstraintProblem::from_overlap(vars.clone(), permit.clone(), denial.clone());
+    let sat =
+        ConstraintProblem::from_overlap(vars.clone(), permit.clone(), denial.clone()).unwrap();
     let SolveResult::Sat(CanonicalModel(model)) = Z3Solver::new()
         .solve(&sat, SolveOptions::default())
         .unwrap()
@@ -43,7 +44,7 @@ fn accounting_overlap_is_sat_and_exclusive_is_unsat() {
     assert_eq!(model.get(&id("role")), Some(&manager));
     assert_eq!(model.get(&id("applicant")), model.get(&id("approver")));
     let no_self = BooleanExpression::and([permit, BooleanExpression::negate(denial.clone())]);
-    let unsat = ConstraintProblem::from_overlap(vars, no_self, denial);
+    let unsat = ConstraintProblem::from_overlap(vars, no_self, denial).unwrap();
     assert!(matches!(
         Z3Solver::new()
             .solve(&unsat, SolveOptions::default())
@@ -66,9 +67,9 @@ fn ground_accounting_rules_materialize_both_conditions() {
     let a = Term::Variable(Variable::new(id("a"), string.clone()));
     let app = |p: &PredicateSignature, args| PredicateApplication::new(p.clone(), args).unwrap();
     let facts = vec![
-        Fact::new(app(&manager, vec![alice.clone()])),
-        Fact::new(app(&applicant, vec![request.clone(), alice.clone()])),
-        Fact::new(app(&approver, vec![request.clone(), alice.clone()])),
+        Fact::new(app(&manager, vec![alice.clone()])).unwrap(),
+        Fact::new(app(&applicant, vec![request.clone(), alice.clone()])).unwrap(),
+        Fact::new(app(&approver, vec![request.clone(), alice.clone()])).unwrap(),
     ];
     let allow = DerivationRule::new(
         id("derive_approval"),
@@ -77,8 +78,7 @@ fn ground_accounting_rules_materialize_both_conditions() {
             RuleLiteral::Positive(app(&approver, vec![r.clone(), a.clone()])),
             RuleLiteral::Positive(app(&manager, vec![a.clone()])),
         ],
-    )
-    .unwrap();
+    );
     let self_rule = DerivationRule::new(
         id("derive_self"),
         app(&self_application, vec![r.clone()]),
@@ -86,8 +86,7 @@ fn ground_accounting_rules_materialize_both_conditions() {
             RuleLiteral::Positive(app(&applicant, vec![r.clone(), a.clone()])),
             RuleLiteral::Positive(app(&approver, vec![r, a])),
         ],
-    )
-    .unwrap();
+    );
     let program = LogicProgram::new(
         vec![
             manager,

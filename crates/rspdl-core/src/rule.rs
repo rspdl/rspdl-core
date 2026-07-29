@@ -1,3 +1,4 @@
+use crate::logic::validate_predicate_application;
 use crate::{Atom, CanonicalId, ModelError, PredicateSignature, Term};
 use std::collections::BTreeMap;
 
@@ -8,7 +9,7 @@ pub struct PredicateApplication {
 }
 impl PredicateApplication {
     pub fn new(signature: PredicateSignature, arguments: Vec<Term>) -> Result<Self, ModelError> {
-        Atom::predicate(signature.clone(), arguments.clone())?;
+        validate_predicate_application(&signature, &arguments)?;
         Ok(Self {
             signature,
             arguments,
@@ -26,8 +27,18 @@ pub struct Fact {
     application: PredicateApplication,
 }
 impl Fact {
-    pub fn new(application: PredicateApplication) -> Self {
-        Self { application }
+    pub fn new(application: PredicateApplication) -> Result<Self, ModelError> {
+        let variable = application.arguments().iter().find_map(|term| match term {
+            Term::Variable(variable) => Some(variable.id().clone()),
+            Term::Constant(_) => None,
+        });
+        if let Some(variable) = variable {
+            return Err(ModelError::NonGroundFact {
+                predicate: application.signature().id().clone(),
+                variable,
+            });
+        }
+        Ok(Self { application })
     }
     pub fn application(&self) -> &PredicateApplication {
         &self.application
@@ -46,12 +57,8 @@ pub struct DerivationRule {
     body: Vec<RuleLiteral>,
 }
 impl DerivationRule {
-    pub fn new(
-        id: CanonicalId,
-        head: PredicateApplication,
-        body: Vec<RuleLiteral>,
-    ) -> Result<Self, ModelError> {
-        Ok(Self { id, head, body })
+    pub fn new(id: CanonicalId, head: PredicateApplication, body: Vec<RuleLiteral>) -> Self {
+        Self { id, head, body }
     }
     pub fn id(&self) -> &CanonicalId {
         &self.id

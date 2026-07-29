@@ -105,6 +105,7 @@ pub enum AtomView<'a> {
 
 /// A type-checked atomic logical proposition.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct Atom {
     atom: AtomKind,
 }
@@ -131,17 +132,7 @@ impl Atom {
         signature: PredicateSignature,
         arguments: Vec<Term>,
     ) -> Result<Self, ModelError> {
-        if signature.parameter_types.len() != arguments.len() {
-            return Err(ModelError::ArityMismatch {
-                predicate: signature.id.clone(),
-                expected: signature.parameter_types.len(),
-                actual: arguments.len(),
-            });
-        }
-
-        for (expected, argument) in signature.parameter_types.iter().zip(&arguments) {
-            ensure_type("predicate argument", expected, argument.value_type())?;
-        }
+        validate_predicate_application(&signature, &arguments)?;
 
         Ok(Self {
             atom: AtomKind::Predicate {
@@ -209,8 +200,27 @@ pub enum BooleanExpressionView<'a> {
 
 /// A normalized boolean expression shared by rules, policies, and constraints.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct BooleanExpression {
     expression: BooleanKind,
+}
+
+pub(crate) fn validate_predicate_application(
+    signature: &PredicateSignature,
+    arguments: &[Term],
+) -> Result<(), ModelError> {
+    if signature.parameter_types.len() != arguments.len() {
+        return Err(ModelError::ArityMismatch {
+            predicate: signature.id.clone(),
+            expected: signature.parameter_types.len(),
+            actual: arguments.len(),
+        });
+    }
+
+    for (expected, argument) in signature.parameter_types.iter().zip(arguments) {
+        ensure_type("predicate argument", expected, argument.value_type())?;
+    }
+    Ok(())
 }
 
 impl BooleanExpression {

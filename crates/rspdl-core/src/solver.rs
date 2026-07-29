@@ -23,17 +23,28 @@ pub struct ConstraintProblem {
     assertion: BooleanExpression,
 }
 impl ConstraintProblem {
-    pub fn new(variables: Vec<VariableDomain>, assertion: BooleanExpression) -> Self {
-        Self {
+    pub fn new(
+        variables: Vec<VariableDomain>,
+        assertion: BooleanExpression,
+    ) -> Result<Self, SolverContractError> {
+        let mut declared = BTreeMap::new();
+        for variable in &variables {
+            if declared.insert(variable.id().clone(), ()).is_some() {
+                return Err(SolverContractError::DuplicateVariable(
+                    variable.id().clone(),
+                ));
+            }
+        }
+        Ok(Self {
             variables,
             assertion,
-        }
+        })
     }
     pub fn from_overlap(
         variables: Vec<VariableDomain>,
         left: BooleanExpression,
         right: BooleanExpression,
-    ) -> Self {
+    ) -> Result<Self, SolverContractError> {
         Self::new(variables, BooleanExpression::and([left, right]))
     }
     pub fn variables(&self) -> &[VariableDomain] {
@@ -75,7 +86,7 @@ pub enum SolveResult {
     Unknown { reason: String },
 }
 pub trait ConstraintSolver {
-    type Error;
+    type Error: std::error::Error + Send + Sync + 'static;
     fn solve(
         &self,
         problem: &ConstraintProblem,
@@ -86,4 +97,6 @@ pub trait ConstraintSolver {
 pub enum SolverContractError {
     #[error("solver timeout must be non-zero")]
     ZeroTimeout,
+    #[error("duplicate variable `{0}`")]
+    DuplicateVariable(CanonicalId),
 }

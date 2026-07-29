@@ -24,7 +24,8 @@ fn unbounded_integer_sat_and_unsat() {
         )
         .unwrap(),
     );
-    let p = ConstraintProblem::new(vec![d.clone()], BooleanExpression::and([gt.clone(), lt]));
+    let p =
+        ConstraintProblem::new(vec![d.clone()], BooleanExpression::and([gt.clone(), lt])).unwrap();
     let SolveResult::Sat(CanonicalModel(model)) =
         Z3Solver::new().solve(&p, SolveOptions::default()).unwrap()
     else {
@@ -45,7 +46,8 @@ fn unbounded_integer_sat_and_unsat() {
                 .unwrap(),
             ),
         ]),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         Z3Solver::new()
             .solve(&bad, SolveOptions::default())
@@ -89,7 +91,8 @@ fn string_and_boolean_models_are_exact() {
                 .unwrap(),
             ),
         ]),
-    );
+    )
+    .unwrap();
     let SolveResult::Sat(CanonicalModel(m)) =
         Z3Solver::new().solve(&p, SolveOptions::default()).unwrap()
     else {
@@ -104,7 +107,8 @@ fn prime_and_predicate_are_unsupported() {
     let prime = ConstraintProblem::new(
         vec![VariableDomain::new(id("x"), Domain::primes())],
         BooleanExpression::literal(true),
-    );
+    )
+    .unwrap();
     assert!(
         Z3Solver::new()
             .solve(&prime, SolveOptions::default())
@@ -114,7 +118,8 @@ fn prime_and_predicate_are_unsupported() {
     let pred = ConstraintProblem::new(
         vec![],
         BooleanExpression::atom(Atom::predicate(sig, vec![]).unwrap()),
-    );
+    )
+    .unwrap();
     assert!(
         Z3Solver::new()
             .solve(&pred, SolveOptions::default())
@@ -166,7 +171,8 @@ fn model_completion_returns_all_declared_types_in_key_order() {
             ),
         ],
         BooleanExpression::literal(true),
-    );
+    )
+    .unwrap();
     let SolveResult::Sat(CanonicalModel(model)) =
         Z3Solver::new().solve(&p, SolveOptions::default()).unwrap()
     else {
@@ -189,9 +195,10 @@ fn declaration_validation_is_structured() {
         ],
         BooleanExpression::literal(true),
     );
-    assert!(
-        matches!(Z3Solver::new().solve(&duplicate,SolveOptions::default()),Err(Z3SolverError::DuplicateVariable(ref x))if x==&id("x"))
-    );
+    assert!(matches!(
+        duplicate,
+        Err(SolverContractError::DuplicateVariable(ref x)) if x == &id("x")
+    ));
     let b = Variable::new(id("x"), CanonicalType::Boolean);
     let mismatch = ConstraintProblem::new(
         vec![VariableDomain::new(id("x"), Domain::integers())],
@@ -202,7 +209,8 @@ fn declaration_validation_is_structured() {
             )
             .unwrap(),
         ),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         Z3Solver::new().solve(&mismatch, SolveOptions::default()),
         Err(Z3SolverError::VariableTypeMismatch {

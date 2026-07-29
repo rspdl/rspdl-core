@@ -126,21 +126,21 @@ impl Domain {
     }
 
     pub fn infinite_kind(&self) -> Option<InfiniteDomain> {
-        match self.domain {
+        match &self.domain {
             DomainKind::Finite(_) => None,
-            DomainKind::Infinite(domain) => Some(domain),
+            DomainKind::Infinite(domain) => Some(*domain),
         }
     }
 
     pub fn contains(&self, value: &CanonicalValue) -> Result<bool, ModelError> {
         ensure_type("domain membership", &self.value_type, value.value_type())?;
-        Ok(match &self.domain {
-            DomainKind::Finite(values) => values.contains(value),
-            DomainKind::Infinite(InfiniteDomain::Integers | InfiniteDomain::Strings) => true,
+        match &self.domain {
+            DomainKind::Finite(values) => Ok(values.contains(value)),
+            DomainKind::Infinite(InfiniteDomain::Integers | InfiniteDomain::Strings) => Ok(true),
             DomainKind::Infinite(InfiniteDomain::Primes) => {
                 value.satisfies_refinement(crate::types::BuiltinRefinement::Prime)
             }
-        })
+        }
     }
 
     pub fn capabilities(&self) -> DomainCapabilities {

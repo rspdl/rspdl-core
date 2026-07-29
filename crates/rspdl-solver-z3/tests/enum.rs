@@ -30,7 +30,8 @@ fn enum_symbols_are_collision_free() {
             BooleanExpression::atom(Atom::equal(Term::Variable(x), Term::Constant(xv)).unwrap()),
             BooleanExpression::atom(Atom::equal(Term::Variable(y), Term::Constant(yv)).unwrap()),
         ]),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         Z3Solver::new().solve(&p, SolveOptions::default()).unwrap(),
         rspdl_core::SolveResult::Sat(_)
@@ -50,7 +51,8 @@ fn constant_only_enum_equality_is_exact() {
                     BooleanExpression::atom(
                         Atom::equal(Term::Constant(x), Term::Constant(y)).unwrap(),
                     ),
-                ),
+                )
+                .unwrap(),
                 SolveOptions::default(),
             )
             .unwrap()
@@ -84,7 +86,8 @@ fn enum_sat_returns_canonical_variant() {
         BooleanExpression::atom(
             Atom::equal(Term::Variable(v), Term::Constant(admin.clone())).unwrap(),
         ),
-    );
+    )
+    .unwrap();
     let rspdl_core::SolveResult::Sat(rspdl_core::CanonicalModel(values)) =
         Z3Solver::new().solve(&p, SolveOptions::default()).unwrap()
     else {
@@ -110,7 +113,8 @@ fn enum_distinct_equalities_are_unsat_and_reusable() {
             ),
             BooleanExpression::atom(Atom::equal(Term::Variable(v), Term::Constant(b)).unwrap()),
         ]),
-    );
+    )
+    .unwrap();
     let s = Z3Solver::new();
     assert!(matches!(
         s.solve(&p, SolveOptions::default()).unwrap(),

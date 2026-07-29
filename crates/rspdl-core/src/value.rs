@@ -2,7 +2,8 @@ use std::fmt;
 use std::str::FromStr;
 
 use num_bigint::BigInt;
-use num_traits::{Signed, Zero};
+use num_prime::nt_funcs::is_prime64;
+use num_traits::{Signed, ToPrimitive};
 use serde::{Serialize, Serializer};
 
 use crate::error::ModelError;
@@ -108,7 +109,7 @@ impl CanonicalValue {
 
     pub fn prime(value: impl Into<CanonicalInteger>) -> Result<Self, ModelError> {
         let value = value.into();
-        if !is_prime(value.as_bigint()) {
+        if !is_prime(value.as_bigint())? {
             return Err(ModelError::InvalidRefinedValue {
                 value_type: CanonicalType::prime(),
                 value: value.to_string(),
@@ -153,34 +154,26 @@ impl CanonicalValue {
         }
     }
 
-    pub fn satisfies_refinement(&self, refinement: BuiltinRefinement) -> bool {
+    pub fn satisfies_refinement(&self, refinement: BuiltinRefinement) -> Result<bool, ModelError> {
         match (refinement, self.as_integer()) {
             (BuiltinRefinement::Prime, Some(value)) => is_prime(value.as_bigint()),
-            (BuiltinRefinement::Prime, None) => false,
+            (BuiltinRefinement::Prime, None) => Ok(false),
         }
     }
 }
 
-fn is_prime(value: &BigInt) -> bool {
+fn is_prime(value: &BigInt) -> Result<bool, ModelError> {
     if value.is_negative() || value < &BigInt::from(2_u8) {
-        return false;
+        return Ok(false);
     }
-    if value == &BigInt::from(2_u8) || value == &BigInt::from(3_u8) {
-        return true;
-    }
-    if (value % 2_u8).is_zero() || (value % 3_u8).is_zero() {
-        return false;
-    }
-
-    let mut divisor = BigInt::from(5_u8);
-    let six = BigInt::from(6_u8);
-    while divisor <= (value / &divisor) {
-        if (value % &divisor).is_zero() || (value % (&divisor + 2_u8)).is_zero() {
-            return false;
-        }
-        divisor += &six;
-    }
-    true
+    let value = value
+        .to_u64()
+        .ok_or_else(|| ModelError::RefinementMagnitudeExceeded {
+            refinement: "prime",
+            value: value.to_string(),
+            maximum: "18446744073709551615",
+        })?;
+    Ok(is_prime64(value))
 }
 
 #[cfg(test)]
@@ -191,10 +184,19 @@ mod tests {
     #[test]
     fn primality_is_exact_for_boundaries_and_a_larger_value() {
         for composite in [-7_i64, 0, 1, 4, 9, 104_730] {
-            assert!(!is_prime(&BigInt::from(composite)), "{composite}");
+            assert!(!is_prime(&BigInt::from(composite)).unwrap(), "{composite}");
         }
         for prime in [2_i64, 3, 5, 104_729] {
-            assert!(is_prime(&BigInt::from(prime)), "{prime}");
+            assert!(is_prime(&BigInt::from(prime)).unwrap(), "{prime}");
         }
+    }
+
+    #[test]
+    fn primality_rejects_values_above_the_exact_supported_range() {
+        let too_large = BigInt::from(u64::MAX) + 1_u8;
+        assert!(matches!(
+            is_prime(&too_large),
+            Err(crate::ModelError::RefinementMagnitudeExceeded { .. })
+        ));
     }
 }

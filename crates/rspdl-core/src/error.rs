@@ -33,6 +33,15 @@ pub enum ModelError {
         value: String,
     },
 
+    #[error(
+        "value `{value}` exceeds the supported magnitude for refinement `{refinement}` (maximum `{maximum}`)"
+    )]
+    RefinementMagnitudeExceeded {
+        refinement: &'static str,
+        value: String,
+        maximum: &'static str,
+    },
+
     #[error("type mismatch in {context}: expected `{expected}`, received `{actual}`")]
     TypeMismatch {
         context: &'static str,
@@ -59,4 +68,10 @@ pub enum ModelError {
     UnknownPredicate { predicate: CanonicalId },
     #[error("predicate `{predicate}` has conflicting signatures")]
     ConflictingPredicateSignature { predicate: CanonicalId },
+
+    #[error("fact for predicate `{predicate}` contains variable `{variable}`")]
+    NonGroundFact {
+        predicate: CanonicalId,
+        variable: CanonicalId,
+    },
 }

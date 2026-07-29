@@ -36,7 +36,8 @@ fn finite_and_composite_membership_is_solved() {
             .unwrap(),
         )],
         BooleanExpression::atom(Atom::member_of(Term::Variable(x), set).unwrap()),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         Z3Solver::new().solve(&p, SolveOptions::default()).unwrap(),
         rspdl_core::SolveResult::Sat(_)
