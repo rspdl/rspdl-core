@@ -13,7 +13,9 @@ related:
   - rspdl-compiler-architecture
   - rspdl-language-prd
   - controlled-korean-surface-grammar
-last_updated: "2026-07-27"
+  - stratified-datalog-and-typed-solver
+  - typed-domains-and-logic-core
+last_updated: "2026-07-28"
 owners:
   - rspdl-maintainers
 ---
@@ -28,3 +30,5 @@ owners:
 | `rspdl-compiler-architecture` | `architecture` | `proposed` | [RSPDL Compiler Architecture](architecture.md) | Defines the Korean-first Rust compiler boundaries, dependency direction, pipeline, and test architecture. | `rust`, `compiler-architecture`, `ko-KR`, `semantic-ir`, `diagnostics`, `conformance` |
 | `rspdl-language-prd` | `prd` | `draft` | [RSPDL Language Product Requirements Document](prd.md) | Defines the goals, semantics, multilingual model, and conformance requirements of the RSPDL language. | `language-design`, `multilingual-frontends`, `semantic-ir`, `semantic-analysis`, `conformance` |
 | `controlled-korean-surface-grammar` | `rfc` | `proposed` | [Controlled Korean Surface Grammar](rfcs/0001-controlled-korean-surface-grammar.md) | Proposes a deterministic Korean surface grammar that treats particles and endings as structural markers rather than morphology. | `ko-KR`, `controlled-language`, `surface-grammar`, `cfg`, `parser`, `diagnostics` |
+| `stratified-datalog-and-typed-solver` | `rfc` | `proposed` | [Stratified Datalog and Typed Solver](rfcs/0003-stratified-datalog-and-typed-solver.md) | Defines active-domain stratified Datalog evaluation and the typed constraint-solver contract. | `datalog`, `stratification`, `smt`, `z3`, `constraints` |
+| `typed-domains-and-logic-core` | `rfc` | `proposed` | [정규화 타입·도메인과 논리 IR 코어](rfcs/0002-typed-domains-and-logic-core.md) | Defines normalized data types, finite and computable infinite domains, typed set algebra, and the shared logical expression core. | `type-system`, `data-model`, `domains`, `set-algebra`, `datalog`, `smt` |

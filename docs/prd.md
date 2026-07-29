@@ -168,7 +168,7 @@ CST와 AST는 Locale마다 달라도 되지만, Canonical IR과 진단의 의미
 
 - RSPDL의 정식 풀네임과 파일 확장자
 - 구체적인 문법과 예약어
-- 타입 시스템과 조건식의 표현 범위
+- 사용자 정의 refinement, 추가 primitive와 조건식 연산의 표현 범위
 - 모듈·import·버전 선언 문법
 - 정책 충돌 시 우선순위와 평가 의미
 - core semantic rule과 확장 rulepack의 경계
