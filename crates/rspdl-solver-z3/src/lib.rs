@@ -15,8 +15,6 @@ use z3::{
 };
 #[derive(Debug, thiserror::Error)]
 pub enum Z3SolverError {
-    #[error("duplicate variable `{0}`")]
-    DuplicateVariable(CanonicalId),
     #[error("variable `{variable}` declared `{declared}` but used as `{actual}`")]
     VariableTypeMismatch {
         variable: CanonicalId,
@@ -100,6 +98,25 @@ impl Z3Solver {
             variant
         )
     }
+    fn canonical_integer_text(value: &Int) -> Result<String, Z3SolverError> {
+        if let Some(value) = value.as_i64() {
+            return Ok(value.to_string());
+        }
+
+        let rendered = value.to_string();
+        if rendered.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Ok(rendered);
+        }
+        if let Some(magnitude) = rendered
+            .strip_prefix("(- ")
+            .and_then(|value| value.strip_suffix(')'))
+            && !magnitude.is_empty()
+            && magnitude.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return Ok(format!("-{magnitude}"));
+        }
+        Err(Z3SolverError::InvalidModel)
+    }
     fn validate_expression(
         x: &BooleanExpression,
         d: &BTreeMap<CanonicalId, CanonicalType>,
@@ -161,18 +178,16 @@ impl Z3Solver {
         p: &ConstraintProblem,
         o: SolveOptions,
     ) -> Result<SolveResult, Z3SolverError> {
-        let mut declared = BTreeMap::new();
-        for variable in p.variables() {
-            if declared
-                .insert(
+        let declared = p
+            .variables()
+            .iter()
+            .map(|variable| {
+                (
                     variable.id().clone(),
                     variable.domain().value_type().clone(),
                 )
-                .is_some()
-            {
-                return Err(Z3SolverError::DuplicateVariable(variable.id().clone()));
-            }
-        }
+            })
+            .collect();
         Self::validate_expression(p.assertion(), &declared)?;
         let solver = Solver::new();
         let mut params = Params::new();
@@ -188,21 +203,7 @@ impl Z3Solver {
             if let CanonicalType::Enum(kind) = variable.domain().value_type()
                 && !enums.contains_key(kind)
             {
-                let names: Vec<Symbol> = kind
-                    .variants()
-                    .iter()
-                    .map(|x| Self::enum_symbol(kind, x).into())
-                    .collect();
-                let (sort, constructors, testers) =
-                    Sort::enumeration(Self::symbol("rspdl_t", kind.id()).into(), &names);
-                enums.insert(
-                    kind.clone(),
-                    EnumEncoding {
-                        sort,
-                        constructors: kind.variants().iter().cloned().zip(constructors).collect(),
-                        testers: kind.variants().iter().cloned().zip(testers).collect(),
-                    },
-                );
+                Self::insert_enum(&mut enums, kind);
             }
         }
         for kind in enum_types {
@@ -245,12 +246,7 @@ impl Z3Solver {
                 let mut out = BTreeMap::new();
                 for (id, a) in vars {
                     let value = m.eval(&a, true).ok_or(Z3SolverError::InvalidModel)?;
-                    let kind = p
-                        .variables()
-                        .iter()
-                        .find(|v| v.id() == &id)
-                        .map(|v| v.domain().value_type())
-                        .ok_or(Z3SolverError::InvalidModel)?;
+                    let kind = declared.get(&id).ok_or(Z3SolverError::InvalidModel)?;
                     let cv = if let CanonicalType::Enum(kind) = kind {
                         let encoding = enums.get(kind).ok_or(Z3SolverError::InvalidModel)?;
                         let variant = kind
@@ -271,7 +267,7 @@ impl Z3Solver {
                     } else if let Some(x) = value.as_bool() {
                         CanonicalValue::boolean(x.as_bool().ok_or(Z3SolverError::InvalidModel)?)
                     } else if let Some(x) = value.as_int() {
-                        CanonicalValue::integer_from_decimal(x.to_string())
+                        CanonicalValue::integer_from_decimal(Self::canonical_integer_text(&x)?)
                             .map_err(|_| Z3SolverError::InvalidModel)?
                     } else if let Some(x) = value.as_string() {
                         CanonicalValue::string(x.as_string().ok_or(Z3SolverError::InvalidModel)?)
@@ -344,15 +340,25 @@ impl Z3Solver {
                 .cloned()
                 .ok_or_else(|| Z3SolverError::UnknownVariable(x.id().clone())),
             Term::Constant(x) => match x.value_type() {
-                CanonicalType::Boolean => {
-                    Ok(Dynamic::from_ast(&Bool::from_bool(x.as_boolean().unwrap())))
+                CanonicalType::Boolean => Ok(Dynamic::from_ast(&Bool::from_bool(
+                    x.as_boolean().ok_or(Z3SolverError::InvalidModel)?,
+                ))),
+                CanonicalType::Integer => {
+                    let text = x
+                        .as_integer()
+                        .ok_or(Z3SolverError::InvalidModel)?
+                        .to_string();
+                    let value = Int::from_str(&text).map_err(|_| {
+                        Z3SolverError::Unsupported(format!("integer constant `{text}`"))
+                    })?;
+                    Ok(Dynamic::from_ast(&value))
                 }
-                CanonicalType::Integer => Ok(Dynamic::from_ast(
-                    &Int::from_str(&x.as_integer().unwrap().to_string()).unwrap(),
-                )),
-                CanonicalType::String => Ok(Dynamic::from_ast(
-                    &Z3String::from_str(x.as_string().unwrap()).unwrap(),
-                )),
+                CanonicalType::String => {
+                    let text = x.as_string().ok_or(Z3SolverError::InvalidModel)?;
+                    let value = Z3String::from_str(text)
+                        .map_err(|_| Z3SolverError::Unsupported("string constant".into()))?;
+                    Ok(Dynamic::from_ast(&value))
+                }
                 CanonicalType::Enum(kind) => {
                     let encoding = e.get(kind).ok_or(Z3SolverError::InvalidModel)?;
                     let variant = x.as_enum_variant().ok_or(Z3SolverError::InvalidModel)?;

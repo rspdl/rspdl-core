@@ -57,6 +57,29 @@ fn unbounded_integer_sat_and_unsat() {
 }
 
 #[test]
+fn arbitrary_precision_integer_models_preserve_sign_and_magnitude() {
+    for decimal in ["-1", "-9223372036854775809", "18446744073709551616"] {
+        let variable = Variable::new(id("x"), CanonicalType::Integer);
+        let expected = CanonicalValue::integer_from_decimal(decimal).unwrap();
+        let problem = ConstraintProblem::new(
+            vec![VariableDomain::new(id("x"), Domain::integers())],
+            BooleanExpression::atom(
+                Atom::equal(Term::Variable(variable), Term::Constant(expected.clone())).unwrap(),
+            ),
+        )
+        .unwrap();
+
+        let SolveResult::Sat(CanonicalModel(model)) = Z3Solver::new()
+            .solve(&problem, SolveOptions::default())
+            .unwrap()
+        else {
+            panic!("expected SAT for {decimal}")
+        };
+        assert_eq!(model.get(&id("x")), Some(&expected));
+    }
+}
+
+#[test]
 fn string_and_boolean_models_are_exact() {
     let s = Variable::new(id("s"), CanonicalType::String);
     let b = Variable::new(id("b"), CanonicalType::Boolean);
@@ -103,28 +126,47 @@ fn string_and_boolean_models_are_exact() {
 }
 
 #[test]
+fn invalid_z3_string_constants_return_an_error() {
+    let variable = Variable::new(id("s"), CanonicalType::String);
+    let problem = ConstraintProblem::new(
+        vec![VariableDomain::new(id("s"), Domain::strings())],
+        BooleanExpression::atom(
+            Atom::equal(
+                Term::Variable(variable),
+                Term::Constant(CanonicalValue::string("nul\0byte")),
+            )
+            .unwrap(),
+        ),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        Z3Solver::new().solve(&problem, SolveOptions::default()),
+        Err(Z3SolverError::Unsupported(_))
+    ));
+}
+
+#[test]
 fn prime_and_predicate_are_unsupported() {
     let prime = ConstraintProblem::new(
         vec![VariableDomain::new(id("x"), Domain::primes())],
         BooleanExpression::literal(true),
     )
     .unwrap();
-    assert!(
-        Z3Solver::new()
-            .solve(&prime, SolveOptions::default())
-            .is_err()
-    );
+    assert!(matches!(
+        Z3Solver::new().solve(&prime, SolveOptions::default()),
+        Err(Z3SolverError::Unsupported(_))
+    ));
     let sig = PredicateSignature::new(id("p"), vec![]);
     let pred = ConstraintProblem::new(
         vec![],
         BooleanExpression::atom(Atom::predicate(sig, vec![]).unwrap()),
     )
     .unwrap();
-    assert!(
-        Z3Solver::new()
-            .solve(&pred, SolveOptions::default())
-            .is_err()
-    );
+    assert!(matches!(
+        Z3Solver::new().solve(&pred, SolveOptions::default()),
+        Err(Z3SolverError::Unsupported(_))
+    ));
 }
 
 #[test]
