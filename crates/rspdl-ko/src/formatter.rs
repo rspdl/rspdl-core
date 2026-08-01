@@ -1,0 +1,249 @@
+use crate::ast::*;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FormatError {
+    message: String,
+}
+
+impl FormatError {
+    fn unsupported_constraint(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for FormatError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for FormatError {}
+
+pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
+    let mut output = String::new();
+    output.push_str(&format!(
+        "@모듈 {}({})\n",
+        surface(&document.module.declaration.name),
+        document.module.declaration.id
+    ));
+    for (index, declaration) in document.declarations.iter().enumerate() {
+        let previous = index
+            .checked_sub(1)
+            .and_then(|previous| document.declarations.get(previous));
+        if !is_symbol_declaration(declaration) || !previous.is_some_and(is_symbol_declaration) {
+            output.push('\n');
+        }
+        match declaration {
+            DeclarationAst::Enum(value) => {
+                output.push_str(&format!(
+                    "@열거형 {}({}){} 다음 값 중 하나다.\n",
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    if has_final_consonant(&value.declaration.name) {
+                        "은"
+                    } else {
+                        "는"
+                    }
+                ));
+                for variant in &value.values {
+                    output.push_str(&format!(
+                        "    {}({})\n",
+                        surface(&variant.declaration.name),
+                        variant.declaration.id
+                    ));
+                }
+            }
+            DeclarationAst::DataModel(value) => {
+                output.push_str(&format!(
+                    "{}({}){} 다음 필드들로 구성되어 있다.\n",
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    if has_final_consonant(&value.declaration.name) {
+                        "은"
+                    } else {
+                        "는"
+                    }
+                ));
+                for field in &value.fields {
+                    output.push_str(&format!(
+                        "    {}({}): {} {}\n",
+                        surface(&field.declaration.name),
+                        field.declaration.id,
+                        if field.required { "필수" } else { "선택" },
+                        type_reference(&field.value_type)
+                    ));
+                }
+            }
+            DeclarationAst::Constraint(value) => {
+                output.push_str(&format!("{}\n", constraint(&value.expression)?));
+            }
+            DeclarationAst::Role(value) => output.push_str(&format!(
+                "@역할 {}({})\n",
+                surface(&value.declaration.name),
+                value.declaration.id
+            )),
+            DeclarationAst::Action(value) => output.push_str(&format!(
+                "@행동 {}({})\n",
+                surface(&value.declaration.name),
+                value.declaration.id
+            )),
+            DeclarationAst::Policy(value) => {
+                let role = marked(&value.role, "은", "는");
+                let field = marked(&value.field, "을", "를");
+                output.push_str(&format!(
+                    "{} {}의 {} {}할 수 {}.\n",
+                    role,
+                    surface(&value.model),
+                    field,
+                    surface(&value.action),
+                    match value.effect {
+                        PolicyEffectAst::Allow => "있다",
+                        PolicyEffectAst::Deny => "없다",
+                    }
+                ));
+            }
+        }
+    }
+    Ok(output)
+}
+
+fn is_symbol_declaration(declaration: &DeclarationAst) -> bool {
+    matches!(
+        declaration,
+        DeclarationAst::Role(_) | DeclarationAst::Action(_)
+    )
+}
+
+fn constraint(expression: &ConstraintExpressionAst) -> Result<String, FormatError> {
+    let model = format!("{}의", surface(&expression.model));
+    match (&expression.left, &expression.right) {
+        (OperandAst::Field(left), OperandAst::Field(right)) => match expression.operator {
+            RelationOperatorAst::Equal | RelationOperatorAst::NotEqual => Ok(format!(
+                "{} {} {} {} 한다.",
+                model,
+                marked(left, "과", "와"),
+                marked(right, "은", "는"),
+                match expression.operator {
+                    RelationOperatorAst::Equal => "같아야",
+                    RelationOperatorAst::NotEqual => "달라야",
+                    _ => unreachable!("operator was checked above"),
+                },
+            )),
+            operator => Err(FormatError::unsupported_constraint(format!(
+                "필드끼리의 `{operator:?}` 제약은 Korean v0.1 문법으로 format할 수 없습니다."
+            ))),
+        },
+        (OperandAst::Field(left), OperandAst::Literal(literal)) => {
+            let left = marked(left, "은", "는");
+            let literal = literal_text(literal);
+            match expression.operator {
+                RelationOperatorAst::GreaterThan => {
+                    Ok(format!("{model} {left} {literal}보다 커야 한다."))
+                }
+                RelationOperatorAst::GreaterThanOrEqual => {
+                    Ok(format!("{model} {left} {literal} 이상이어야 한다."))
+                }
+                RelationOperatorAst::LessThan => {
+                    Ok(format!("{model} {left} {literal}보다 작아야 한다."))
+                }
+                RelationOperatorAst::LessThanOrEqual => {
+                    Ok(format!("{model} {left} {literal} 이하여야 한다."))
+                }
+                RelationOperatorAst::Equal => Ok(format!("{model} {left} {literal}이어야 한다.")),
+                RelationOperatorAst::NotEqual => Ok(format!(
+                    "{model} {left} {} 달라야 한다.",
+                    marked(&literal, "과", "와")
+                )),
+            }
+        }
+        _ => Err(FormatError::unsupported_constraint(
+            "Korean v0.1 문법은 제약의 왼쪽 피연산자로 필드만 지원합니다.",
+        )),
+    }
+}
+
+fn type_reference(value: &TypeReferenceAst) -> String {
+    match value {
+        TypeReferenceAst::String => "문자열".into(),
+        TypeReferenceAst::Integer => "정수".into(),
+        TypeReferenceAst::Boolean => "불리언".into(),
+        TypeReferenceAst::Named(value) => surface(value),
+    }
+}
+
+fn literal_text(value: &LiteralAst) -> String {
+    match value {
+        LiteralAst::String(value) => serde_json::to_string(value).expect("string serializes"),
+        LiteralAst::Integer(value) => value.clone(),
+        LiteralAst::Boolean(true) => "참".into(),
+        LiteralAst::Boolean(false) => "거짓".into(),
+        LiteralAst::Named(value) => surface(value),
+    }
+}
+
+fn surface(value: &str) -> String {
+    if value.chars().all(|character| {
+        !character.is_control()
+            && !matches!(character, '`' | '[' | ']' | '(' | ')' | ':' | '.' | '#')
+    }) {
+        value.to_owned()
+    } else {
+        format!("`{value}`")
+    }
+}
+
+fn marked(value: &str, consonant: &str, vowel: &str) -> String {
+    format!(
+        "{}{}",
+        surface(value),
+        if has_final_consonant(value) {
+            consonant
+        } else {
+            vowel
+        }
+    )
+}
+
+fn has_final_consonant(value: &str) -> bool {
+    value
+        .chars()
+        .last()
+        .filter(|character| ('가'..='힣').contains(character))
+        .is_some_and(|character| (character as u32 - '가' as u32) % 28 != 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{lower, parse};
+
+    use super::*;
+
+    #[test]
+    fn formatting_is_idempotent() {
+        let source = "@모듈 승인(approval)\n신청(request)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n신청의 금액은 0보다 커야 한다.\n@역할 관리자(manager)\n@행동 변경(change)\n관리자는 신청의 금액을 변경할 수 있다.\n";
+        let original = parse(source).document.unwrap();
+        let original_module = lower(&original).module.unwrap();
+        let first = format_document(&original).unwrap();
+        let formatted = parse(&first).document.unwrap();
+        let second = format_document(&formatted).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(original_module, lower(&formatted).module.unwrap());
+    }
+
+    #[test]
+    fn literal_not_equal_constraints_round_trip() {
+        let source = "@모듈 비교(comparison)\n항목(item)은 다음 필드들로 구성되어 있다.\n  값(value): 필수 정수\n항목의 값은 0과 달라야 한다.\n";
+        let original = parse(source).document.unwrap();
+        let lowered = lower(&original);
+        let original_module = lowered
+            .module
+            .unwrap_or_else(|| panic!("{:?}", lowered.diagnostics));
+
+        let formatted = format_document(&original).unwrap();
+        let reparsed = parse(&formatted).document.unwrap();
+
+        assert_eq!(original_module, lower(&reparsed).module.unwrap());
+    }
+}

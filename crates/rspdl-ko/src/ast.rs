@@ -1,0 +1,149 @@
+use serde::Serialize;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl Span {
+    pub fn join(self, other: Self) -> Self {
+        Self {
+            start: self.start.min(other.start),
+            end: self.end.max(other.end),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct NamedIdAst {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    pub id: String,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ModuleAst {
+    pub declaration: NamedIdAst,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EnumValueAst {
+    pub declaration: NamedIdAst,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EnumAst {
+    pub declaration: NamedIdAst,
+    pub values: Vec<EnumValueAst>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "name", rename_all = "snake_case")]
+pub enum TypeReferenceAst {
+    String,
+    Integer,
+    Boolean,
+    Named(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FieldAst {
+    pub declaration: NamedIdAst,
+    pub required: bool,
+    pub value_type: TypeReferenceAst,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DataModelAst {
+    pub declaration: NamedIdAst,
+    pub fields: Vec<FieldAst>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationOperatorAst {
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum LiteralAst {
+    String(String),
+    Integer(String),
+    Boolean(bool),
+    Named(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum OperandAst {
+    Field(String),
+    Literal(LiteralAst),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ConstraintExpressionAst {
+    pub model: String,
+    pub left: OperandAst,
+    pub operator: RelationOperatorAst,
+    pub right: OperandAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ConstraintAst {
+    pub declaration: NamedIdAst,
+    pub expression: ConstraintExpressionAst,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RoleAst {
+    pub declaration: NamedIdAst,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ActionAst {
+    pub declaration: NamedIdAst,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PolicyEffectAst {
+    Allow,
+    Deny,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PolicyAst {
+    pub declaration: NamedIdAst,
+    pub role: String,
+    pub model: String,
+    pub field: String,
+    pub action: String,
+    pub effect: PolicyEffectAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
+pub enum DeclarationAst {
+    Enum(EnumAst),
+    DataModel(DataModelAst),
+    Constraint(ConstraintAst),
+    Role(RoleAst),
+    Action(ActionAst),
+    Policy(PolicyAst),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DocumentAst {
+    pub module: ModuleAst,
+    pub declarations: Vec<DeclarationAst>,
+}
