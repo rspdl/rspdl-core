@@ -14,6 +14,12 @@ pub enum ModelError {
     #[error("enum type `{type_id}` must declare at least one variant")]
     EmptyEnum { type_id: CanonicalId },
 
+    #[error("enum type `{type_id}` declares variant `{variant}` more than once")]
+    DuplicateEnumVariant {
+        type_id: CanonicalId,
+        variant: CanonicalId,
+    },
+
     #[error("`{variant}` is not a variant of enum type `{type_id}`")]
     UnknownEnumVariant {
         type_id: CanonicalId,

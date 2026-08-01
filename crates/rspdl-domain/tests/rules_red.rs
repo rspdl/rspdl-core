@@ -1,4 +1,4 @@
-use rspdl_core::{
+use rspdl_domain::{
     CanonicalId, CanonicalType, Fact, LogicProgram, ModelError, PredicateApplication,
     PredicateSignature, Term, Variable,
 };

@@ -1,8 +1,8 @@
-use rspdl_core::{
+use rspdl_datalog::DatalogEvaluator;
+use rspdl_domain::{
     Atom, CanonicalId, CanonicalType, CanonicalValue, DerivationRule, Domain, Fact, LogicProgram,
     PredicateApplication, PredicateSignature, RuleLiteral, SetExpression, Term, Variable,
 };
-use rspdl_datalog::DatalogEvaluator;
 fn id(s: &str) -> CanonicalId {
     CanonicalId::new(s).unwrap()
 }

@@ -55,9 +55,17 @@ pub struct EnumType {
 impl EnumType {
     pub fn new(
         id: CanonicalId,
-        variants: impl IntoIterator<Item = CanonicalId>,
+        variant_ids: impl IntoIterator<Item = CanonicalId>,
     ) -> Result<Self, ModelError> {
-        let variants = variants.into_iter().collect::<BTreeSet<_>>();
+        let mut variants = BTreeSet::new();
+        for variant in variant_ids {
+            if !variants.insert(variant.clone()) {
+                return Err(ModelError::DuplicateEnumVariant {
+                    type_id: id,
+                    variant,
+                });
+            }
+        }
         if variants.is_empty() {
             return Err(ModelError::EmptyEnum { type_id: id });
         }

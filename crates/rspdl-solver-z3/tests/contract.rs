@@ -1,4 +1,4 @@
-use rspdl_core::{
+use rspdl_domain::{
     Atom, BooleanExpression, CanonicalId, CanonicalModel, CanonicalType, CanonicalValue,
     ComparisonOperator, ConstraintProblem, ConstraintSolver, Domain, EnumType, PredicateSignature,
     SolveOptions, SolveResult, SolverContractError, Term, Variable, VariableDomain,

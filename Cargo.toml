@@ -1,10 +1,14 @@
 [workspace]
-members = ["crates/rspdl-core", "crates/rspdl-datalog", "crates/rspdl-solver-z3"]
+members = [
+    "crates/rspdl-domain",
+    "crates/rspdl-datalog",
+    "crates/rspdl-solver-z3",
+]
 resolver = "3"
 
 [workspace.package]
 edition = "2024"
-repository = "https://github.com/rspdl/rspdl-core"
+repository = "https://github.com/rspdl/rspdl-domain"
 rust-version = "1.85"
 
 [workspace.dependencies]

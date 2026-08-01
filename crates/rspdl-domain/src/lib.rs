@@ -10,6 +10,7 @@ pub mod domain;
 pub mod error;
 pub mod logic;
 pub mod rule;
+pub mod semantic;
 pub mod set;
 pub mod solver;
 pub mod types;
@@ -25,6 +26,11 @@ pub use logic::{
     PredicateSignature, Term, Variable,
 };
 pub use rule::{DerivationRule, Fact, LogicProgram, PredicateApplication, RuleLiteral};
+pub use semantic::{
+    ActionDefinition, ConstraintDefinition, ConstraintOperand, DataModelDefinition, EnumDefinition,
+    EnumVariantDefinition, FieldDefinition, PolicyDefinition, PolicyEffect, RelationOperator,
+    RoleDefinition, SemanticModule,
+};
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;
 pub use solver::{

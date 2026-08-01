@@ -1,5 +1,5 @@
 //! Z3-backed typed constraint solving; Z3 values do not escape this crate.
-use rspdl_core::{
+use rspdl_domain::{
     AtomView, BooleanExpression, BooleanExpressionView, CanonicalId, CanonicalModel, CanonicalType,
     CanonicalValue, ConstraintProblem, ConstraintSolver, EnumType, InfiniteDomain, SetExpression,
     SetExpressionView, SolveOptions, SolveResult, Term,
@@ -320,10 +320,10 @@ impl Z3Solver {
                         .as_int()
                         .ok_or_else(|| Z3SolverError::Unsupported("integer comparison".into()))?;
                     Ok(match op {
-                        rspdl_core::ComparisonOperator::Lt => a.lt(&b),
-                        rspdl_core::ComparisonOperator::Le => a.le(&b),
-                        rspdl_core::ComparisonOperator::Gt => a.gt(&b),
-                        rspdl_core::ComparisonOperator::Ge => a.ge(&b),
+                        rspdl_domain::ComparisonOperator::Lt => a.lt(&b),
+                        rspdl_domain::ComparisonOperator::Le => a.le(&b),
+                        rspdl_domain::ComparisonOperator::Gt => a.gt(&b),
+                        rspdl_domain::ComparisonOperator::Ge => a.ge(&b),
                     })
                 }
                 AtomView::MemberOf(term, set) => Self::membership(&Self::term(term, v, e)?, set, e),

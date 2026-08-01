@@ -3,7 +3,7 @@ name = "rspdl-solver-z3"
 version = "0.1.0"
 edition.workspace = true
 [dependencies]
-rspdl-core = { path = "../rspdl-core" }
+rspdl-domain = { path = "../rspdl-domain" }
 thiserror.workspace = true
 z3.workspace = true
 [dev-dependencies]

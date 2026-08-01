@@ -1,4 +1,4 @@
-use rspdl_core::{
+use rspdl_domain::{
     Atom, BooleanExpression, CanonicalId, CanonicalType, CanonicalValue, ConstraintProblem,
     ConstraintSolver, Domain, EnumType, SolveOptions, Term, Variable, VariableDomain,
 };
@@ -34,7 +34,7 @@ fn enum_symbols_are_collision_free() {
     .unwrap();
     assert!(matches!(
         Z3Solver::new().solve(&p, SolveOptions::default()).unwrap(),
-        rspdl_core::SolveResult::Sat(_)
+        rspdl_domain::SolveResult::Sat(_)
     ));
 }
 
@@ -59,7 +59,7 @@ fn constant_only_enum_equality_is_exact() {
     };
     assert!(matches!(
         solve(a.clone(), a),
-        rspdl_core::SolveResult::Sat(_)
+        rspdl_domain::SolveResult::Sat(_)
     ));
     assert!(matches!(
         solve(
@@ -70,7 +70,7 @@ fn constant_only_enum_equality_is_exact() {
             )
             .unwrap()
         ),
-        rspdl_core::SolveResult::Unsat
+        rspdl_domain::SolveResult::Unsat
     ));
 }
 #[test]
@@ -88,7 +88,7 @@ fn enum_sat_returns_canonical_variant() {
         ),
     )
     .unwrap();
-    let rspdl_core::SolveResult::Sat(rspdl_core::CanonicalModel(values)) =
+    let rspdl_domain::SolveResult::Sat(rspdl_domain::CanonicalModel(values)) =
         Z3Solver::new().solve(&p, SolveOptions::default()).unwrap()
     else {
         panic!("expected SAT")
@@ -118,10 +118,10 @@ fn enum_distinct_equalities_are_unsat_and_reusable() {
     let s = Z3Solver::new();
     assert!(matches!(
         s.solve(&p, SolveOptions::default()).unwrap(),
-        rspdl_core::SolveResult::Unsat
+        rspdl_domain::SolveResult::Unsat
     ));
     assert!(matches!(
         s.solve(&p, SolveOptions::default()).unwrap(),
-        rspdl_core::SolveResult::Unsat
+        rspdl_domain::SolveResult::Unsat
     ));
 }
