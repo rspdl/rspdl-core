@@ -12,7 +12,7 @@ topics:
   - semantic-analysis
   - conformance
 related: []
-last_updated: "2026-07-26"
+last_updated: "2026-07-31"
 owners:
   - rspdl-maintainers
 target_spec: "0.1.0"
@@ -129,6 +129,7 @@ CST와 AST는 Locale마다 달라도 되지만, Canonical IR과 진단의 의미
 - 자연어 문서에서 사실을 추측하는 AI 의미 판정
 - 특정 UI·IDE·MCP·플랫폼의 기능
 - 특정 프로그래밍 언어의 API와 패키지 구조
+- Canonical IR을 정책표 등 application view로 바꾸는 필터·집계·조회
 - 시각화와 애플리케이션 코드 생성
 
 ## 9. 적합성 기준
@@ -136,7 +137,7 @@ CST와 AST는 Locale마다 달라도 되지만, Canonical IR과 진단의 의미
 언어 적합성 테스트는 구현 기술과 독립적인 입력·기대 결과로 배포한다.
 
 - 문법상 유효하거나 유효하지 않은 입력
-- Source에서 기대 CST/AST 또는 구문 진단으로의 변환
+- Source에서 기대 구문 진단으로의 변환
 - Locale별 Source에서 공통 Canonical IR로의 변환
 - 여러 Locale 모듈 사이의 심볼 연결
 - 기대 Semantic Graph와 구조화된 진단
@@ -144,6 +145,8 @@ CST와 AST는 Locale마다 달라도 되지만, Canonical IR과 진단의 의미
 - 포매팅 후 의미가 유지되는 round-trip 사례
 
 출력 텍스트는 번역될 수 있지만 Rule ID, 심각도, 관련 심볼과 의미 위치는 동등해야 한다.
+
+CST와 AST는 Locale frontend의 구현 세부사항이므로 언어 적합성 계약에 포함하지 않는다. 각 구현은 자체 unit 또는 golden test에서 이를 검증할 수 있다.
 
 ## 10. 성공 기준
 
