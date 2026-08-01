@@ -4,6 +4,8 @@ members = [
     "crates/rspdl-datalog",
     "crates/rspdl-solver-z3",
     "crates/rspdl-ko",
+    "crates/rspdl-compiler",
+    "crates/rspdl-cli",
 ]
 resolver = "3"
 
