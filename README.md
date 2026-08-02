@@ -32,16 +32,19 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 
 ## 현재 구현된 범위
 
-현재 `0.1` vertical slice는 다음을 지원합니다.
+현재 구현은 다음을 지원합니다.
 
 - 한국어 module, enum, record field와 field constraint
+- 문장형 화면 생성·입력·조회·수정·삭제 선언과 field provenance 검증
+- `필드의 합계` 계산 dependency와 원본 변경 시 재계산 선언
+- 생산자 없는 필드 사용 오류와 미조회 입력 필드 안내
 - role, action과 조건 없는 allow 또는 deny policy
 - deterministic parser, formatter와 Canonical domain model
 - Z3 기반 record constraint 검사
 - Datalog 기반 runtime policy match와 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - JSON compilation 및 diagnostic 출력
 
-일반 데이터 lifecycle과 상태 전이, 조건부 정책의 전체 조건 공간 분석, 영향 분석과 code generation은 목표 범위이지만 아직 구현되지 않았습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
+화면 간 순서와 분기, 삭제 이후 접근, 교차 모델 relation/join 실행, 일반 계산식과 조건부 정책 분석은 목표 범위이지만 아직 구현되지 않았습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
 
 ## 짧은 예시
 
@@ -57,6 +60,7 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 
 ```console
 cargo run -p rspdl-cli -- compile examples/inventory.rspdl --json
+cargo run -p rspdl-cli -- compile examples/field-provenance.rspdl --json
 cargo run -p rspdl-cli -- check examples/expense-approval.rspdl \
   --data crates/rspdl-cli/tests/fixtures/expense-approval-data.json --json
 ```
@@ -77,6 +81,7 @@ cargo build --workspace
 - [Product Vision](docs/product/vision.md): 누구의 어떤 고통을 왜 해결하는가
 - [PRD](docs/prd.md): 제품·언어 요구사항과 현재 구현 경계
 - [Data Lifecycle Modeling Gap](docs/problems/0001-data-lifecycle-modeling-gap.md): 데이터 존재 시점과 연산 공백
+- [Field Provenance and Sum Derivation](docs/rfcs/0005-field-provenance-and-sum-derivation.md): 화면 생산·소비와 합계 계산 문법
 - [Policy Consistency Blind Spots](docs/problems/0002-policy-consistency-blind-spots.md): 충돌·누락·중첩·도달 불가
 - [Problem-driven Development](docs/guides/problem-driven-development.md): 원인에서 코드와 증명까지 연결하는 기여 흐름
 - [Knowledge Index](docs/index.md): RFC, ADR, architecture를 포함한 전체 문서 인덱스

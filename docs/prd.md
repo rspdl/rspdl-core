@@ -4,7 +4,7 @@ title: RSPDL Product Requirements
 type: prd
 status: draft
 created: 2026-07-26
-version: "0.4"
+version: "0.5"
 summary: Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context.
 topics:
   - language-design
@@ -17,13 +17,14 @@ related:
   - rspdl-product-vision
   - rspdl-compiler-architecture
   - problem-driven-development
+  - field-provenance-and-sum-derivation
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-02"
+last_updated: "2026-08-03"
 owners:
   - rspdl-maintainers
-target_spec: "0.1.0"
+target_spec: "0.2.0"
 ---
 
 # RSPDL Product Requirements
@@ -77,12 +78,16 @@ target_spec: "0.1.0"
   - 경계 사례
   - 오류와 유사하지만 허용해야 하는 오탐 방지 사례
   - 입력 순서와 반복 실행이 결과를 바꾸지 않는 결정론 사례
-- 현재 `0.1` 구현 범위는 다음과 같다.
+- 현재 구현 범위는 다음과 같다.
   - 한국어 module, enum, record field, field constraint, role, action과 조건 없는 allow 또는 deny policy
+  - 문장형 화면 create/read/update/delete와 field input/read/update 선언
+  - 화면 입력과 합계 계산을 생산자로 연결한 field provenance 검증
+  - 단일 정수 필드 합계, 원본 변경 시 재계산과 내부/비표시 의도
   - parser, formatter, Canonical domain model, Z3 constraint check와 Datalog policy match
   - runtime request별 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - 아직 구현하지 않은 요구사항은 다음과 같다.
-  - 일반 데이터 lifecycle과 상태 전이
+  - 화면 간 순서·분기, 삭제 이후 접근과 path별 데이터 availability
+  - relation/join 기반 교차 모델 집계 실행과 일반 계산식
   - 조건부 정책과 전체 조건 공간의 정적 gap, overlap 및 unreachable 분석
   - 유저 플로우, 관계, 컬렉션, module import와 다국어 의미 동등성
   - semantic dependency 기반 영향 분석과 downstream code generation
@@ -110,3 +115,4 @@ target_spec: "0.1.0"
 - [RSPDL Compiler Architecture](architecture.md)
 - [Core and Application Projection Boundary](adr/0002-core-application-boundary.md)
 - [Korean Domain Frontend Language Specification](rfcs/0004-natural-korean-domain-grammar.md)
+- [Field Provenance, Screen Usage, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)
