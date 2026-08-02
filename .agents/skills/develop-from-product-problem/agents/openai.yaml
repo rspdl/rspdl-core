@@ -1,0 +1,4 @@
+interface:
+  display_name: "Develop from Product Problem"
+  short_description: "Trace RSPDL changes from cause to proof"
+  default_prompt: "Use $develop-from-product-problem to connect this RSPDL change to a causal Problem Topic and define its proof before implementation."
