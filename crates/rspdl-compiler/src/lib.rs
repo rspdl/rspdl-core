@@ -329,6 +329,14 @@ pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> Chec
         policy_results: Vec::new(),
         runtime_diagnostics: Vec::new(),
     };
+    if report
+        .compilation
+        .diagnostics
+        .iter()
+        .any(Diagnostic::is_error)
+    {
+        return report;
+    }
     let Some(module) = report.compilation.module.as_ref() else {
         return report;
     };
@@ -1141,6 +1149,17 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic.rule_id == "RSPDL-INPUT-014")
         );
+        assert!(report.policy_results.is_empty());
+    }
+
+    #[test]
+    fn semantic_errors_stop_single_file_backend_execution() {
+        let source = SOURCE.replace("0보다 커야 한다.", "\"zero\"이어야 한다.");
+        let report = check_ko(&source, "not json", CheckOptions::default());
+
+        assert!(report.has_errors());
+        assert!(report.runtime_diagnostics.is_empty());
+        assert!(report.constraint_violations.is_empty());
         assert!(report.policy_results.is_empty());
     }
 

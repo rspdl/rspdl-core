@@ -95,9 +95,29 @@ boolean-literal =
 
 string-literal =
     JSON-string ;
+
+id-character =
+    "a".."z" | "0".."9" | "_" | "." ;
+
+name-character =
+    any Unicode scalar value except control characters,
+    whitespace, "`", "(", ")", ":", ".", "#", "[", or "]" ;
+
+quoted-character =
+    any Unicode scalar value except control characters or "`" ;
+
+digit = "0".."9" ;
+nonzero-digit = "1".."9" ;
+
+surface-reference = surface-name ;
+model-reference = surface-reference ;
+field-reference = surface-reference ;
+role-reference = surface-reference ;
+action-reference = surface-reference ;
+enum-value-reference = surface-reference ;
 ```
 
-`canonical-id`는 선언에만 나타난다. module을 제외한 짧은 ID는 module-local ID이며 compiler가 module ID로 한정한다. 이미 점을 포함한 qualified ID도 호환을 위해 허용한다. 여러 어절의 일반 표시 이름은 그대로 쓸 수 있다. 괄호, 콜론, 마침표, `#`처럼 어휘 경계와 충돌하는 문자가 포함된 표시 이름은 backtick으로 감싼다.
+`canonical-id`는 선언에만 나타난다. module을 제외한 짧은 ID는 module-local ID이며 compiler가 module ID로 한정한다. 이미 점을 포함한 qualified ID도 호환을 위해 허용한다. 여러 어절의 일반 표시 이름은 그대로 쓸 수 있다. 괄호, 콜론, 마침표, `#`처럼 어휘 경계와 충돌하는 문자가 포함된 표시 이름은 backtick으로 감싼다. multi-word bare name의 marker는 마지막 어절에 붙어야 하며, quoted name의 marker는 닫는 backtick 뒤의 별도 token으로 쓴다. 각 reference는 문법상 같은 `surface-reference`지만 lowering 시 해당 위치의 model, field, role, action 또는 enum value namespace에서 정확히 하나의 선언으로 해석되어야 한다.
 
 ## 4. Keyword
 
@@ -241,7 +261,11 @@ policy-statement =
 - 짧은 top-level ID `request`는 `<module-id>.request`로 lowering한다. 점이 포함된 ID는 이미 qualified된 것으로 취급한다.
 - lowering된 top-level canonical ID는 module 안에서 중복될 수 없다.
 - constraint와 policy는 source ID나 표시 이름을 갖지 않는다.
-- constraint와 policy의 local ID는 종류와 정규화된 의미를 FNV-1a 64-bit로 hashing한 `constraint_<hex>`, `policy_<hex>` 형식이다. canonical ID는 다시 module ID로 한정한다.
+- constraint와 policy의 local ID는 아래 canonical serialization의 UTF-8 byte sequence에 FNV-1a 64-bit를 적용한 `constraint_<hex>`, `policy_<hex>` 형식이다. `<hex>`는 leading zero를 포함한 16자리 소문자 hexadecimal이며 canonical ID는 다시 module ID로 한정한다.
+- v0.1 canonical serialization은 lowering 전의 정확한 display name byte sequence를 사용한다. Unicode normalization은 적용하지 않으며, NFC와 NFD처럼 다른 byte sequence는 다른 이름이다. lexer가 무시하는 공백, 들여쓰기와 source 위치는 serialization에 포함하지 않는다.
+- constraint는 `model NUL operand NUL operator NUL operand` 순서다. field operand는 `field:<display-name>`, string literal은 `string:<JSON-string>`, integer literal은 `integer:<canonical-decimal>`, boolean literal은 `boolean:true|false`, named literal은 `named:<display-name>`이다. operator는 `equal`, `not_equal`, `less_than`, `less_than_or_equal`, `greater_than`, `greater_than_or_equal` 중 하나다.
+- policy는 `role NUL model NUL field NUL action NUL effect` 순서며 effect는 `allow` 또는 `deny`다. `NUL`은 U+0000 byte 하나를 뜻한다.
+- Known vectors: `항목 NUL field:값 NUL greater_than NUL integer:0`은 `constraint_cc0c5c741f5a3664`이고, `관리자 NUL 항목 NUL 값 NUL 변경 NUL allow`는 `policy_c9929d0f292dc92b`이다. 같은 token sequence를 만드는 공백 변화와 future Locale이 동일 serialization을 사용하면 같은 ID를 만든다.
 - 내부 rule ID는 공백, 들여쓰기와 source 위치가 바뀌어도 동일하고, 규칙의 의미가 달라지면 함께 달라진다.
 - enum value ID는 해당 enum 안에서, field ID는 해당 model 안에서 고유해야 한다.
 - 자연어 문장의 참조는 선언된 표시 이름과 정확히 일치해야 한다.

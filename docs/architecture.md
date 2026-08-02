@@ -223,7 +223,7 @@ pub struct FrontendOutput {
 
 CLI는 파일 I/O, argument parsing, 출력 format과 exit code만 담당한다. 문법 또는 의미 규칙을 포함하지 않는다.
 
-Canonical IR을 정책표나 사용자·리소스별 조회 모델로 투영하는 기능은 compiler와 CLI의 책임이 아니다. application은 core가 직렬화한 IR과 진단을 입력으로 사용해 표시, 필터, 집계와 조회 계약을 소유한다. 자세한 경계는 [Core와 Application Projection 경계 ADR](adr/0002-core-application-boundary.md)을 따른다.
+Canonical IR을 정책표나 사용자·리소스별 조회 모델로 투영하는 기능은 compiler와 CLI의 책임이 아니다. application은 `rspdl-domain`이 직렬화한 IR과 진단을 입력으로 사용해 표시, 필터, 집계와 조회 계약을 소유한다. 자세한 경계는 [Core와 Application Projection 경계 ADR](adr/0002-core-application-boundary.md)을 따른다.
 
 ## 진단과 source provenance
 

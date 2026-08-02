@@ -1010,6 +1010,29 @@ mod tests {
     }
 
     #[test]
+    fn internal_rule_ids_ignore_whitespace_but_have_stable_known_vectors() {
+        let compact = parse(SOURCE).document.unwrap();
+        let spaced = parse(&SOURCE.replace("비용 신청의 금액은", "비용   신청의   금액은"))
+            .document
+            .unwrap();
+
+        let DeclarationAst::Constraint(compact_constraint) = &compact.declarations[2] else {
+            panic!("third declaration should be a constraint sentence");
+        };
+        let DeclarationAst::Constraint(spaced_constraint) = &spaced.declarations[2] else {
+            panic!("third declaration should be a constraint sentence");
+        };
+        assert_eq!(
+            compact_constraint.declaration.id,
+            spaced_constraint.declaration.id
+        );
+        assert_eq!(
+            compact_constraint.declaration.id,
+            "constraint_a5efd7b979720186"
+        );
+    }
+
+    #[test]
     fn requires_sentence_periods() {
         let output = parse(&SOURCE.replace("커야 한다.", "커야 한다"));
         assert!(
