@@ -23,19 +23,32 @@ REQUIRED_FIELDS = {
     "related",
     "last_updated",
 }
-ALLOWED_TYPES = {"prd", "adr", "rfc", "architecture", "spec", "guide", "index"}
+ALLOWED_TYPES = {
+    "prd",
+    "adr",
+    "rfc",
+    "architecture",
+    "spec",
+    "guide",
+    "problem",
+    "index",
+}
 ALLOWED_STATUSES = {
     "draft",
     "proposed",
     "accepted",
     "active",
     "final",
+    "implemented",
     "superseded",
     "deprecated",
 }
-RELATION_FIELDS = ("related", "supersedes", "superseded_by")
+RELATION_FIELDS = ("related", "problem_refs", "supersedes", "superseded_by")
+PROBLEM_LINKED_TYPES = {"prd", "adr", "rfc", "architecture", "spec"}
+PROBLEM_SECTIONS = ("## Why", "## What", "## How", "## Constraints", "## References")
 IGNORED_PARTS = {
     ".git",
+    ".github",
     ".agents",
     ".claude",
     "node_modules",
@@ -179,7 +192,9 @@ def as_list(value: Any) -> list[str]:
     return [str(value)]
 
 
-def validate_documents(documents: list[Document], initial_errors: list[str]) -> list[str]:
+def validate_documents(
+    root: Path, documents: list[Document], initial_errors: list[str]
+) -> list[str]:
     errors = list(initial_errors)
     by_id: dict[str, Document] = {}
 
@@ -218,6 +233,45 @@ def validate_documents(documents: list[Document], initial_errors: list[str]) -> 
                 if target and target not in known_ids:
                     errors.append(f"{document.path}: {field} references unknown id '{target}'")
 
+        document_type = document.metadata.get("type")
+        problem_refs = as_list(document.metadata.get("problem_refs"))
+        if document_type in PROBLEM_LINKED_TYPES and not problem_refs:
+            errors.append(
+                f"{document.path}: type '{document_type}' requires at least one problem_refs entry"
+            )
+        for target in problem_refs:
+            referenced = by_id.get(target)
+            if referenced is not None and referenced.metadata.get("type") != "problem":
+                errors.append(
+                    f"{document.path}: problem_refs target '{target}' is not a problem document"
+                )
+
+        if document_type == "problem":
+            if not document.metadata.get("created"):
+                errors.append(f"{document.path}: problem document requires created")
+            path = root / document.path
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeError) as exc:
+                errors.append(f"{document.path}: cannot read problem document: {exc}")
+                continue
+            if len(lines) > 150:
+                errors.append(
+                    f"{document.path}: problem document exceeds 150 lines ({len(lines)})"
+                )
+            heading_positions = []
+            for heading in PROBLEM_SECTIONS:
+                try:
+                    heading_positions.append(lines.index(heading))
+                except ValueError:
+                    errors.append(f"{document.path}: missing required section '{heading}'")
+            if len(heading_positions) == len(PROBLEM_SECTIONS) and heading_positions != sorted(
+                heading_positions
+            ):
+                errors.append(
+                    f"{document.path}: problem sections must follow Why, What, How, Constraints, References"
+                )
+
     return errors
 
 
@@ -248,6 +302,9 @@ def print_document(document: Document, score: int | None = None) -> None:
     relations = as_list(metadata.get("related"))
     if relations:
         print(f"  related: {', '.join(relations)}")
+    problems = as_list(metadata.get("problem_refs"))
+    if problems:
+        print(f"  problems: {', '.join(problems)}")
 
 
 def find_document(documents: list[Document], identifier: str) -> Document:
@@ -370,7 +427,7 @@ def render_index(documents: list[Document]) -> str:
             "",
             "> Generated from document front matter. Run the knowledge skill's `build` command; do not edit entries manually.",
             "",
-            "| ID | Type | Status | Document | Summary | Topics |",
+            "| ID | Type | Status | Document | Summary | Problems | Topics |",
             "| --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
@@ -383,9 +440,12 @@ def render_index(documents: list[Document]) -> str:
             path = (Path("..") / document.path).as_posix()
         title = str(metadata.get("title", "")).replace("|", "\\|")
         summary = str(metadata.get("summary", "")).replace("|", "\\|")
+        problems = ", ".join(
+            f"`{problem}`" for problem in as_list(metadata.get("problem_refs"))
+        )
         lines.append(
             f"| `{document.id}` | `{metadata.get('type')}` | `{metadata.get('status')}` "
-            f"| [{title}]({path}) | {summary} | {topics} |"
+            f"| [{title}]({path}) | {summary} | {problems or '-'} | {topics} |"
         )
     lines.append("")
     return "\n".join(lines)
@@ -426,7 +486,7 @@ def main() -> int:
     root = args.root.resolve()
     include_index = args.command != "build"
     documents, load_errors = load_documents(root, include_index=include_index)
-    errors = validate_documents(documents, load_errors)
+    errors = validate_documents(root, documents, load_errors)
 
     if args.command == "validate":
         source_documents = [
