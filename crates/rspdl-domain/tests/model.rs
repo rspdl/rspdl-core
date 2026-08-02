@@ -1,4 +1,4 @@
-use rspdl_core::{
+use rspdl_domain::{
     Atom, Backend, BooleanExpression, CanonicalId, CanonicalType, CanonicalValue, Cardinality,
     Domain, EnumType, EnumerationSupport, ModelError, PredicateSignature, SetExpression,
     SymbolicSupport, Term, Variable,
@@ -53,11 +53,8 @@ fn finite_domains_are_sorted_deduplicated_and_type_checked() {
 
 #[test]
 fn enum_values_are_closed_and_canonical() {
-    let status = EnumType::new(
-        id("type.expense_status"),
-        [id("submitted"), id("draft"), id("submitted")],
-    )
-    .expect("non-empty enum");
+    let status = EnumType::new(id("type.expense_status"), [id("submitted"), id("draft")])
+        .expect("non-empty enum");
     assert_eq!(
         status
             .variants()
@@ -70,6 +67,17 @@ fn enum_values_are_closed_and_canonical() {
     assert!(matches!(
         CanonicalValue::enum_variant(status, id("approved")),
         Err(ModelError::UnknownEnumVariant { .. })
+    ));
+}
+
+#[test]
+fn enum_types_reject_duplicate_variants() {
+    assert!(matches!(
+        EnumType::new(
+            id("type.expense_status"),
+            [id("submitted"), id("submitted")]
+        ),
+        Err(ModelError::DuplicateEnumVariant { .. })
     ));
 }
 

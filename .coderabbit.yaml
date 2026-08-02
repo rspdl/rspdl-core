@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "docs/architecture.md"
+      - "docs/prd.md"
+      - "docs/rfcs/*.md"
+
+reviews:
+  path_instructions:
+    - path: "crates/rspdl-ko/**"
+      instructions: |
+        Treat docs/rfcs/0004-natural-korean-domain-grammar.md as the normative
+        Korean frontend specification. Verify grammar recognition, generated
+        Rule ID determinism, source spans, recovery, formatter idempotence, and
+        format-before/after canonical IR equivalence against that document.
+    - path: "crates/rspdl-domain/**"
+      instructions: |
+        Review against docs/architecture.md and
+        docs/rfcs/0002-typed-domains-and-logic-core.md. Preserve the
+        locale-independent semantic boundary and canonical ordering contracts.
+    - path: "crates/rspdl-compiler/**"
+      instructions: |
+        Review against docs/architecture.md,
+        docs/rfcs/0003-stratified-datalog-and-typed-solver.md, and
+        docs/rfcs/0004-natural-korean-domain-grammar.md. Focus on name
+        resolution, type checking, JSON binding, optional-field semantics,
+        deterministic findings, and the Datalog/Z3 execution contract.
+    - path: "crates/rspdl-cli/**"
+      instructions: |
+        Verify the CLI and exit-code contract documented in
+        docs/rfcs/0004-natural-korean-domain-grammar.md.
+    - path: "docs/**"
+      instructions: |
+        Check that examples, EBNF, static semantics, runtime semantics, and
+        implemented code remain consistent with each other.

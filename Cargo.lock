@@ -255,7 +255,39 @@ dependencies = [
 ]
 
 [[package]]
-name = "rspdl-core"
+name = "rspdl-cli"
+version = "0.1.0"
+dependencies = [
+ "rspdl-compiler",
+ "rspdl-domain",
+ "rspdl-ko",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rspdl-compiler"
+version = "0.1.0"
+dependencies = [
+ "rspdl-datalog",
+ "rspdl-domain",
+ "rspdl-ko",
+ "rspdl-solver-z3",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "rspdl-datalog"
+version = "0.1.0"
+dependencies = [
+ "rspdl-domain",
+ "thiserror",
+]
+
+[[package]]
+name = "rspdl-domain"
 version = "0.1.0"
 dependencies = [
  "num-bigint",
@@ -267,11 +299,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "rspdl-datalog"
+name = "rspdl-ko"
 version = "0.1.0"
 dependencies = [
- "rspdl-core",
- "thiserror",
+ "rspdl-domain",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -279,8 +312,8 @@ name = "rspdl-solver-z3"
 version = "0.1.0"
 dependencies = [
  "num-bigint",
- "rspdl-core",
  "rspdl-datalog",
+ "rspdl-domain",
  "thiserror",
  "z3",
 ]

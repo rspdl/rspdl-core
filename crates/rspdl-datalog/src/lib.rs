@@ -1,5 +1,5 @@
 //! Deterministic active-domain evaluator for safe stratified Datalog programs.
-use rspdl_core::{
+use rspdl_domain::{
     AtomView, CanonicalId, CanonicalValue, DerivationRule, LogicProgram, ModelError,
     PredicateApplication, RuleLiteral, Term,
 };
@@ -447,7 +447,7 @@ fn val(t: &Term, e: &BTreeMap<CanonicalId, CanonicalValue>) -> Option<CanonicalV
 }
 fn constraint(
     rule: &DerivationRule,
-    a: &rspdl_core::Atom,
+    a: &rspdl_domain::Atom,
     e: &BTreeMap<CanonicalId, CanonicalValue>,
 ) -> Result<bool, DatalogError> {
     match a.view() {
@@ -470,10 +470,10 @@ fn constraint(
                 return Ok(false);
             };
             Ok(match op {
-                rspdl_core::ComparisonOperator::Lt => x < y,
-                rspdl_core::ComparisonOperator::Le => x <= y,
-                rspdl_core::ComparisonOperator::Gt => x > y,
-                rspdl_core::ComparisonOperator::Ge => x >= y,
+                rspdl_domain::ComparisonOperator::Lt => x < y,
+                rspdl_domain::ComparisonOperator::Le => x <= y,
+                rspdl_domain::ComparisonOperator::Gt => x > y,
+                rspdl_domain::ComparisonOperator::Ge => x >= y,
             })
         }
         AtomView::Predicate(_, _) => Err(DatalogError::UnsupportedConstraint {

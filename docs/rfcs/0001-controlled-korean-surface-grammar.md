@@ -16,7 +16,7 @@ related:
   - rspdl-language-prd
   - rust-korean-first-frontend
   - rspdl-compiler-architecture
-last_updated: "2026-07-27"
+last_updated: "2026-07-31"
 owners:
   - rspdl-maintainers
 target_spec: "0.1.0"
@@ -298,8 +298,10 @@ PolicyAst
 - `할 수 있다`와 `할 수 없다`의 부분 누락
 - 부자연스러운 조사지만 parse 가능한 경우
 - format 후 의미가 유지되는 경우
-- 같은 입력을 반복 처리했을 때 동일한 AST, IR과 진단 순서
+- 같은 입력을 반복 처리했을 때 동일한 IR, 의미 분석 결과와 진단 순서
 - 동일 의미의 미래 `en-US` fixture와 IR 동등성
+
+AST와 token stream은 `rspdl-ko`의 구현 내부 golden test에서 검증하며 공개 conformance artifact로 배포하지 않는다.
 
 예시 fixture 묶음은 다음과 같다.
 
@@ -307,8 +309,8 @@ PolicyAst
 conformance/ko-KR/policy/capability-basic/
 ├── case.yaml
 ├── input.rspdl
-├── expected.ast.json
 ├── expected.ir.json
+├── expected.analysis.json
 └── expected.diagnostics.json
 ```
 

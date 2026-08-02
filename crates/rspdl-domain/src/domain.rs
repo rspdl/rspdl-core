@@ -45,7 +45,13 @@ pub enum SymbolicSupport {
 
 impl SymbolicSupport {
     pub(crate) fn combine(self, other: Self) -> Self {
-        self.max(other)
+        match (self, other) {
+            (Self::Unsupported, _) | (_, Self::Unsupported) => Self::Unsupported,
+            (Self::RequiresFiniteGrounding, _) | (_, Self::RequiresFiniteGrounding) => {
+                Self::RequiresFiniteGrounding
+            }
+            (Self::Exact, Self::Exact) => Self::Exact,
+        }
     }
 }
 

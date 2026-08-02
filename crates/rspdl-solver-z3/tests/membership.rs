@@ -1,4 +1,4 @@
-use rspdl_core::{
+use rspdl_domain::{
     Atom, BooleanExpression, CanonicalId, CanonicalType, CanonicalValue, ConstraintProblem,
     ConstraintSolver, Domain, SetExpression, SolveOptions, Term, Variable, VariableDomain,
 };
@@ -38,7 +38,7 @@ fn finite_and_composite_membership_is_solved() {
         BooleanExpression::atom(Atom::member_of(Term::Variable(x), set).unwrap()),
     )
     .unwrap();
-    let rspdl_core::SolveResult::Sat(rspdl_core::CanonicalModel(values)) =
+    let rspdl_domain::SolveResult::Sat(rspdl_domain::CanonicalModel(values)) =
         Z3Solver::new().solve(&p, SolveOptions::default()).unwrap()
     else {
         panic!("expected SAT")

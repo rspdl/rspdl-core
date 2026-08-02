@@ -1,7 +1,7 @@
 [package]
-name = "rspdl-core"
+name = "rspdl-domain"
 version = "0.1.0"
-description = "Locale-independent semantic core for RSPDL"
+description = "Locale-independent semantic domain for RSPDL"
 edition.workspace = true
 repository.workspace = true
 rust-version.workspace = true

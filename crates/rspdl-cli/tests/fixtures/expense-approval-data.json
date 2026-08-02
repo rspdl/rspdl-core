@@ -1,0 +1,50 @@
+{
+  "records": {
+    "expense.request": [
+      {
+        "$id": "expense-001",
+        "id": "expense-001",
+        "applicant": "minji",
+        "approver": "alice",
+        "amount": 120000,
+        "status": "submitted"
+      },
+      {
+        "$id": "expense-002",
+        "id": "expense-002",
+        "applicant": "jisu",
+        "approver": "jisu",
+        "amount": -5000,
+        "status": "submitted"
+      }
+    ]
+  },
+  "role_assignments": [
+    {
+      "actor": "alice",
+      "role": "expense.accounting_manager"
+    },
+    {
+      "actor": "jisu",
+      "role": "expense.user"
+    }
+  ],
+  "action_requests": [
+    {
+      "$id": "action-001",
+      "actor": "alice",
+      "model": "expense.request",
+      "record": "expense-001",
+      "field": "status",
+      "action": "expense.change"
+    },
+    {
+      "$id": "action-002",
+      "actor": "jisu",
+      "model": "expense.request",
+      "record": "expense-002",
+      "field": "status",
+      "action": "expense.change"
+    }
+  ]
+}

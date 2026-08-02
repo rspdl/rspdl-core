@@ -1,10 +1,10 @@
-use rspdl_core::{
+use rspdl_datalog::DatalogEvaluator;
+use rspdl_domain::{
     Atom, BooleanExpression, CanonicalId, CanonicalModel, CanonicalType, CanonicalValue,
     ConstraintProblem, ConstraintSolver, DerivationRule, Domain, EnumType, Fact, LogicProgram,
     PredicateApplication, PredicateSignature, RuleLiteral, SolveOptions, SolveResult, Term,
     Variable, VariableDomain,
 };
-use rspdl_datalog::DatalogEvaluator;
 use rspdl_solver_z3::Z3Solver;
 fn id(x: &str) -> CanonicalId {
     CanonicalId::new(x).unwrap()
