@@ -7,7 +7,9 @@ version: "1"
 summary: Defines active-domain stratified Datalog evaluation and the typed constraint-solver contract.
 topics: [datalog, stratification, smt, z3, constraints]
 related: [typed-domains-and-logic-core]
-last_updated: "2026-07-28"
+problem_refs:
+  - policy-consistency-blind-spots
+last_updated: "2026-08-02"
 owners: [rspdl-maintainers]
 ---
 

@@ -1,183 +1,112 @@
 ---
 id: rspdl-language-prd
-title: RSPDL Language Product Requirements Document
+title: RSPDL Product Requirements
 type: prd
 status: draft
-version: "0.3"
-summary: Defines the goals, semantics, multilingual model, and conformance requirements of the RSPDL language.
+created: 2026-07-26
+version: "0.4"
+summary: Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context.
 topics:
   - language-design
-  - multilingual-frontends
+  - data-lifecycle
+  - policy-analysis
   - semantic-ir
-  - semantic-analysis
+  - diagnostics
   - conformance
-related: []
-last_updated: "2026-07-31"
+related:
+  - rspdl-product-vision
+  - rspdl-compiler-architecture
+  - problem-driven-development
+problem_refs:
+  - data-lifecycle-modeling-gap
+  - policy-consistency-blind-spots
+last_updated: "2026-08-02"
 owners:
   - rspdl-maintainers
 target_spec: "0.1.0"
 ---
 
-# RSPDL Language Product Requirements Document
+# RSPDL Product Requirements
 
-## 1. 언어 정의
+## Why
 
-**RSPDL**은 제품 기획의 권한, 데이터 모델과 유저 플로우를 사람이 읽고 기계가 검증할 수 있게 표현하는 선언형 언어다.
+- RSPDL은 기획자와 기획까지 맡은 개발자가 구현 전에 데이터와 정책의 빈틈을 발견하도록 돕는다.
+- 정책 검토를 개인의 꼼꼼함과 개발 중 조건식 작성에 의존하면 결정 대기와 재작업이 반복된다.
+- 자연어 문서는 데이터의 존재 시점, 조건 공간, 교차 참조와 모순을 결정적으로 검증하기 어렵다.
+- 사람과 AI 에이전트가 같은 명시적 의도를 공유하려면 안정적인 ID와 기계 검증 가능한 의미 모델이 필요하다.
+- 제품의 북극성과 사용자 약속은 [RSPDL Product Vision](product/vision.md)을 따른다.
 
-사람이나 AI가 문서를 작성할 수 있지만, 문서의 의미와 유효성은 명시된 언어 명세와 결정론적 규칙으로 판정한다.
+## What
 
-## 2. 해결할 언어 문제
+- RSPDL은 제품 기획의 데이터 모델, lifecycle, 권한, 정책과 유저 플로우를 표현하는 선언형 언어다.
+- 사람과 AI가 문서를 작성할 수 있지만 의미와 유효성은 명세된 결정론적 규칙으로 판정한다.
+- 핵심 사용자는 전담 기획자, 여러 역할을 동시에 수행하는 기획자와 기획 결정을 함께 맡은 개발자다.
+- 핵심 결과는 다음과 같다.
+  - 구현 가능한 결정과 명시적인 미결정 목록
+  - Locale 독립 Canonical Semantic IR과 Semantic Graph
+  - 원문 위치, 근거와 반례를 포함한 구조화된 진단
+  - 변경이 영향을 주는 데이터, 정책, 플로우와 downstream consumer 목록
+- 명시된 의도는 하나의 canonical context로 보존한다.
+- 명시되지 않은 의도는 추측하지 않으며 현실 요구사항과의 100% 일치를 보장하지 않는다.
 
-- 자연어 기획서는 같은 개념을 여러 표현으로 작성해 기계적으로 해석하기 어렵다.
-- 권한, 데이터와 플로우가 분리되어 영역 간 참조와 모순을 표현하기 어렵다.
-- 한국어·영어 문법이 독립적으로 발전하면 같은 의미가 서로 다른 결과를 만들 수 있다.
-- 구현체마다 파싱·의미 분석·진단 결과가 달라질 수 있다.
-- AI가 생성한 문서의 의미를 AI 판단에 의존하지 않고 재현 가능하게 검증해야 한다.
+## How
 
-## 3. 언어 목표
+- 제품 루프는 `작성 → 정규화 → 검증 → 결정 → 구현 전달 → 사용자 피드백`이다.
+- 의미 모델 요구사항은 다음과 같다.
+  - `INTENT-001`: 모든 선언과 참조는 번역 가능한 표시 이름과 안정적인 machine ID를 분리한다.
+  - `INTENT-002`: 권한, 데이터, 정책과 플로우를 하나의 Semantic Graph에서 연결한다.
+  - `DATA-001`: 데이터의 생성, 조회, 수정, 삭제와 파생 연산을 존재 상태 및 전이와 연결할 수 있어야 한다.
+  - `DATA-002`: 생성 전 사용, 삭제 후 사용, 끊어진 참조와 가용하지 않은 입력의 파생을 진단해야 한다.
+  - `POLICY-001`: actor 또는 role, resource, action, condition, effect와 적용 범위를 표현해야 한다.
+  - `POLICY-002`: conflict, gap, overlap과 unreachable을 서로 다른 결과로 분석해야 한다.
+  - `POLICY-003`: totality, default와 override는 암시하지 않고 명시적으로 표현해야 한다.
+- 언어와 호환성 요구사항은 다음과 같다.
+  - `SYNTAX-001`: 초기 문법은 자유 자연어가 아닌 구조화된 블록 형식이어야 한다.
+  - `LOCALE-001`: 같은 의미의 Locale 문서는 정규화 후 동일한 Canonical IR을 생성해야 한다.
+  - `MODULE-001`: 여러 문서와 Locale에 걸쳐 심볼을 선언, 참조하고 연결할 수 있어야 한다.
+  - `VERSION-001`: source는 사용한 언어 명세와 필요한 의미 규칙 버전을 선언할 수 있어야 한다.
+  - `COMPAT-001`: 호환 구현체는 구현 독립 Conformance Test Suite로 의미 동등성을 증명해야 한다.
+- 진단과 영향 분석 요구사항은 다음과 같다.
+  - `DIAG-001`: 진단은 Rule ID, severity, message key, source span, 관련 심볼과 evidence를 제공해야 한다.
+  - `DIAG-002`: 지원하지 않는 의미와 solver timeout은 성공으로 근사하지 않고 `unknown`으로 반환해야 한다.
+  - `IMPACT-001`: stable ID를 기준으로 한 변경의 direct 및 transitive semantic dependency를 찾을 수 있어야 한다.
+  - `IMPACT-002`: 같은 source와 spec version은 같은 IR, 진단, evidence 순서를 생성해야 한다.
+- 공개 의미 규칙의 증명 요구사항은 다음과 같다.
+  - 정상 사례
+  - 실패 사례
+  - 경계 사례
+  - 오류와 유사하지만 허용해야 하는 오탐 방지 사례
+  - 입력 순서와 반복 실행이 결과를 바꾸지 않는 결정론 사례
+- 현재 `0.1` 구현 범위는 다음과 같다.
+  - 한국어 module, enum, record field, field constraint, role, action과 조건 없는 allow 또는 deny policy
+  - parser, formatter, Canonical domain model, Z3 constraint check와 Datalog policy match
+  - runtime request별 `allowed`, `denied`, `conflict`, `unmatched` 분류
+- 아직 구현하지 않은 요구사항은 다음과 같다.
+  - 일반 데이터 lifecycle과 상태 전이
+  - 조건부 정책과 전체 조건 공간의 정적 gap, overlap 및 unreachable 분석
+  - 유저 플로우, 관계, 컬렉션, module import와 다국어 의미 동등성
+  - semantic dependency 기반 영향 분석과 downstream code generation
+- 성공 기준은 다음과 같다.
+  - 대표 시나리오에서 데이터 lifecycle과 정책 사각지대를 구현 전에 재현 가능한 evidence로 찾는다.
+  - 모든 공개 규칙에 정상, 실패, 경계와 오탐 방지 fixture가 존재한다.
+  - 모든 호환 구현체와 Locale이 동일한 의미 결과를 생성한다.
+  - 한 source 변경의 영향을 stable ID로 추적하고 소비자가 필요한 context만 선택할 수 있다.
 
-1. 권한·데이터 모델·유저 플로우를 하나의 의미 체계로 표현한다.
-2. 한국어·영어 등 서로 다른 표면 문법을 공통 의미 모델로 변환한다.
-3. 사람에게 읽기 쉬우면서 모호하지 않은 구조화된 문법을 제공한다.
-4. 안정적인 기계 ID로 문서와 Locale 사이의 참조를 연결한다.
-5. 의미 오류와 교차 영역 모순을 구조화된 진단으로 설명한다.
-6. 모든 호환 구현체가 동일한 입력에서 동일한 의미 결과를 만들게 한다.
+## Constraints
 
-## 4. 언어 원칙
+- AI 출력도 사람의 출력과 같은 parser, semantic analysis와 conformance gate를 통과한다.
+- compiler는 문서에 없는 사실, 정책 우선순위 또는 lifecycle 동작을 추측하지 않는다.
+- RSPDL core는 Canonical IR, semantic analysis와 diagnostics를 소유한다.
+- 정책표, IA, UI projection, 검색, 집계와 code generation은 공개 IR을 소비하는 application 책임이다.
+- 자유 형식 자연어 직접 해석과 특정 제품 UI는 초기 언어 범위에 포함하지 않는다.
+- 릴리스 명세는 SemVer를 따르고 승인된 의미 변경은 RFC와 conformance fixture를 함께 요구한다.
+- 표현 편의보다 해석의 단일성, 오류의 조기 발견과 설명 가능성을 우선한다.
 
-1. **의미가 표준이다.** 표면 문법보다 Canonical Semantic IR을 호환성의 기준으로 삼는다.
-2. **Locale은 표현 계층이다.** Locale은 문법·어순·키워드·메시지를 담당하고 의미 규칙을 바꾸지 않는다.
-3. **명시성을 우선한다.** 편의보다 해석의 단일성과 오류의 조기 발견을 우선한다.
-4. **참조와 표시를 분리한다.** 번역 가능한 이름과 안정적인 기계 ID를 구분한다.
-5. **검증은 결정론적이다.** 같은 입력과 명세 버전은 같은 IR과 진단을 생성한다.
-6. **진단은 추적 가능하다.** 오류는 Rule ID, 원문 위치, 관련 심볼과 근거를 제공한다.
-7. **AI는 특별한 작성자가 아니다.** AI 출력도 동일한 파싱·의미 분석·검증을 통과한다.
+## References
 
-## 5. 언어 계층
-
-```mermaid
-flowchart LR
-    KO["ko-KR Source"] --> KOF["ko-KR Frontend"]
-    EN["en-US Source"] --> ENF["en-US Frontend"]
-    KOF --> IR["Canonical Semantic IR"]
-    ENF --> IR
-    IR --> SG["Semantic Graph"]
-    SG --> SA["Semantic Analysis"]
-    SA --> DG["Structured Diagnostics"]
-```
-
-- **CST:** 주석, 공백, 토큰과 원문 위치를 보존한다.
-- **AST:** Locale별 문법 구조를 표현한다.
-- **Canonical Semantic IR:** 안정적인 ID, 타입, 참조와 조건을 표현한다.
-- **Semantic Graph:** 권한·데이터·액션·화면·상태 전이의 관계를 연결한다.
-- **Diagnostic:** 구현체와 표시 언어에 독립적인 오류 계약을 제공한다.
-
-CST와 AST는 Locale마다 달라도 되지만, Canonical IR과 진단의 의미는 같아야 한다.
-
-## 6. 핵심 의미 영역
-
-### 권한
-
-`Actor`, `Role`, `Permission`, `Policy`, `Resource`, `Action`, `Condition`
-
-### 데이터 모델
-
-`Entity`, `Field`, `Relation`, `Constraint`, `State`
-
-### 유저 플로우
-
-`Screen`, `UserAction`, `Transition`, `Flow`, `Condition`
-
-### 교차 관계
-
-- 역할은 조건에 따라 리소스 액션을 허용하거나 금지한다.
-- 화면의 액션은 권한을 요구하고 엔티티를 읽거나 변경한다.
-- 액션은 상태 전이를 발생시키고 필드 제약을 충족해야 한다.
-- 플로우는 시작점, 도달 가능성, 종료 조건과 수행 가능한 역할을 가진다.
-
-## 7. 언어 요구사항
-
-| ID | 요구사항 |
-| --- | --- |
-| `SYNTAX-001` | 초기 문법은 자유 자연어가 아닌 구조화된 블록 형식이어야 한다. |
-| `LOCALE-001` | 같은 의미의 Locale 문서는 정규화 후 동일한 Canonical IR을 생성해야 한다. |
-| `LOCALE-002` | 표시 이름은 번역할 수 있지만 선언과 참조는 안정적인 기계 ID를 사용해야 한다. |
-| `MODULE-001` | 여러 문서와 Locale에 걸쳐 심볼을 선언·참조·연결할 수 있어야 한다. |
-| `SEM-001` | 권한·데이터·플로우의 타입, 참조와 조건을 의미 분석할 수 있어야 한다. |
-| `SEM-002` | 세 영역을 하나의 Semantic Graph에서 연결하고 교차 모순을 표현할 수 있어야 한다. |
-| `DIAG-001` | 문법 오류와 의미 오류를 구분하고 정확한 원문 위치를 반환해야 한다. |
-| `DIAG-002` | 진단은 Rule ID, 심각도, message key, 관련 심볼과 근거를 구조화해야 한다. |
-| `COMPAT-001` | 호환 구현체는 공통 Conformance Test Suite로 의미 동등성을 증명해야 한다. |
-| `VERSION-001` | 문서는 사용한 언어 명세와 필요한 의미 규칙 버전을 선언할 수 있어야 한다. |
-
-## 8. 초기 언어 범위
-
-### 포함
-
-- 구조화된 블록 문법
-- `ko-KR`, `en-US` 표면 문법
-- 모듈, 선언, 안정적인 ID와 교차 문서 참조
-- 권한, 데이터 모델, 유저 플로우의 핵심 타입
-- 조건식, 상태 전이와 영역 간 관계
-- Canonical Semantic IR과 Diagnostic schema
-- Locale 간 의미 동등성 규칙
-- 핵심 의미 오류와 교차 모순의 진단 계약
-
-### 제외
-
-- 자유 형식 자연어의 직접 해석
-- 자연어 문서에서 사실을 추측하는 AI 의미 판정
-- 특정 UI·IDE·MCP·플랫폼의 기능
-- 특정 프로그래밍 언어의 API와 패키지 구조
-- Canonical IR을 정책표 등 application view로 바꾸는 필터·집계·조회
-- 시각화와 애플리케이션 코드 생성
-
-## 9. 적합성 기준
-
-언어 적합성 테스트는 구현 기술과 독립적인 입력·기대 결과로 배포한다.
-
-- 문법상 유효하거나 유효하지 않은 입력
-- Source에서 기대 구문 진단으로의 변환
-- Locale별 Source에서 공통 Canonical IR로의 변환
-- 여러 Locale 모듈 사이의 심볼 연결
-- 기대 Semantic Graph와 구조화된 진단
-- 정상·실패·경계·오탐 방지 규칙 사례
-- 포매팅 후 의미가 유지되는 round-trip 사례
-
-출력 텍스트는 번역될 수 있지만 Rule ID, 심각도, 관련 심볼과 의미 위치는 동등해야 한다.
-
-CST와 AST는 Locale frontend의 구현 세부사항이므로 언어 적합성 계약에 포함하지 않는다. 각 구현은 자체 unit 또는 golden test에서 이를 검증할 수 있다.
-
-## 10. 성공 기준
-
-- 모든 다국어 fixture가 의미상 동일한 Canonical IR을 생성한다.
-- 모든 호환 구현체가 동일한 IR과 구조화된 진단을 생성한다.
-- 모든 공개 의미 규칙에 정상·실패·오탐 방지 사례가 존재한다.
-- 같은 명세 버전에서 파싱·링킹·의미 분석 결과를 재현할 수 있다.
-- 대표 시나리오에서 권한·데이터·플로우 내부 오류와 교차 모순을 함께 표현한다.
-- 신규 Locale을 추가해도 기존 의미 명세와 규칙을 변경하지 않는다.
-
-## 11. 명세 및 문서 관리
-
-- RSPDL 명세는 SemVer를 따르며 `0.1.0`부터 시작한다.
-- MAJOR는 호환되지 않는 문법·의미 변경, MINOR는 호환 가능한 기능 추가, PATCH는 의미를 바꾸지 않는 정정에 사용한다.
-- 릴리스된 명세, Canonical IR과 Diagnostic schema는 수정하지 않고 새 버전으로 변경한다.
-- 문법·의미·호환성에 영향을 주는 변경은 RFC와 Conformance fixture를 함께 요구한다.
-- 승인된 RFC는 사소한 정정 외에는 수정하지 않고 새 RFC가 이전 결정을 `supersedes`한다.
-- 개발 명세는 `current`, 릴리스 명세는 Git tag의 불변 스냅샷으로 관리한다.
-- PRD Draft는 `0.x`, 최초 승인은 `1.0`으로 표시하며 큰 범위 변경에만 리비전을 올린다.
-
-## 12. 미결정 언어 사항
-
-- RSPDL의 정식 풀네임과 파일 확장자
-- 구체적인 문법과 예약어
-- 사용자 정의 refinement, 추가 primitive와 조건식 연산의 표현 범위
-- 모듈·import·버전 선언 문법
-- 정책 충돌 시 우선순위와 평가 의미
-- core semantic rule과 확장 rulepack의 경계
-- Locale 추가와 표준 채택 절차
-
-## 참고 기준
-
-- [Semantic Versioning 2.0.0](https://semver.org/)
-- [Rust RFC process](https://rust-lang.github.io/rfcs/)
+- [RSPDL Product Vision](product/vision.md)
+- [Data Lifecycle Modeling Gap](problems/0001-data-lifecycle-modeling-gap.md)
+- [Policy Consistency Blind Spots](problems/0002-policy-consistency-blind-spots.md)
+- [RSPDL Compiler Architecture](architecture.md)
+- [Core and Application Projection Boundary](adr/0002-core-application-boundary.md)
+- [Korean Domain Frontend Language Specification](rfcs/0004-natural-korean-domain-grammar.md)

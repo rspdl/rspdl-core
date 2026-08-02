@@ -16,7 +16,10 @@ related:
   - rspdl-language-prd
   - rust-korean-first-frontend
   - rspdl-compiler-architecture
-last_updated: "2026-07-31"
+problem_refs:
+  - data-lifecycle-modeling-gap
+  - policy-consistency-blind-spots
+last_updated: "2026-08-02"
 owners:
   - rspdl-maintainers
 target_spec: "0.1.0"

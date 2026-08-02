@@ -14,11 +14,15 @@ topics:
   - conformance
 related:
   - rspdl-language-prd
+  - rspdl-product-vision
   - rust-korean-first-frontend
   - core-application-boundary
   - controlled-korean-surface-grammar
   - typed-domains-and-logic-core
-last_updated: "2026-07-31"
+problem_refs:
+  - data-lifecycle-modeling-gap
+  - policy-consistency-blind-spots
+last_updated: "2026-08-02"
 owners:
   - rspdl-maintainers
 target_spec: "0.1.0"

@@ -15,7 +15,10 @@ topics:
 related:
   - rspdl-language-prd
   - rspdl-compiler-architecture
-last_updated: "2026-07-28"
+problem_refs:
+  - data-lifecycle-modeling-gap
+  - policy-consistency-blind-spots
+last_updated: "2026-08-02"
 owners:
   - rspdl-maintainers
 target_spec: "0.1.0"
@@ -205,4 +208,3 @@ Datalog lowering은 range restriction, finite grounding, recursion과 stratified
 - backend가 지원하지 않는 symbolic domain을 사전에 식별해야 한다.
 - 같은 의미의 commutative expression은 같은 canonical serialization을 만들어야 한다.
 - 실패는 panic이나 묵시적 coercion이 아니라 구조화된 construction error여야 한다.
-
