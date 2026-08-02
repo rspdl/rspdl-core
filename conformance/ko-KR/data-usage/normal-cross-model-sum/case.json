@@ -1,0 +1,14 @@
+{
+  "spec_version": "0.2.0",
+  "locale": "ko-KR",
+  "category": "normal",
+  "expected_module": true,
+  "expected_diagnostics": [
+    { "rule_id": "RSPDL-DATA-W002", "severity": "warning" }
+  ],
+  "expected_derivation": {
+    "target_field_id": "shopping.cart.total",
+    "source_field_id": "shopping.item.amount",
+    "recalculate_when_changed_field_ids": ["shopping.item.amount"]
+  }
+}
