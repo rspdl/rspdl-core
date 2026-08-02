@@ -2,9 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rspdl_domain::{
     ActionDefinition, CanonicalId, CanonicalType, CanonicalValue, ConstraintDefinition,
-    ConstraintOperand, DataModelDefinition, EnumDefinition, EnumType, EnumVariantDefinition,
-    FieldDefinition, PolicyDefinition, PolicyEffect, RelationOperator, RoleDefinition,
-    SemanticModule,
+    ConstraintOperand, DataModelDefinition, DerivationDefinition, DerivationExpression,
+    EnumDefinition, EnumType, EnumVariantDefinition, FieldDefinition, FieldIntentDefinition,
+    FieldIntentKind, PolicyDefinition, PolicyEffect, RelationOperator, RoleDefinition,
+    ScreenDefinition, ScreenOperationDefinition, ScreenOperationKind, SemanticModule,
 };
 use serde::Serialize;
 
@@ -30,6 +31,10 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
     let mut enums = Vec::new();
     let mut enum_names = BTreeMap::new();
     let mut models_ast = Vec::new();
+    let mut screens_ast = Vec::new();
+    let mut derivations_ast = Vec::new();
+    let mut recalculations_ast = Vec::new();
+    let mut field_intents_ast = Vec::new();
     let mut constraints_ast = Vec::new();
     let mut roles = Vec::new();
     let mut role_names = BTreeMap::new();
@@ -102,6 +107,10 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                 }
             }
             DeclarationAst::DataModel(value) => models_ast.push(value.clone()),
+            DeclarationAst::Screen(value) => screens_ast.push(value.clone()),
+            DeclarationAst::SumDerivation(value) => derivations_ast.push(value.clone()),
+            DeclarationAst::Recalculation(value) => recalculations_ast.push(value.clone()),
+            DeclarationAst::FieldIntent(value) => field_intents_ast.push(value.clone()),
             DeclarationAst::Constraint(value) => constraints_ast.push(value.clone()),
             DeclarationAst::Role(value) => {
                 let Some(id) = canonical_member(&value.declaration, &module_id, &mut diagnostics)
@@ -230,6 +239,16 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         .iter()
         .map(|model| (model.name.clone(), model.clone()))
         .collect::<BTreeMap<_, _>>();
+    let (screens, derivations, field_intents) = lower_data_usage(
+        screens_ast,
+        derivations_ast,
+        recalculations_ast,
+        field_intents_ast,
+        &module_id,
+        &models,
+        &mut top_level_ids,
+        &mut diagnostics,
+    );
     let mut constraints = Vec::new();
     for value in constraints_ast {
         let Some(id) = canonical_member(&value.declaration, &module_id, &mut diagnostics) else {
@@ -376,12 +395,470 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
             name: document.module.declaration.name.clone(),
             enums,
             models,
+            screens,
+            derivations,
+            field_intents,
             constraints,
             roles,
             actions,
             policies,
         }),
         diagnostics,
+    }
+}
+
+struct ResolvedDerivation {
+    target_field_id: CanonicalId,
+    source_field_id: CanonicalId,
+    span: Span,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lower_data_usage(
+    screens_ast: Vec<ScreenAst>,
+    derivations_ast: Vec<SumDerivationAst>,
+    recalculations_ast: Vec<RecalculationAst>,
+    field_intents_ast: Vec<FieldIntentAst>,
+    module_id: &CanonicalId,
+    models: &[DataModelDefinition],
+    top_level_ids: &mut BTreeSet<CanonicalId>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> (
+    Vec<ScreenDefinition>,
+    Vec<DerivationDefinition>,
+    Vec<FieldIntentDefinition>,
+) {
+    if screens_ast.is_empty()
+        && derivations_ast.is_empty()
+        && recalculations_ast.is_empty()
+        && field_intents_ast.is_empty()
+    {
+        return (Vec::new(), Vec::new(), Vec::new());
+    }
+
+    let mut screen_map = BTreeMap::<CanonicalId, ScreenDefinition>::new();
+    let mut model_creators = BTreeSet::new();
+    let mut model_uses = Vec::new();
+    let mut input_fields = BTreeSet::new();
+    let mut read_fields = BTreeSet::new();
+    let mut consumers = Vec::new();
+    let mut producer_spans = BTreeMap::new();
+
+    for screen in screens_ast {
+        let Some(screen_id) = canonical_member(&screen.declaration, module_id, diagnostics) else {
+            continue;
+        };
+        if let Some(existing) = screen_map.get(&screen_id) {
+            if existing.name != screen.declaration.name {
+                diagnostics.push(data_diagnostic(
+                    "RSPDL-DATA-004",
+                    Severity::Error,
+                    format!(
+                        "화면 ID `{screen_id}`가 `{}`와 `{}` 두 이름으로 사용되었습니다.",
+                        existing.name, screen.declaration.name
+                    ),
+                    screen.span,
+                ));
+                continue;
+            }
+        } else {
+            duplicate_id(
+                &screen_id,
+                screen.declaration.span,
+                top_level_ids,
+                diagnostics,
+            );
+            screen_map.insert(
+                screen_id.clone(),
+                ScreenDefinition {
+                    id: screen_id.clone(),
+                    name: screen.declaration.name.clone(),
+                    operations: Vec::new(),
+                },
+            );
+        }
+
+        let Some(model) = resolve_data_model(models, &screen.model, screen.span, diagnostics)
+        else {
+            continue;
+        };
+        let kind = match screen.operation {
+            ScreenOperationKindAst::Create => ScreenOperationKind::Create,
+            ScreenOperationKindAst::Read => ScreenOperationKind::Read,
+            ScreenOperationKindAst::Input => ScreenOperationKind::Input,
+            ScreenOperationKindAst::Update => ScreenOperationKind::Update,
+            ScreenOperationKindAst::Delete => ScreenOperationKind::Delete,
+        };
+        let mut field_ids = Vec::new();
+        for field_name in &screen.fields {
+            let Some(field) = resolve_data_field(model, field_name, screen.span, diagnostics)
+            else {
+                continue;
+            };
+            field_ids.push(field.id.clone());
+            match screen.operation {
+                ScreenOperationKindAst::Input => {
+                    input_fields.insert(field.id.clone());
+                    producer_spans
+                        .entry(field.id.clone())
+                        .or_insert(screen.span);
+                }
+                ScreenOperationKindAst::Read => {
+                    read_fields.insert(field.id.clone());
+                    consumers.push((field.id.clone(), screen.span));
+                }
+                ScreenOperationKindAst::Update => {
+                    consumers.push((field.id.clone(), screen.span));
+                }
+                ScreenOperationKindAst::Create | ScreenOperationKindAst::Delete => {}
+            }
+        }
+        field_ids.sort();
+        field_ids.dedup();
+        let operation = ScreenOperationDefinition {
+            kind,
+            model_id: model.id.clone(),
+            field_ids,
+        };
+        let definition = screen_map
+            .get_mut(&screen_id)
+            .expect("screen was inserted above");
+        if definition.operations.contains(&operation) {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-004",
+                Severity::Error,
+                format!("화면 `{screen_id}`의 데이터 동작이 중복 선언되었습니다."),
+                screen.span,
+            ));
+        } else {
+            definition.operations.push(operation);
+        }
+        if screen.operation == ScreenOperationKindAst::Create {
+            model_creators.insert(model.id.clone());
+        } else {
+            model_uses.push((model.id.clone(), screen.span));
+        }
+    }
+
+    let mut resolved_derivations = Vec::new();
+    let mut derivation_targets = BTreeSet::new();
+    for derivation in derivations_ast {
+        let Some(target_model) = resolve_data_model(
+            models,
+            &derivation.target_model,
+            derivation.span,
+            diagnostics,
+        ) else {
+            continue;
+        };
+        let Some(target_field) = resolve_data_field(
+            target_model,
+            &derivation.target_field,
+            derivation.span,
+            diagnostics,
+        ) else {
+            continue;
+        };
+        let Some(source_model) = resolve_data_model(
+            models,
+            &derivation.source_model,
+            derivation.span,
+            diagnostics,
+        ) else {
+            continue;
+        };
+        let Some(source_field) = resolve_data_field(
+            source_model,
+            &derivation.source_field,
+            derivation.span,
+            diagnostics,
+        ) else {
+            continue;
+        };
+        if target_field.value_type != CanonicalType::Integer
+            || source_field.value_type != CanonicalType::Integer
+        {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-005",
+                Severity::Error,
+                "합계의 원본과 결과 필드는 모두 정수여야 합니다.",
+                derivation.span,
+            ));
+            continue;
+        }
+        if input_fields.contains(&target_field.id) {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-004",
+                Severity::Error,
+                format!(
+                    "계산 필드 `{}`은 화면 입력과 계산 결과를 동시에 생산자로 가질 수 없습니다.",
+                    target_field.id
+                ),
+                derivation.span,
+            ));
+            continue;
+        }
+        if !derivation_targets.insert(target_field.id.clone()) {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-004",
+                Severity::Error,
+                format!("필드 `{}`의 계산식이 중복 선언되었습니다.", target_field.id),
+                derivation.span,
+            ));
+            continue;
+        }
+        if target_model.id != source_model.id {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-W002",
+                Severity::Warning,
+                "교차 모델 합계의 레코드 선택 관계가 아직 정의되지 않아 의존성만 보존하고 계산 범위는 `unknown`으로 둡니다.",
+                derivation.span,
+            ));
+        }
+        producer_spans
+            .entry(target_field.id.clone())
+            .or_insert(derivation.span);
+        consumers.push((source_field.id.clone(), derivation.span));
+        model_uses.push((target_model.id.clone(), derivation.span));
+        model_uses.push((source_model.id.clone(), derivation.span));
+        resolved_derivations.push(ResolvedDerivation {
+            target_field_id: target_field.id.clone(),
+            source_field_id: source_field.id.clone(),
+            span: derivation.span,
+        });
+    }
+
+    let mut refreshes = BTreeMap::<CanonicalId, Vec<(CanonicalId, Span)>>::new();
+    for recalculation in recalculations_ast {
+        let Some(target_model) = resolve_data_model(
+            models,
+            &recalculation.target_model,
+            recalculation.span,
+            diagnostics,
+        ) else {
+            continue;
+        };
+        let Some(target_field) = resolve_data_field(
+            target_model,
+            &recalculation.target_field,
+            recalculation.span,
+            diagnostics,
+        ) else {
+            continue;
+        };
+        let Some(source_model) = resolve_data_model(
+            models,
+            &recalculation.source_model,
+            recalculation.span,
+            diagnostics,
+        ) else {
+            continue;
+        };
+        let Some(source_field) = resolve_data_field(
+            source_model,
+            &recalculation.source_field,
+            recalculation.span,
+            diagnostics,
+        ) else {
+            continue;
+        };
+        refreshes
+            .entry(target_field.id.clone())
+            .or_default()
+            .push((source_field.id.clone(), recalculation.span));
+    }
+
+    let mut derivations = Vec::new();
+    for derivation in &resolved_derivations {
+        let declarations = refreshes
+            .remove(&derivation.target_field_id)
+            .unwrap_or_default();
+        if declarations.len() != 1 {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-003",
+                Severity::Error,
+                format!(
+                    "계산 필드 `{}`은 재계산 시점을 정확히 하나 선언해야 합니다.",
+                    derivation.target_field_id
+                ),
+                declarations
+                    .first()
+                    .map_or(derivation.span, |(_, span)| *span),
+            ));
+            continue;
+        }
+        if declarations[0].0 != derivation.source_field_id {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-004",
+                Severity::Error,
+                "재계산 조건의 원본 필드가 계산식의 원본 필드와 다릅니다.",
+                declarations[0].1,
+            ));
+            continue;
+        }
+        derivations.push(DerivationDefinition {
+            target_field_id: derivation.target_field_id.clone(),
+            expression: DerivationExpression::Sum {
+                source_field_id: derivation.source_field_id.clone(),
+            },
+            recalculate_when_changed_field_ids: vec![derivation.source_field_id.clone()],
+        });
+    }
+    for (target, declarations) in refreshes {
+        diagnostics.push(data_diagnostic(
+            "RSPDL-DATA-004",
+            Severity::Error,
+            format!("필드 `{target}`의 재계산 조건에 대응하는 계산식이 없습니다."),
+            declarations[0].1,
+        ));
+    }
+
+    let mut intents = Vec::<FieldIntentDefinition>::new();
+    let mut intentional_non_reads = BTreeSet::new();
+    for intent in field_intents_ast {
+        let Some(model) = resolve_data_model(models, &intent.model, intent.span, diagnostics)
+        else {
+            continue;
+        };
+        let Some(field) = resolve_data_field(model, &intent.field, intent.span, diagnostics) else {
+            continue;
+        };
+        let kind = match intent.intent {
+            FieldIntentKindAst::Internal => FieldIntentKind::Internal,
+            FieldIntentKindAst::Hidden => FieldIntentKind::Hidden,
+        };
+        let definition = FieldIntentDefinition {
+            field_id: field.id.clone(),
+            intent: kind,
+        };
+        if let Some(existing) = intents
+            .iter()
+            .find(|existing| existing.field_id == definition.field_id)
+        {
+            let message = if existing.intent == definition.intent {
+                format!("필드 `{}`의 사용 의도가 중복 선언되었습니다.", field.id)
+            } else {
+                format!(
+                    "필드 `{}`에 내부 관리와 비표시 의도를 함께 선언할 수 없습니다.",
+                    field.id
+                )
+            };
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-004",
+                Severity::Error,
+                message,
+                intent.span,
+            ));
+        } else {
+            intents.push(definition);
+            intentional_non_reads.insert(field.id.clone());
+        }
+    }
+
+    let mut available = input_fields.clone();
+    loop {
+        let before = available.len();
+        for derivation in &resolved_derivations {
+            if available.contains(&derivation.source_field_id) {
+                available.insert(derivation.target_field_id.clone());
+            }
+        }
+        if available.len() == before {
+            break;
+        }
+    }
+    for (field, span) in consumers {
+        if !available.contains(&field) {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-001",
+                Severity::Error,
+                format!("필드 `{field}`을 만드는 화면 입력 또는 계산이 없습니다."),
+                span,
+            ));
+        }
+    }
+    for (model, span) in model_uses {
+        if !model_creators.contains(&model) {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-002",
+                Severity::Error,
+                format!("데이터 모델 `{model}`을 생성하는 화면이 없습니다."),
+                span,
+            ));
+        }
+    }
+    for field in available {
+        if !read_fields.contains(&field) && !intentional_non_reads.contains(&field) {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-W001",
+                Severity::Warning,
+                format!("필드 `{field}`은 만들어지지만 어떤 화면에서도 조회되지 않습니다. 내부 관리용 또는 비표시 의도를 명시해 주세요."),
+                producer_spans.get(&field).copied().unwrap_or_default(),
+            ));
+        }
+    }
+
+    let mut screens = screen_map.into_values().collect::<Vec<_>>();
+    for screen in &mut screens {
+        screen.operations.sort();
+    }
+    derivations.sort_by(|left, right| left.target_field_id.cmp(&right.target_field_id));
+    intents.sort();
+    (screens, derivations, intents)
+}
+
+fn resolve_data_model<'a>(
+    models: &'a [DataModelDefinition],
+    name: &str,
+    span: Span,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<&'a DataModelDefinition> {
+    models.iter().find(|model| model.name == name).or_else(|| {
+        diagnostics.push(data_diagnostic(
+            "RSPDL-DATA-006",
+            Severity::Error,
+            format!("데이터 모델 `{name}`을 찾을 수 없습니다."),
+            span,
+        ));
+        None
+    })
+}
+
+fn resolve_data_field<'a>(
+    model: &'a DataModelDefinition,
+    name: &str,
+    span: Span,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<&'a FieldDefinition> {
+    model
+        .fields
+        .iter()
+        .find(|field| field.name == name)
+        .or_else(|| {
+            diagnostics.push(data_diagnostic(
+                "RSPDL-DATA-006",
+                Severity::Error,
+                format!(
+                    "데이터 모델 `{}`에서 필드 `{name}`을 찾을 수 없습니다.",
+                    model.id
+                ),
+                span,
+            ));
+            None
+        })
+}
+
+fn data_diagnostic(
+    rule_id: &str,
+    severity: Severity,
+    message: impl Into<String>,
+    span: Span,
+) -> Diagnostic {
+    Diagnostic {
+        rule_id: rule_id.into(),
+        severity,
+        message: message.into(),
+        span,
     }
 }
 
@@ -563,6 +1040,23 @@ mod tests {
 
     use super::*;
 
+    const DATA_USAGE_SOURCE: &str = r#"@모듈 장바구니(shopping)
+장바구니(cart)는 다음 필드들로 구성되어 있다.
+    결제 예정 금액(total): 필수 정수
+장바구니 항목(item)은 다음 필드들로 구성되어 있다.
+    수량(quantity): 필수 정수
+    금액(amount): 필수 정수
+장바구니 작성 화면(create_cart)에서는 장바구니를 생성할 수 있다.
+장바구니 항목 입력 화면(create_item)에서는 장바구니 항목을 생성할 수 있다.
+장바구니 항목 입력 화면(create_item)에서는 장바구니 항목의 수량, 금액을 입력할 수 있다.
+장바구니 상세 화면(cart_detail)에서는 장바구니의 결제 예정 금액을 조회할 수 있다.
+장바구니 항목 화면(item_detail)에서는 장바구니 항목의 수량, 금액을 조회할 수 있다.
+장바구니 항목 수정 화면(update_item)에서는 장바구니 항목의 금액을 수정할 수 있다.
+장바구니 항목 삭제 화면(delete_item)에서는 장바구니 항목을 삭제할 수 있다.
+장바구니의 결제 예정 금액은 장바구니 항목의 금액의 합계로 계산한다.
+장바구니 항목의 금액이 바뀔 때 장바구니의 결제 예정 금액을 다시 계산한다.
+"#;
+
     #[test]
     fn resolves_surface_names_to_canonical_ids() {
         let source = r#"@모듈 승인(expense)
@@ -609,5 +1103,114 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic.message.contains("찾을 수 없습니다"))
         );
+    }
+
+    #[test]
+    fn lowers_screen_producers_consumers_and_cross_model_sum_dependencies() {
+        let parsed = parse(DATA_USAGE_SOURCE);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let lowered = lower(&parsed.document.unwrap());
+        assert!(lowered.module.is_some(), "{:?}", lowered.diagnostics);
+        assert_eq!(
+            lowered
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.rule_id == "RSPDL-DATA-W002")
+                .count(),
+            1
+        );
+        let module = lowered.module.unwrap();
+        assert_eq!(module.screens.len(), 6);
+        assert_eq!(module.derivations.len(), 1);
+        let DerivationExpression::Sum { source_field_id } = &module.derivations[0].expression;
+        assert_eq!(source_field_id.as_str(), "shopping.item.amount");
+        assert_eq!(
+            module.derivations[0].target_field_id.as_str(),
+            "shopping.cart.total"
+        );
+    }
+
+    #[test]
+    fn rejects_consumers_without_a_field_producer_and_derivations_without_refresh() {
+        let missing_producer = DATA_USAGE_SOURCE.replace(
+            "장바구니 항목 입력 화면(create_item)에서는 장바구니 항목의 수량, 금액을 입력할 수 있다.\n",
+            "",
+        );
+        let parsed = parse(&missing_producer);
+        let lowered = lower(&parsed.document.unwrap());
+        assert!(lowered.module.is_none());
+        assert!(
+            lowered
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.rule_id == "RSPDL-DATA-001")
+        );
+
+        let missing_refresh = DATA_USAGE_SOURCE.replace(
+            "장바구니 항목의 금액이 바뀔 때 장바구니의 결제 예정 금액을 다시 계산한다.\n",
+            "",
+        );
+        let parsed = parse(&missing_refresh);
+        let lowered = lower(&parsed.document.unwrap());
+        assert!(
+            lowered
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.rule_id == "RSPDL-DATA-003")
+        );
+    }
+
+    #[test]
+    fn warns_for_unread_inputs_unless_non_display_intent_is_explicit() {
+        let unread = DATA_USAGE_SOURCE.replace(
+            "장바구니 항목 화면(item_detail)에서는 장바구니 항목의 수량, 금액을 조회할 수 있다.",
+            "장바구니 항목 화면(item_detail)에서는 장바구니 항목의 수량을 조회할 수 있다.",
+        );
+        let parsed = parse(&unread);
+        let lowered = lower(&parsed.document.unwrap());
+        assert!(lowered.module.is_some());
+        assert!(lowered.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-DATA-W001"
+                && diagnostic.message.contains("shopping.item.amount")
+        }));
+
+        let intentional = unread.replace(
+            "장바구니 항목의 금액이 바뀔 때",
+            "장바구니 항목의 금액은 내부 관리에만 사용한다.\n장바구니 항목의 금액이 바뀔 때",
+        );
+        let parsed = parse(&intentional);
+        let lowered = lower(&parsed.document.unwrap());
+        assert!(lowered.module.is_some(), "{:?}", lowered.diagnostics);
+        assert!(!lowered.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-DATA-W001"
+                && diagnostic.message.contains("shopping.item.amount")
+        }));
+    }
+
+    #[test]
+    fn rejects_multiple_field_producers_and_conflicting_non_display_intents() {
+        let multiple_producers = DATA_USAGE_SOURCE.replace(
+            "장바구니 작성 화면(create_cart)에서는 장바구니를 생성할 수 있다.\n",
+            "장바구니 작성 화면(create_cart)에서는 장바구니를 생성할 수 있다.\n장바구니 작성 화면(create_cart)에서는 장바구니의 결제 예정 금액을 입력할 수 있다.\n",
+        );
+        let parsed = parse(&multiple_producers);
+        let lowered = lower(&parsed.document.unwrap());
+        assert!(lowered.module.is_none());
+        assert!(lowered.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-DATA-004"
+                && diagnostic.message.contains("화면 입력과 계산 결과")
+        }));
+
+        let conflicting_intents = DATA_USAGE_SOURCE.replace(
+            "장바구니 항목의 금액이 바뀔 때",
+            "장바구니 항목의 금액은 내부 관리에만 사용한다.\n장바구니 항목의 금액은 사용자 화면에서 조회하지 않는다.\n장바구니 항목의 금액이 바뀔 때",
+        );
+        let parsed = parse(&conflicting_intents);
+        let lowered = lower(&parsed.document.unwrap());
+        assert!(lowered.module.is_none());
+        assert!(lowered.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-DATA-004"
+                && diagnostic.message.contains("함께 선언할 수 없습니다")
+        }));
     }
 }

@@ -63,6 +63,58 @@ pub struct DataModelAst {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub enum ScreenOperationKindAst {
+    Create,
+    Read,
+    Input,
+    Update,
+    Delete,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ScreenAst {
+    pub declaration: NamedIdAst,
+    pub model: String,
+    pub fields: Vec<String>,
+    pub operation: ScreenOperationKindAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SumDerivationAst {
+    pub target_model: String,
+    pub target_field: String,
+    pub source_model: String,
+    pub source_field: String,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RecalculationAst {
+    pub source_model: String,
+    pub source_field: String,
+    pub target_model: String,
+    pub target_field: String,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldIntentKindAst {
+    Internal,
+    Hidden,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FieldIntentAst {
+    pub model: String,
+    pub field: String,
+    pub intent: FieldIntentKindAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RelationOperatorAst {
     Equal,
     NotEqual,
@@ -136,6 +188,10 @@ pub struct PolicyAst {
 pub enum DeclarationAst {
     Enum(EnumAst),
     DataModel(DataModelAst),
+    Screen(ScreenAst),
+    SumDerivation(SumDerivationAst),
+    Recalculation(RecalculationAst),
+    FieldIntent(FieldIntentAst),
     Constraint(ConstraintAst),
     Role(RoleAst),
     Action(ActionAst),

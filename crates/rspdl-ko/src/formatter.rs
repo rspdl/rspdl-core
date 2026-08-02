@@ -76,6 +76,55 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     ));
                 }
             }
+            DeclarationAst::Screen(value) => {
+                let screen = format!(
+                    "{}({})에서는",
+                    surface(&value.declaration.name),
+                    value.declaration.id
+                );
+                let operation = match value.operation {
+                    ScreenOperationKindAst::Create => "생성할",
+                    ScreenOperationKindAst::Read => "조회할",
+                    ScreenOperationKindAst::Input => "입력할",
+                    ScreenOperationKindAst::Update => "수정할",
+                    ScreenOperationKindAst::Delete => "삭제할",
+                };
+                if value.fields.is_empty() {
+                    output.push_str(&format!(
+                        "{screen} {} {operation} 수 있다.\n",
+                        marked(&value.model, "을", "를")
+                    ));
+                } else {
+                    output.push_str(&format!(
+                        "{screen} {}의 {} {operation} 수 있다.\n",
+                        surface(&value.model),
+                        object_list(&value.fields)
+                    ));
+                }
+            }
+            DeclarationAst::SumDerivation(value) => output.push_str(&format!(
+                "{}의 {} {}의 {}의 합계로 계산한다.\n",
+                surface(&value.target_model),
+                marked(&value.target_field, "은", "는"),
+                surface(&value.source_model),
+                surface(&value.source_field)
+            )),
+            DeclarationAst::Recalculation(value) => output.push_str(&format!(
+                "{}의 {} 바뀔 때 {}의 {} 다시 계산한다.\n",
+                surface(&value.source_model),
+                marked(&value.source_field, "이", "가"),
+                surface(&value.target_model),
+                marked(&value.target_field, "을", "를")
+            )),
+            DeclarationAst::FieldIntent(value) => output.push_str(&format!(
+                "{}의 {} {}.\n",
+                surface(&value.model),
+                marked(&value.field, "은", "는"),
+                match value.intent {
+                    FieldIntentKindAst::Internal => "내부 관리에만 사용한다",
+                    FieldIntentKindAst::Hidden => "사용자 화면에서 조회하지 않는다",
+                }
+            )),
             DeclarationAst::Constraint(value) => {
                 output.push_str(&format!("{}\n", constraint(&value.expression)?));
             }
@@ -107,6 +156,17 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
         }
     }
     Ok(output)
+}
+
+fn object_list(fields: &[String]) -> String {
+    let Some((last, rest)) = fields.split_last() else {
+        return String::new();
+    };
+    rest.iter()
+        .map(|field| surface(field))
+        .chain([marked(last, "을", "를")])
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn is_symbol_declaration(declaration: &DeclarationAst) -> bool {
@@ -245,5 +305,22 @@ mod tests {
         let reparsed = parse(&formatted).document.unwrap();
 
         assert_eq!(original_module, lower(&reparsed).module.unwrap());
+    }
+
+    #[test]
+    fn screen_and_sum_sentences_round_trip_without_blocks() {
+        let source = "@모듈 집계(summary)\n항목(item)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n  합계(total): 필수 정수\n  내부 메모(internal_note): 필수 문자열\n  공개 설명(public_description): 필수 문자열\n항목 작성 화면(create_item)에서는 항목을 생성할 수 있다.\n항목 작성 화면(create_item)에서는 항목의 금액, 내부 메모, 공개 설명을 입력할 수 있다.\n항목 상세 화면(item_detail)에서는 항목의 금액, 합계를 조회할 수 있다.\n항목의 합계는 항목의 금액의 합계로 계산한다.\n항목의 금액이 바뀔 때 항목의 합계를 다시 계산한다.\n항목의 내부 메모는 내부 관리에만 사용한다.\n항목의 공개 설명은 사용자 화면에서 조회하지 않는다.\n";
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let document = parsed.document.unwrap();
+        let first = format_document(&document).unwrap();
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        let second = format_document(&reparsed.document.unwrap()).unwrap();
+        assert_eq!(first, second);
     }
 }

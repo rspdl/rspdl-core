@@ -27,9 +27,11 @@ pub use logic::{
 };
 pub use rule::{DerivationRule, Fact, LogicProgram, PredicateApplication, RuleLiteral};
 pub use semantic::{
-    ActionDefinition, ConstraintDefinition, ConstraintOperand, DataModelDefinition, EnumDefinition,
-    EnumVariantDefinition, FieldDefinition, PolicyDefinition, PolicyEffect, RelationOperator,
-    RoleDefinition, SemanticModule,
+    ActionDefinition, ConstraintDefinition, ConstraintOperand, DataModelDefinition,
+    DerivationDefinition, DerivationExpression, EnumDefinition, EnumVariantDefinition,
+    FieldDefinition, FieldIntentDefinition, FieldIntentKind, PolicyDefinition, PolicyEffect,
+    RelationOperator, RoleDefinition, ScreenDefinition, ScreenOperationDefinition,
+    ScreenOperationKind, SemanticModule,
 };
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;
