@@ -72,7 +72,8 @@ target_spec: "0.2.0"
   ```
 - Canonical IR은 screen별 model/field operation, 합계 원본 field ID, 대상 field ID, 재계산 원본 field ID와 비표시 의도를 정렬해 보존한다.
 - 합계 원본과 대상은 현재 모두 정수 필드여야 한다.
-- `RSPDL-DATA-001`은 조회·수정·계산 입력 필드에 화면 입력 또는 도달 가능한 계산 생산자가 없을 때 발생한다.
+- `RSPDL-DATA-001`은 조회·수정·계산 입력 필드에 화면 입력 또는 선언된 producer/derivation graph에서 구조적으로 도달 가능한 계산 생산자가 없을 때 발생한다.
+- 구조적 도달 가능성은 선언된 계산 dependency의 고정점만 뜻하며 화면 실행 순서, 분기 또는 path별 데이터 availability를 추론하지 않는다.
 - `RSPDL-DATA-002`는 사용하는 데이터 모델에 생성 화면이 없을 때 발생한다.
 - `RSPDL-DATA-003`은 계산 필드의 재계산 시점이 없거나 둘 이상일 때 발생한다.
 - `RSPDL-DATA-004`는 화면 동작, 생산자, 계산, 재계산 또는 필드 의도가 중복·불일치할 때 발생한다.
