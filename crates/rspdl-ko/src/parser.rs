@@ -473,18 +473,28 @@ fn parse_field_list(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnos
             })
             .collect::<Result<Vec<_>, _>>()?;
         if is_last {
-            let last = parts.last_mut().expect("segment is not empty");
-            let stripped = ["을", "를"]
-                .iter()
-                .find_map(|marker| last.strip_suffix(marker).filter(|value| !value.is_empty()));
-            let Some(stripped) = stripped else {
-                return Err(Diagnostic::error(
-                    "RSPDL-KO-SYN-062",
-                    "마지막 필드에는 `을` 또는 `를`이 필요합니다.",
-                    span,
-                ));
-            };
-            *last = stripped.to_owned();
+            let marker_follows_quoted_identifier = parts.len() > 1
+                && matches!(parts.last().map(String::as_str), Some("을" | "를"))
+                && matches!(
+                    segment.get(segment.len() - 2).map(|token| &token.kind),
+                    Some(TokenKind::QuotedIdentifier(_))
+                );
+            if marker_follows_quoted_identifier {
+                parts.pop();
+            } else {
+                let last = parts.last_mut().expect("segment is not empty");
+                let stripped = ["을", "를"]
+                    .iter()
+                    .find_map(|marker| last.strip_suffix(marker).filter(|value| !value.is_empty()));
+                let Some(stripped) = stripped else {
+                    return Err(Diagnostic::error(
+                        "RSPDL-KO-SYN-062",
+                        "마지막 필드에는 `을` 또는 `를`이 필요합니다.",
+                        span,
+                    ));
+                };
+                *last = stripped.to_owned();
+            }
         }
         fields.push(parts.join(" "));
         start = end + 1;
@@ -1356,6 +1366,57 @@ mod tests {
                 ..
             })
         )));
+
+        let quoted = parse(
+            "@모듈 배송(delivery)\n배송 입력 화면(input)에서는 배송의 `배송 주소`, `수령인 이름`을 입력할 수 있다.\n",
+        );
+        assert!(quoted.diagnostics.is_empty(), "{:?}", quoted.diagnostics);
+        assert!(
+            quoted
+                .document
+                .unwrap()
+                .declarations
+                .iter()
+                .any(|declaration| {
+                    matches!(
+                        declaration,
+                        DeclarationAst::Screen(ScreenAst { fields, .. })
+                            if fields == &["배송 주소", "수령인 이름"]
+                    )
+                })
+        );
+    }
+
+    #[test]
+    fn reports_exact_spans_for_invalid_data_usage_sentences() {
+        fn assert_diagnostic_span(source: &str, line: &str, rule_id: &str) {
+            let diagnostic = parse(source)
+                .diagnostics
+                .into_iter()
+                .find(|diagnostic| diagnostic.rule_id == rule_id)
+                .unwrap_or_else(|| panic!("missing diagnostic {rule_id}"));
+            let start = source.find(line).expect("test line should be present");
+            assert_eq!(
+                diagnostic.span,
+                Span {
+                    start,
+                    end: start + line.len(),
+                }
+            );
+        }
+
+        let screen_line = "항목 작성 화면(create_item)에서는 항목을 생성할 수 있다.";
+        let screen_with_body = format!("@모듈 테스트(test)\n{screen_line}\n    잘못된 블록\n");
+        assert_diagnostic_span(&screen_with_body, screen_line, "RSPDL-KO-SYN-060");
+
+        let missing_marker_line = "항목 작성 화면(create_item)에서는 항목의 금액 조회할 수 있다.";
+        let missing_marker = format!("@모듈 테스트(test)\n{missing_marker_line}\n");
+        assert_diagnostic_span(&missing_marker, missing_marker_line, "RSPDL-KO-SYN-062");
+
+        let derivation_line = "항목의 합계는 항목의 금액의 합계로 계산한다.";
+        let derivation_with_body =
+            format!("@모듈 테스트(test)\n{derivation_line}\n    잘못된 블록\n");
+        assert_diagnostic_span(&derivation_with_body, derivation_line, "RSPDL-KO-SYN-063");
     }
 
     #[test]
