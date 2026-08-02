@@ -1121,6 +1121,20 @@ mod tests {
         );
         let module = lowered.module.unwrap();
         assert_eq!(module.screens.len(), 6);
+        assert!(
+            module
+                .screens
+                .windows(2)
+                .all(|pair| pair[0].id < pair[1].id),
+            "screens must be sorted by canonical ID"
+        );
+        assert!(
+            module
+                .screens
+                .iter()
+                .all(|screen| screen.operations.windows(2).all(|pair| pair[0] < pair[1])),
+            "screen operations must be sorted"
+        );
         assert_eq!(module.derivations.len(), 1);
         let DerivationExpression::Sum { source_field_id } = &module.derivations[0].expression;
         assert_eq!(source_field_id.as_str(), "shopping.item.amount");

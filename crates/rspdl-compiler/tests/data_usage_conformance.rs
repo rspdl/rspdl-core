@@ -20,6 +20,14 @@ struct Case {
 struct ExpectedDiagnostic {
     rule_id: String,
     severity: String,
+    #[serde(default)]
+    span: Option<ExpectedSpan>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct ExpectedSpan {
+    start: usize,
+    end: usize,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -54,19 +62,39 @@ fn sentence_shaped_data_usage_conformance_suite() {
             case.expected_module,
             "case {name}"
         );
-        let diagnostics = compilation
+        assert_eq!(
+            compilation.diagnostics.len(),
+            case.expected_diagnostics.len(),
+            "case {name} diagnostic count"
+        );
+        for (actual, expected) in compilation
             .diagnostics
             .iter()
-            .map(|diagnostic| ExpectedDiagnostic {
-                rule_id: diagnostic.rule_id.clone(),
-                severity: serde_json::to_value(&diagnostic.severity)
+            .zip(&case.expected_diagnostics)
+        {
+            assert_eq!(actual.rule_id, expected.rule_id, "case {name}");
+            assert_eq!(
+                serde_json::to_value(&actual.severity)
                     .unwrap()
                     .as_str()
-                    .unwrap()
-                    .to_owned(),
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(diagnostics, case.expected_diagnostics, "case {name}");
+                    .unwrap(),
+                expected.severity,
+                "case {name}"
+            );
+            if let Some(span) = &expected.span {
+                assert_eq!(actual.span.start, span.start, "case {name} span start");
+                assert_eq!(actual.span.end, span.end, "case {name} span end");
+            }
+        }
+
+        assert_eq!(
+            compilation
+                .module
+                .as_ref()
+                .map_or(0, |module| module.derivations.len()),
+            usize::from(case.expected_derivation.is_some()),
+            "case {name} derivation count"
+        );
 
         let derivation = compilation.module.as_ref().and_then(|module| {
             module.derivations.first().map(|derivation| {

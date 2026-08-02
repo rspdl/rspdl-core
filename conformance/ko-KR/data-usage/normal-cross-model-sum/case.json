@@ -4,7 +4,11 @@
   "category": "normal",
   "expected_module": true,
   "expected_diagnostics": [
-    { "rule_id": "RSPDL-DATA-W002", "severity": "warning" }
+    {
+      "rule_id": "RSPDL-DATA-W002",
+      "severity": "warning",
+      "span": { "start": 763, "end": 859 }
+    }
   ],
   "expected_derivation": {
     "target_field_id": "shopping.cart.total",

@@ -313,6 +313,7 @@ mod tests {
         let parsed = parse(source);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
         let document = parsed.document.unwrap();
+        let original_module = lower(&document).module.unwrap();
         let first = format_document(&document).unwrap();
         let reparsed = parse(&first);
         assert!(
@@ -320,7 +321,9 @@ mod tests {
             "{:?}\n{first}",
             reparsed.diagnostics
         );
-        let second = format_document(&reparsed.document.unwrap()).unwrap();
+        let reparsed_document = reparsed.document.unwrap();
+        assert_eq!(original_module, lower(&reparsed_document).module.unwrap());
+        let second = format_document(&reparsed_document).unwrap();
         assert_eq!(first, second);
     }
 }
