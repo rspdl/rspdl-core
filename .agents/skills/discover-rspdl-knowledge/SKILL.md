@@ -18,7 +18,7 @@ python3 "$(git rev-parse --show-toplevel)/.agents/skills/discover-rspdl-knowledg
 Then narrow context in this order:
 
 1. Run `query "<keywords>"` to inspect matching metadata only.
-2. Run `graph <document-id>` to inspect related documents and backlinks.
+2. Prefer a matching `problem` document, then run `graph <document-id>` to inspect its solution links and backlinks.
 3. Run `outline <document-id>` to inspect headings and line numbers.
 4. Read only the relevant section of the selected document.
 5. Read the full document only when its complete contract is required.
@@ -48,11 +48,14 @@ python3 <script> build
 When creating or changing a knowledge document:
 
 1. Read [references/frontmatter-schema.md](references/frontmatter-schema.md).
-2. Add or update its YAML front matter.
-3. Use stable document IDs; never reuse an ID for a different concept.
-4. Add `related` links only when they improve discovery. Backlinks are computed automatically.
-5. Keep `summary` factual and limited to one line.
-6. Run `build`, then `validate`.
-7. Review the generated index diff with the document diff.
+2. Query for the causal problem before choosing a solution.
+3. Create one `docs/problems/` topic when no existing problem captures the cause; do not create one topic per feature.
+4. Add at least one `problem_refs` entry to every PRD, ADR, RFC, architecture, or spec document.
+5. Add or update its YAML front matter.
+6. Use stable document IDs; never reuse an ID for a different concept.
+7. Add `related` links only when they improve discovery. Backlinks are computed automatically.
+8. Keep `summary` factual and limited to one line.
+9. Run `build`, then `validate`.
+10. Review the generated index diff with the document diff.
 
 Treat generated indexes as rebuildable navigation aids, not authoritative content.

@@ -4,12 +4,25 @@ knowledge_base:
   code_guidelines:
     enabled: true
     filePatterns:
+      - "README.md"
+      - "AGENTS.md"
       - "docs/architecture.md"
       - "docs/prd.md"
+      - "docs/product/*.md"
+      - "docs/problems/*.md"
+      - "docs/guides/*.md"
       - "docs/rfcs/*.md"
 
 reviews:
   path_instructions:
+    - path: "**"
+      instructions: |
+        Product, language-semantic, and architecture changes must be traceable
+        to at least one causal Problem Topic through problem_refs. Verify that
+        the change preserves an explicit chain from problem to requirement or
+        decision, implementation, and test or diagnostic evidence. Do not
+        accept claims that unmodeled intent is inferred or that unsupported
+        semantics are treated as success.
     - path: "crates/rspdl-ko/**"
       instructions: |
         Treat docs/rfcs/0004-natural-korean-domain-grammar.md as the normative
@@ -35,4 +48,7 @@ reviews:
     - path: "docs/**"
       instructions: |
         Check that examples, EBNF, static semantics, runtime semantics, and
-        implemented code remain consistent with each other.
+        implemented code remain consistent with each other. Problem Topics
+        must describe one causal mechanism, remain solution-neutral, use the
+        required Why/What/How/Constraints/References order, and stay under 150
+        lines. Verify current implementation and future scope are not conflated.

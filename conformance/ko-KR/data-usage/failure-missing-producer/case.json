@@ -1,0 +1,24 @@
+{
+  "spec_version": "0.2.0",
+  "locale": "ko-KR",
+  "category": "failure",
+  "expected_module": false,
+  "expected_diagnostics": [
+    {
+      "rule_id": "RSPDL-DATA-001",
+      "severity": "error",
+      "span": { "start": 436, "end": 546 }
+    },
+    {
+      "rule_id": "RSPDL-DATA-001",
+      "severity": "error",
+      "span": { "start": 548, "end": 644 }
+    },
+    {
+      "rule_id": "RSPDL-DATA-W002",
+      "severity": "warning",
+      "span": { "start": 548, "end": 644 }
+    }
+  ],
+  "expected_derivation": null
+}

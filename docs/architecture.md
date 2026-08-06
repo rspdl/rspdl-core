@@ -14,14 +14,19 @@ topics:
   - conformance
 related:
   - rspdl-language-prd
+  - rspdl-product-vision
   - rust-korean-first-frontend
   - core-application-boundary
   - controlled-korean-surface-grammar
   - typed-domains-and-logic-core
-last_updated: "2026-07-31"
+  - field-provenance-and-sum-derivation
+problem_refs:
+  - data-lifecycle-modeling-gap
+  - policy-consistency-blind-spots
+last_updated: "2026-08-03"
 owners:
   - rspdl-maintainers
-target_spec: "0.1.0"
+target_spec: "0.2.0"
 ---
 
 # RSPDL Compiler Architecture
@@ -155,6 +160,7 @@ Locale에 독립적인 compiler domain을 소유한다.
 - symbol table과 name resolution
 - Semantic Graph
 - 타입, 데이터, 플로우와 정책 의미 규칙
+- 화면 field producer/consumer graph와 합계 derivation dependency
 - Canonical IR과 진단의 안정적인 serialization
 
 사람에게 표시할 번역 문장은 domain diagnostic에 저장하지 않는다. Domain은 message key와 구조화된 argument를 반환한다.
@@ -173,6 +179,7 @@ Controlled Korean surface language 전체를 소유한다.
 - 한국어 표현 품질 lint
 - 조사와 공백을 정규화하는 formatter
 - `SurfaceRef`를 포함한 AST의 Canonical IR lowering
+- 화면 동작, 합계 계산, 재계산과 필드 사용 의도 문장의 parsing과 formatting
 - 한국어 syntax diagnostic의 message key와 argument
 
 형태소 분석, 품사 분석과 동의어 추론은 포함하지 않는다.
@@ -333,5 +340,12 @@ Golden file은 명세 계약이므로 단순 snapshot 갱신으로 승인하지 
 - 이름·source ID 없이 인식되는 자연 문장형 제약·정책과 결정적 내부 Rule ID
 - Z3 제약 반례와 Datalog 정책 match 실행
 - `parse`, `compile`, `check`, `format` CLI와 안정적인 JSON artifact
+
+[Field Provenance, Screen Usage, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)은 다음 후속 vertical slice를 구현한다.
+
+- block 없는 화면별 model/field 동작 문장
+- 화면 입력과 합계 계산의 field producer graph
+- 생산자 없는 소비, 재계산 누락과 미조회 입력 진단
+- 교차 모델 합계 dependency와 관계 범위 `unknown` 보존
 
 관계·컬렉션·유저 플로우·조건부 정책과 일반 논리식은 후속 vertical slice에서 다룬다.

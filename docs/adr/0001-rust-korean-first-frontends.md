@@ -15,7 +15,10 @@ related:
   - rspdl-language-prd
   - rspdl-compiler-architecture
   - controlled-korean-surface-grammar
-last_updated: "2026-07-27"
+problem_refs:
+  - data-lifecycle-modeling-gap
+  - policy-consistency-blind-spots
+last_updated: "2026-08-02"
 owners:
   - rspdl-maintainers
 target_spec: "0.1.0"
@@ -105,4 +108,3 @@ compiler correctness는 Kiwi 또는 다른 형태소·품사·자연어 분석�
 - 한국어에서 지원할 문형의 최종 목록
 - stable machine ID와 한국어 표시 이름을 연결하는 표면 문법
 - 영어 frontend의 구체적인 문형과 구현 시점
-

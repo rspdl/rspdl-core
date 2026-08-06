@@ -16,7 +16,10 @@ related:
   - controlled-korean-surface-grammar
   - typed-domains-and-logic-core
   - rspdl-compiler-architecture
-last_updated: "2026-07-30"
+problem_refs:
+  - data-lifecycle-modeling-gap
+  - policy-consistency-blind-spots
+last_updated: "2026-08-02"
 owners:
   - rspdl-maintainers
 target_spec: "0.1.0"

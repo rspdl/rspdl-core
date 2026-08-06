@@ -10,6 +10,42 @@ fn workspace_root() -> PathBuf {
 }
 
 #[test]
+fn compiles_every_rspdl_example() {
+    let examples = workspace_root().join("examples");
+    let mut sources = std::fs::read_dir(&examples)
+        .expect("examples directory should be readable")
+        .map(|entry| entry.expect("example entry should be readable").path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "rspdl")
+        })
+        .collect::<Vec<_>>();
+    sources.sort();
+    assert!(!sources.is_empty(), "at least one example should exist");
+
+    for source in sources {
+        let output = Command::new(env!("CARGO_BIN_EXE_rspdl"))
+            .args([
+                "compile",
+                source.to_str().expect("example path should be valid UTF-8"),
+                "--json",
+            ])
+            .output()
+            .expect("rspdl command should run");
+
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "example {} failed: {}",
+            source.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(report["module"].is_object(), "example {}", source.display());
+    }
+}
+
+#[test]
 fn checks_the_expense_approval_example_with_runtime_fixture_data() {
     let workspace = workspace_root();
     let source = workspace.join("examples/expense-approval.rspdl");

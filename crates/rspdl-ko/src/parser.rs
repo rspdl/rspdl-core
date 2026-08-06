@@ -71,6 +71,18 @@ pub fn parse(source: &str) -> ParseOutput {
             Some(DeclarationKind::DataModel) => {
                 parse_model(line, body, &mut diagnostics).map(DeclarationAst::DataModel)
             }
+            Some(DeclarationKind::Screen) => {
+                parse_screen(line, body, &mut diagnostics).map(DeclarationAst::Screen)
+            }
+            Some(DeclarationKind::SumDerivation) => {
+                parse_sum_derivation(line, body).map(DeclarationAst::SumDerivation)
+            }
+            Some(DeclarationKind::Recalculation) => {
+                parse_recalculation(line, body).map(DeclarationAst::Recalculation)
+            }
+            Some(DeclarationKind::FieldIntent) => {
+                parse_field_intent(line, body).map(DeclarationAst::FieldIntent)
+            }
             Some(DeclarationKind::Constraint) => {
                 parse_constraint(line, body, &mut diagnostics).map(DeclarationAst::Constraint)
             }
@@ -139,6 +151,10 @@ fn logical_lines(tokens: &[Token]) -> Vec<Line> {
 enum DeclarationKind {
     Enum,
     DataModel,
+    Screen,
+    SumDerivation,
+    Recalculation,
+    FieldIntent,
     Constraint,
     Role,
     Action,
@@ -151,6 +167,10 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
         Some("@역할") => Some(DeclarationKind::Role),
         Some("@행동") => Some(DeclarationKind::Action),
         _ if is_data_model_header(line) => Some(DeclarationKind::DataModel),
+        _ if is_screen_sentence(line) => Some(DeclarationKind::Screen),
+        _ if is_recalculation_sentence(line) => Some(DeclarationKind::Recalculation),
+        _ if is_sum_derivation_sentence(line) => Some(DeclarationKind::SumDerivation),
+        _ if is_field_intent_sentence(line) => Some(DeclarationKind::FieldIntent),
         _ if is_rule_sentence(line) => {
             if is_policy_sentence(line) {
                 Some(DeclarationKind::Policy)
@@ -160,6 +180,41 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
         }
         _ => None,
     }
+}
+
+fn is_screen_sentence(line: &Line) -> bool {
+    line.tokens
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
+        .and_then(|index| word_at(line, index + 1))
+        == Some("에서는")
+        && last_sentence_word(line, 0) == Some("있다")
+        && last_sentence_word(line, 1) == Some("수")
+}
+
+fn is_sum_derivation_sentence(line: &Line) -> bool {
+    last_sentence_word(line, 0) == Some("계산한다")
+        && line
+            .tokens
+            .iter()
+            .any(|token| matches!(&token.kind, TokenKind::Word(word) if word == "합계로"))
+}
+
+fn is_recalculation_sentence(line: &Line) -> bool {
+    last_sentence_word(line, 0) == Some("계산한다") && last_sentence_word(line, 1) == Some("다시")
+}
+
+fn is_field_intent_sentence(line: &Line) -> bool {
+    let words = line
+        .tokens
+        .iter()
+        .filter_map(|token| match &token.kind {
+            TokenKind::Word(word) => Some(word.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    words.ends_with(&["내부", "관리에만", "사용한다"])
+        || words.ends_with(&["사용자", "화면에서", "조회하지", "않는다"])
 }
 
 fn is_data_model_header(line: &Line) -> bool {
@@ -307,6 +362,224 @@ fn parse_model(
         declaration,
         fields,
     })
+}
+
+fn parse_screen(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<ScreenAst, Diagnostic> {
+    if !body.is_empty() {
+        return Err(Diagnostic::error(
+            "RSPDL-KO-SYN-060",
+            "화면 동작은 들여쓰기 블록 없이 한 문장으로 작성해야 합니다.",
+            line.span,
+        ));
+    }
+    let tokens = sentence_tokens(line)?;
+    let id_index = tokens
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-061",
+                "화면 stable ID가 필요합니다.",
+                line.span,
+            )
+        })?;
+    let declaration = parse_name_with_id(line, 0, id_index)?;
+    let mut cursor = BodyCursor::new(&tokens[id_index + 1..], line.span);
+    cursor.expect_word("에서는")?;
+    let (model, marker) = cursor.marked_ref(&["의", "을", "를"])?;
+
+    let (fields, operation) = if marker == "의" {
+        if cursor.tokens.len().saturating_sub(cursor.index) < 3 {
+            return Err(cursor.error("화면의 필드 동작이 누락되었습니다."));
+        }
+        let operation_index = cursor.tokens.len() - 3;
+        let fields = parse_field_list(&cursor.tokens[cursor.index..operation_index], line.span)?;
+        cursor.index = operation_index;
+        let operation = match cursor.next_word() {
+            Some("조회할") => ScreenOperationKindAst::Read,
+            Some("입력할") => ScreenOperationKindAst::Input,
+            Some("수정할") => ScreenOperationKindAst::Update,
+            _ => {
+                return Err(
+                    cursor.error("필드 동작은 `입력할`, `조회할`, `수정할` 중 하나여야 합니다.")
+                );
+            }
+        };
+        (fields, operation)
+    } else {
+        let operation = match cursor.next_word() {
+            Some("생성할") => ScreenOperationKindAst::Create,
+            Some("조회할") => ScreenOperationKindAst::Read,
+            Some("수정할") => ScreenOperationKindAst::Update,
+            Some("삭제할") => ScreenOperationKindAst::Delete,
+            _ => {
+                return Err(cursor.error(
+                    "데이터 동작은 `생성할`, `조회할`, `수정할`, `삭제할` 중 하나여야 합니다.",
+                ));
+            }
+        };
+        (Vec::new(), operation)
+    };
+    cursor.expect_word("수")?;
+    cursor.expect_word("있다")?;
+    cursor.expect_end()?;
+    if marker != "의" {
+        lint_marker(&model, &marker, "을", "를", line.span, diagnostics);
+    }
+    Ok(ScreenAst {
+        declaration,
+        model,
+        fields,
+        operation,
+        span: line.span,
+    })
+}
+
+fn parse_field_list(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnostic> {
+    if tokens.is_empty() {
+        return Err(Diagnostic::error(
+            "RSPDL-KO-SYN-062",
+            "필드 목록이 필요합니다.",
+            span,
+        ));
+    }
+    let mut fields = Vec::new();
+    let mut start = 0usize;
+    for end in (0..=tokens.len())
+        .filter(|index| *index == tokens.len() || matches!(tokens[*index].kind, TokenKind::Comma))
+    {
+        let segment = &tokens[start..end];
+        if segment.is_empty() {
+            return Err(Diagnostic::error(
+                "RSPDL-KO-SYN-062",
+                "빈 필드 이름은 사용할 수 없습니다.",
+                span,
+            ));
+        }
+        let is_last = end == tokens.len();
+        let mut parts = segment
+            .iter()
+            .map(|token| match &token.kind {
+                TokenKind::Word(word) | TokenKind::QuotedIdentifier(word) => Ok(word.clone()),
+                _ => Err(Diagnostic::error(
+                    "RSPDL-KO-SYN-062",
+                    "필드 목록 형식이 올바르지 않습니다.",
+                    token.span,
+                )),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if is_last {
+            let marker_follows_quoted_identifier = parts.len() > 1
+                && matches!(parts.last().map(String::as_str), Some("을" | "를"))
+                && matches!(
+                    segment.get(segment.len() - 2).map(|token| &token.kind),
+                    Some(TokenKind::QuotedIdentifier(_))
+                );
+            if marker_follows_quoted_identifier {
+                parts.pop();
+            } else {
+                let last = parts.last_mut().expect("segment is not empty");
+                let stripped = ["을", "를"]
+                    .iter()
+                    .find_map(|marker| last.strip_suffix(marker).filter(|value| !value.is_empty()));
+                let Some(stripped) = stripped else {
+                    return Err(Diagnostic::error(
+                        "RSPDL-KO-SYN-062",
+                        "마지막 필드에는 `을` 또는 `를`이 필요합니다.",
+                        span,
+                    ));
+                };
+                *last = stripped.to_owned();
+            }
+        }
+        fields.push(parts.join(" "));
+        start = end + 1;
+    }
+    Ok(fields)
+}
+
+fn parse_sum_derivation(line: &Line, body: &[Line]) -> Result<SumDerivationAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "계산")?;
+    let mut cursor = BodyCursor::new(sentence_tokens(line)?, line.span);
+    let (target_model, _) = cursor.marked_ref(&["의"])?;
+    let (target_field, _) = cursor.marked_ref(&["은", "는"])?;
+    let (source_model, _) = cursor.marked_ref(&["의"])?;
+    let (source_field, _) = cursor.marked_ref(&["의"])?;
+    cursor.expect_word("합계로")?;
+    cursor.expect_word("계산한다")?;
+    cursor.expect_end()?;
+    Ok(SumDerivationAst {
+        target_model,
+        target_field,
+        source_model,
+        source_field,
+        span: line.span,
+    })
+}
+
+fn parse_recalculation(line: &Line, body: &[Line]) -> Result<RecalculationAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "재계산")?;
+    let mut cursor = BodyCursor::new(sentence_tokens(line)?, line.span);
+    let (source_model, _) = cursor.marked_ref(&["의"])?;
+    let (source_field, _) = cursor.marked_ref(&["이", "가"])?;
+    cursor.expect_word("바뀔")?;
+    cursor.expect_word("때")?;
+    let (target_model, _) = cursor.marked_ref(&["의"])?;
+    let (target_field, _) = cursor.marked_ref(&["을", "를"])?;
+    cursor.expect_word("다시")?;
+    cursor.expect_word("계산한다")?;
+    cursor.expect_end()?;
+    Ok(RecalculationAst {
+        source_model,
+        source_field,
+        target_model,
+        target_field,
+        span: line.span,
+    })
+}
+
+fn parse_field_intent(line: &Line, body: &[Line]) -> Result<FieldIntentAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "필드 사용 의도")?;
+    let mut cursor = BodyCursor::new(sentence_tokens(line)?, line.span);
+    let (model, _) = cursor.marked_ref(&["의"])?;
+    let (field, _) = cursor.marked_ref(&["은", "는"])?;
+    let intent = match cursor.next_word() {
+        Some("내부") => {
+            cursor.expect_word("관리에만")?;
+            cursor.expect_word("사용한다")?;
+            FieldIntentKindAst::Internal
+        }
+        Some("사용자") => {
+            cursor.expect_word("화면에서")?;
+            cursor.expect_word("조회하지")?;
+            cursor.expect_word("않는다")?;
+            FieldIntentKindAst::Hidden
+        }
+        _ => return Err(cursor.error("필드는 `내부 관리에만 사용한다` 또는 `사용자 화면에서 조회하지 않는다`로 분류해야 합니다.")),
+    };
+    cursor.expect_end()?;
+    Ok(FieldIntentAst {
+        model,
+        field,
+        intent,
+        span: line.span,
+    })
+}
+
+fn reject_sentence_body(body: &[Line], span: Span, kind: &str) -> Result<(), Diagnostic> {
+    if body.is_empty() {
+        Ok(())
+    } else {
+        Err(Diagnostic::error(
+            "RSPDL-KO-SYN-063",
+            format!("{kind} 문장 아래에는 들여쓰기 블록을 둘 수 없습니다."),
+            span,
+        ))
+    }
 }
 
 fn parse_constraint(
@@ -492,7 +765,7 @@ fn sentence_tokens(line: &Line) -> Result<&[Token], Diagnostic> {
     ) {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-040",
-            "제약과 정책 문장은 마침표로 끝나야 합니다.",
+            "완전한 문장은 마침표로 끝나야 합니다.",
             line.span,
         ));
     }
@@ -1047,6 +1320,103 @@ mod tests {
     fn data_models_do_not_use_an_annotation() {
         let output = parse(&SOURCE.replace("비용 신청(request)은", "@데이터 비용 신청(request)은"));
         assert!(output.diagnostics.iter().any(Diagnostic::is_error));
+    }
+
+    #[test]
+    fn parses_sentence_shaped_screen_and_sum_derivation_rules() {
+        let source = r#"@모듈 장바구니(shopping)
+장바구니(cart)는 다음 필드들로 구성되어 있다.
+    결제 예정 금액(total): 필수 정수
+장바구니 항목(item)은 다음 필드들로 구성되어 있다.
+    수량(quantity): 필수 정수
+    금액(amount): 필수 정수
+장바구니 작성 화면(create_cart)에서는 장바구니를 생성할 수 있다.
+장바구니 항목 입력 화면(create_item)에서는 장바구니 항목을 생성할 수 있다.
+장바구니 항목 입력 화면(create_item)에서는 장바구니 항목의 수량, 금액을 입력할 수 있다.
+장바구니 상세 화면(cart_detail)에서는 장바구니의 결제 예정 금액을 조회할 수 있다.
+장바구니 항목 화면(item_detail)에서는 장바구니 항목의 수량, 금액을 조회할 수 있다.
+장바구니 항목 수정 화면(update_item)에서는 장바구니 항목의 금액을 수정할 수 있다.
+장바구니 항목 삭제 화면(delete_item)에서는 장바구니 항목을 삭제할 수 있다.
+장바구니의 결제 예정 금액은 장바구니 항목의 금액의 합계로 계산한다.
+장바구니 항목의 금액이 바뀔 때 장바구니의 결제 예정 금액을 다시 계산한다.
+"#;
+        let output = parse(source);
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let document = output.document.unwrap();
+        assert!(document.declarations.iter().any(|declaration| matches!(
+            declaration,
+            DeclarationAst::Screen(ScreenAst { fields, .. }) if fields.len() == 2
+        )));
+        assert!(
+            document
+                .declarations
+                .iter()
+                .any(|declaration| matches!(declaration, DeclarationAst::SumDerivation(_)))
+        );
+        assert!(
+            document
+                .declarations
+                .iter()
+                .any(|declaration| matches!(declaration, DeclarationAst::Recalculation(_)))
+        );
+        assert!(document.declarations.iter().any(|declaration| matches!(
+            declaration,
+            DeclarationAst::Screen(ScreenAst {
+                operation: ScreenOperationKindAst::Delete,
+                ..
+            })
+        )));
+
+        let quoted = parse(
+            "@모듈 배송(delivery)\n배송 입력 화면(input)에서는 배송의 `배송 주소`, `수령인 이름`을 입력할 수 있다.\n",
+        );
+        assert!(quoted.diagnostics.is_empty(), "{:?}", quoted.diagnostics);
+        assert!(
+            quoted
+                .document
+                .unwrap()
+                .declarations
+                .iter()
+                .any(|declaration| {
+                    matches!(
+                        declaration,
+                        DeclarationAst::Screen(ScreenAst { fields, .. })
+                            if fields == &["배송 주소", "수령인 이름"]
+                    )
+                })
+        );
+    }
+
+    #[test]
+    fn reports_exact_spans_for_invalid_data_usage_sentences() {
+        fn assert_diagnostic_span(source: &str, line: &str, rule_id: &str) {
+            let diagnostic = parse(source)
+                .diagnostics
+                .into_iter()
+                .find(|diagnostic| diagnostic.rule_id == rule_id)
+                .unwrap_or_else(|| panic!("missing diagnostic {rule_id}"));
+            let start = source.find(line).expect("test line should be present");
+            assert_eq!(
+                diagnostic.span,
+                Span {
+                    start,
+                    end: start + line.len(),
+                }
+            );
+        }
+
+        let screen_line = "항목 작성 화면(create_item)에서는 항목을 생성할 수 있다.";
+        let screen_with_body = format!("@모듈 테스트(test)\n{screen_line}\n    잘못된 블록\n");
+        assert_diagnostic_span(&screen_with_body, screen_line, "RSPDL-KO-SYN-060");
+
+        let missing_marker_line = "항목 작성 화면(create_item)에서는 항목의 금액 조회할 수 있다.";
+        let missing_marker = format!("@모듈 테스트(test)\n{missing_marker_line}\n");
+        assert_diagnostic_span(&missing_marker, missing_marker_line, "RSPDL-KO-SYN-062");
+
+        let derivation_line = "항목의 합계는 항목의 금액의 합계로 계산한다.";
+        let derivation_with_body =
+            format!("@모듈 테스트(test)\n{derivation_line}\n    잘못된 블록\n");
+        assert_diagnostic_span(&derivation_with_body, derivation_line, "RSPDL-KO-SYN-063");
     }
 
     #[test]
