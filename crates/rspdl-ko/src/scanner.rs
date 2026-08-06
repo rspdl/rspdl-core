@@ -10,6 +10,7 @@ pub enum TokenKind {
     CanonicalId(String),
     StringLiteral(String),
     Colon,
+    Comma,
     Period,
     Indent,
     Dedent,
@@ -168,6 +169,10 @@ fn scan_content(
                 cursor += 1;
                 push(tokens, TokenKind::Colon, base + start, base + cursor);
             }
+            ',' => {
+                cursor += 1;
+                push(tokens, TokenKind::Comma, base + start, base + cursor);
+            }
             '.' => {
                 cursor += 1;
                 push(tokens, TokenKind::Period, base + start, base + cursor);
@@ -270,7 +275,7 @@ fn scan_content(
                 while cursor < content.len() {
                     let next = content[cursor..].chars().next().expect("word character");
                     if next.is_whitespace()
-                        || matches!(next, ':' | '.' | '#' | '`' | '[' | '(' | '"')
+                        || matches!(next, ':' | ',' | '.' | '#' | '`' | '[' | '(' | '"')
                     {
                         break;
                     }

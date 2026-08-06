@@ -15,7 +15,7 @@ related:
   - rspdl-product-vision
   - rspdl-language-prd
   - problem-driven-development
-last_updated: "2026-08-02"
+last_updated: "2026-08-03"
 owners:
   - rspdl-maintainers
 ---
@@ -60,11 +60,13 @@ owners:
 - `선택 필드가 없음`, `아직 생성되지 않음`, `삭제됨`을 자동으로 같은 상태로 취급하지 않는다.
 - 문서에 없는 보존 기간, 복구 가능성, 삭제 전파 방식을 AI가 추측하지 않는다.
 - solver가 완전하게 판정하지 못한 경로는 성공으로 근사하지 않고 `unknown`으로 보고한다.
-- 현재 0.1 문법은 record shape와 field constraint를 지원하지만 일반 lifecycle과 상태 전이는 아직 구현하지 않았다.
+- 현재 vertical slice는 화면 입력과 합계 계산의 field provenance, 화면 소비, 재계산 선언과 미조회 입력 안내를 지원한다.
+- 화면 순서·분기, 삭제 이후 접근과 relation/join 기반 집계 범위는 아직 구현하지 않았다.
 
 ## References
 
 - [RSPDL Product Vision](../product/vision.md)
 - [RSPDL Product Requirements](../prd.md)
 - [Typed Domains and Logic Core](../rfcs/0002-typed-domains-and-logic-core.md)
+- [Field Provenance, Screen Usage, and Sum Derivation Grammar](../rfcs/0005-field-provenance-and-sum-derivation.md)
 - [Problem-driven Development](../guides/problem-driven-development.md)

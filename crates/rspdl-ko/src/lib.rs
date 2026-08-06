@@ -10,8 +10,9 @@ mod scanner;
 
 pub use ast::{
     ActionAst, ConstraintAst, ConstraintExpressionAst, DataModelAst, DeclarationAst, DocumentAst,
-    EnumAst, EnumValueAst, FieldAst, LiteralAst, ModuleAst, NamedIdAst, OperandAst, PolicyAst,
-    PolicyEffectAst, RelationOperatorAst, RoleAst, Span, TypeReferenceAst,
+    EnumAst, EnumValueAst, FieldAst, FieldIntentAst, FieldIntentKindAst, LiteralAst, ModuleAst,
+    NamedIdAst, OperandAst, PolicyAst, PolicyEffectAst, RecalculationAst, RelationOperatorAst,
+    RoleAst, ScreenAst, ScreenOperationKindAst, Span, SumDerivationAst, TypeReferenceAst,
 };
 pub use formatter::{FormatError, format_document};
 pub use lowering::{LowerOutput, lower};

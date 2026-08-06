@@ -18,10 +18,11 @@ related:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - controlled-korean-surface-grammar
+  - field-provenance-and-sum-derivation
   - natural-korean-domain-grammar
   - stratified-datalog-and-typed-solver
   - typed-domains-and-logic-core
-last_updated: "2026-08-02"
+last_updated: "2026-08-03"
 owners:
   - rspdl-maintainers
 ---
@@ -41,6 +42,7 @@ owners:
 | `data-lifecycle-modeling-gap` | `problem` | `active` | [Data Lifecycle Modeling Gap](problems/0001-data-lifecycle-modeling-gap.md) | Planning artifacts often omit when data comes into existence, changes, disappears, and remains available to dependent behavior. | - | `data-lifecycle`, `state-transition`, `derivation`, `deletion-impact` |
 | `policy-consistency-blind-spots` | `problem` | `active` | [Policy Consistency Blind Spots](problems/0002-policy-consistency-blind-spots.md) | Prose planning hides contradictory, uncovered, overlapping, and unreachable policy branches that become visible only during implementation. | - | `policy-conflict`, `policy-gap`, `condition-coverage`, `counterexample` |
 | `controlled-korean-surface-grammar` | `rfc` | `proposed` | [Controlled Korean Surface Grammar](rfcs/0001-controlled-korean-surface-grammar.md) | Proposes a deterministic Korean surface grammar that treats particles and endings as structural markers rather than morphology. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `ko-KR`, `controlled-language`, `surface-grammar`, `cfg`, `parser`, `diagnostics` |
+| `field-provenance-and-sum-derivation` | `rfc` | `implemented` | [Field Provenance, Screen Usage, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md) | Defines sentence-shaped screen data operations, field provenance checks, cross-model sum dependencies, and explicit recalculation triggers. | `data-lifecycle-modeling-gap` | `data-lifecycle`, `field-provenance`, `screen-usage`, `derivation`, `aggregation`, `diagnostics` |
 | `natural-korean-domain-grammar` | `rfc` | `implemented` | [Korean Domain Frontend Language Specification](rfcs/0004-natural-korean-domain-grammar.md) | Defines sparse annotation-led blocks, natural Korean data headers, indentation-based CFG items, and controlled constraint and policy sentences implemented by rspdl-ko. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `ko-KR`, `controlled-language`, `data-model`, `constraints`, `policies`, `cfg` |
 | `stratified-datalog-and-typed-solver` | `rfc` | `proposed` | [Stratified Datalog and Typed Solver](rfcs/0003-stratified-datalog-and-typed-solver.md) | Defines active-domain stratified Datalog evaluation and the typed constraint-solver contract. | `policy-consistency-blind-spots` | `datalog`, `stratification`, `smt`, `z3`, `constraints` |
 | `typed-domains-and-logic-core` | `rfc` | `proposed` | [정규화 타입·도메인과 논리 IR 코어](rfcs/0002-typed-domains-and-logic-core.md) | Defines normalized data types, finite and computable infinite domains, typed set algebra, and the shared logical expression core. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `type-system`, `data-model`, `domains`, `set-algebra`, `datalog`, `smt` |
