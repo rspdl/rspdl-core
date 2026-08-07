@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use crate::ast::*;
 use crate::scanner::{Token, TokenKind, scan};
-use crate::{Diagnostic, Severity};
+use crate::{Diagnostic, Severity, Span};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ParseOutput {
@@ -595,7 +595,7 @@ fn parse_constraint(
         ));
     }
     let expression = parse_constraint_sentence(line, diagnostics)?;
-    let declaration = internal_constraint_declaration(&expression, line.span);
+    let declaration = anonymous_declaration(line.span);
     Ok(ConstraintAst {
         declaration,
         expression,
@@ -637,8 +637,7 @@ fn parse_policy(
         body_line.span,
         diagnostics,
     );
-    let declaration =
-        internal_policy_declaration(&role, &model, &field, &action, effect, body_line.span);
+    let declaration = anonymous_declaration(body_line.span);
     Ok(PolicyAst {
         declaration,
         role,
@@ -692,69 +691,11 @@ fn parse_constraint_sentence(
     })
 }
 
-fn internal_constraint_declaration(expression: &ConstraintExpressionAst, span: Span) -> NamedIdAst {
-    let identity = format!(
-        "{}\u{0}{}\u{0}{}\u{0}{}",
-        expression.model,
-        operand_identity(&expression.left),
-        operator_identity(expression.operator),
-        operand_identity(&expression.right)
-    );
-    internal_declaration("constraint", &identity, span)
-}
-
-fn internal_policy_declaration(
-    role: &str,
-    model: &str,
-    field: &str,
-    action: &str,
-    effect: PolicyEffectAst,
-    span: Span,
-) -> NamedIdAst {
-    let effect = match effect {
-        PolicyEffectAst::Allow => "allow",
-        PolicyEffectAst::Deny => "deny",
-    };
-    let identity = format!("{role}\u{0}{model}\u{0}{field}\u{0}{action}\u{0}{effect}");
-    internal_declaration("policy", &identity, span)
-}
-
-fn internal_declaration(kind: &str, identity: &str, span: Span) -> NamedIdAst {
-    let mut hash = 0xcbf29ce484222325u64;
-    for byte in identity.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
+fn anonymous_declaration(span: Span) -> NamedIdAst {
     NamedIdAst {
         name: String::new(),
-        id: format!("{kind}_{hash:016x}"),
+        id: String::new(),
         span,
-    }
-}
-
-fn operand_identity(operand: &OperandAst) -> String {
-    match operand {
-        OperandAst::Field(value) => format!("field:{value}"),
-        OperandAst::Literal(LiteralAst::String(value)) => {
-            format!(
-                "string:{}",
-                serde_json::to_string(value).expect("a string always serializes")
-            )
-        }
-        OperandAst::Literal(LiteralAst::Integer(value)) => format!("integer:{value}"),
-        OperandAst::Literal(LiteralAst::Boolean(value)) => format!("boolean:{value}"),
-        OperandAst::Literal(LiteralAst::Named(value)) => format!("named:{value}"),
-    }
-}
-
-fn operator_identity(operator: RelationOperatorAst) -> &'static str {
-    match operator {
-        RelationOperatorAst::Equal => "equal",
-        RelationOperatorAst::NotEqual => "not_equal",
-        RelationOperatorAst::LessThan => "less_than",
-        RelationOperatorAst::LessThanOrEqual => "less_than_or_equal",
-        RelationOperatorAst::GreaterThan => "greater_than",
-        RelationOperatorAst::GreaterThanOrEqual => "greater_than_or_equal",
     }
 }
 
@@ -1274,35 +1215,25 @@ mod tests {
             panic!("third declaration should be a constraint sentence");
         };
         assert!(constraint.declaration.name.is_empty());
-        assert!(constraint.declaration.id.starts_with("constraint_"));
+        assert!(constraint.declaration.id.is_empty());
         let DeclarationAst::Policy(policy) = &document.declarations[5] else {
             panic!("last declaration should be a policy sentence");
         };
         assert!(policy.declaration.name.is_empty());
-        assert!(policy.declaration.id.starts_with("policy_"));
+        assert!(policy.declaration.id.is_empty());
     }
 
     #[test]
-    fn internal_rule_ids_ignore_whitespace_but_have_stable_known_vectors() {
-        let compact = parse(SOURCE).document.unwrap();
-        let spaced = parse(&SOURCE.replace("비용 신청의 금액은", "비용   신청의   금액은"))
-            .document
-            .unwrap();
-
-        let DeclarationAst::Constraint(compact_constraint) = &compact.declarations[2] else {
+    fn anonymous_semantic_rules_do_not_allocate_locale_ids() {
+        let document = parse(SOURCE).document.unwrap();
+        let DeclarationAst::Constraint(constraint) = &document.declarations[2] else {
             panic!("third declaration should be a constraint sentence");
         };
-        let DeclarationAst::Constraint(spaced_constraint) = &spaced.declarations[2] else {
-            panic!("third declaration should be a constraint sentence");
+        let DeclarationAst::Policy(policy) = &document.declarations[5] else {
+            panic!("last declaration should be a policy sentence");
         };
-        assert_eq!(
-            compact_constraint.declaration.id,
-            spaced_constraint.declaration.id
-        );
-        assert_eq!(
-            compact_constraint.declaration.id,
-            "constraint_a5efd7b979720186"
-        );
+        assert!(constraint.declaration.id.is_empty());
+        assert!(policy.declaration.id.is_empty());
     }
 
     #[test]

@@ -8,29 +8,29 @@ use std::time::Duration;
 use rspdl_datalog::DatalogEvaluator;
 use rspdl_domain::{
     Atom, BooleanExpression, CanonicalId, CanonicalType, CanonicalValue, ConstraintOperand,
-    ConstraintProblem, ConstraintSolver, DerivationRule, Fact, LogicProgram, PolicyEffect,
-    PredicateApplication, PredicateSignature, RelationOperator, RuleLiteral, SemanticModule,
-    SolveOptions, SolveResult, Term, Variable,
+    ConstraintProblem, ConstraintSolver, DerivationRule, Diagnostic, Fact, Frontend,
+    FrontendOutput, LogicProgram, PolicyEffect, PredicateApplication, PredicateSignature,
+    RelationOperator, RuleLiteral, SemanticModule, Severity, SolveOptions, SolveResult, Term,
+    TextRange, Variable, analyze,
 };
-use rspdl_ko::{Diagnostic, DocumentAst, Severity, lower, parse};
+use rspdl_ko::KoreanFrontend;
 use rspdl_solver_z3::Z3Solver;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Compilation {
-    pub ast: Option<DocumentAst>,
     pub module: Option<SemanticModule>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct KoSource {
+pub struct Source {
     pub path: String,
     pub text: String,
 }
 
-impl KoSource {
+impl Source {
     pub fn new(path: impl Into<String>, text: impl Into<String>) -> Self {
         Self {
             path: path.into(),
@@ -39,12 +39,16 @@ impl KoSource {
     }
 }
 
+/// Backwards-compatible name for Korean-only callers.
+pub type KoSource = Source;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FileCompilation {
     pub path: String,
-    pub ast: Option<DocumentAst>,
     pub module: Option<SemanticModule>,
     pub diagnostics: Vec<Diagnostic>,
+    #[serde(skip)]
+    declaration_span: TextRange,
 }
 
 impl FileCompilation {
@@ -72,15 +76,26 @@ impl WorkspaceCompilation {
 }
 
 pub fn compile_ko(source: &str) -> Compilation {
-    let parsed = parse(source);
-    let ast = parsed.document;
-    let mut diagnostics = parsed.diagnostics;
+    compile_with_frontend(&KoreanFrontend, source)
+}
+
+/// Compiles any surface language that implements the shared frontend contract.
+pub fn compile_with_frontend(frontend: &dyn Frontend, source: &str) -> Compilation {
+    compile_frontend_output(frontend.lower_source(source)).0
+}
+
+fn compile_frontend_output(output: FrontendOutput) -> (Compilation, TextRange) {
+    let declaration_span = output
+        .module
+        .as_ref()
+        .map_or(TextRange::default(), |module| module.declaration.span);
+    let mut diagnostics = output.diagnostics;
     let module = if diagnostics.iter().any(Diagnostic::is_error) {
         None
-    } else if let Some(document) = &ast {
-        let lowered = lower(document);
-        diagnostics.extend(lowered.diagnostics);
-        lowered.module
+    } else if let Some(module) = output.module {
+        let analyzed = analyze(module);
+        diagnostics.extend(analyzed.diagnostics);
+        analyzed.module
     } else {
         None
     };
@@ -92,24 +107,35 @@ pub fn compile_ko(source: &str) -> Compilation {
             &right.message,
         ))
     });
-    Compilation {
-        ast,
-        module,
-        diagnostics,
-    }
+    (
+        Compilation {
+            module,
+            diagnostics,
+        },
+        declaration_span,
+    )
 }
 
-pub fn compile_ko_files(mut sources: Vec<KoSource>) -> WorkspaceCompilation {
+pub fn compile_ko_files(sources: Vec<KoSource>) -> WorkspaceCompilation {
+    compile_files_with_frontend(&KoreanFrontend, sources)
+}
+
+/// Compiles a workspace with any conforming surface-language frontend.
+pub fn compile_files_with_frontend(
+    frontend: &dyn Frontend,
+    mut sources: Vec<Source>,
+) -> WorkspaceCompilation {
     sources.sort_by(|left, right| (&left.path, &left.text).cmp(&(&right.path, &right.text)));
     let mut files = sources
         .into_iter()
         .map(|source| {
-            let compilation = compile_ko(&source.text);
+            let (compilation, declaration_span) =
+                compile_frontend_output(frontend.lower_source(&source.text));
             FileCompilation {
                 path: source.path,
-                ast: compilation.ast,
                 module: compilation.module,
                 diagnostics: compilation.diagnostics,
+                declaration_span,
             }
         })
         .collect::<Vec<_>>();
@@ -151,11 +177,7 @@ pub fn compile_ko_files(mut sources: Vec<KoSource>) -> WorkspaceCompilation {
         }
         for index in source_indexes {
             duplicate_module_sources.insert(index);
-            let span = files[index]
-                .ast
-                .as_ref()
-                .map(|ast| ast.module.declaration.span)
-                .unwrap_or_default();
+            let span = files[index].declaration_span;
             files[index].diagnostics.push(Diagnostic {
                 rule_id: "RSPDL-LINK-001".into(),
                 severity: Severity::Error,
@@ -191,11 +213,7 @@ pub fn compile_ko_files(mut sources: Vec<KoSource>) -> WorkspaceCompilation {
             continue;
         }
         for index in source_indexes {
-            let span = files[index]
-                .ast
-                .as_ref()
-                .map(|ast| ast.module.declaration.span)
-                .unwrap_or_default();
+            let span = files[index].declaration_span;
             files[index].diagnostics.push(Diagnostic {
                 rule_id: "RSPDL-LINK-002".into(),
                 severity: Severity::Error,
