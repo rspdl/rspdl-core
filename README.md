@@ -40,6 +40,8 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 - 생산자 없는 필드 사용 오류와 미조회 입력 필드 안내
 - role, action과 조건 없는 allow 또는 deny policy
 - deterministic parser, formatter와 Canonical domain model
+- 공통 `Frontend` trait과 Unlinked IR을 통한 교체 가능한 Locale frontend
+- Locale과 분리된 symbol resolution, type checking 및 data usage analyzer
 - Z3 기반 record constraint 검사
 - Datalog 기반 runtime policy match와 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - JSON compilation 및 diagnostic 출력
