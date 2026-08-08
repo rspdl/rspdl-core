@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use crate::TextRange;
@@ -11,14 +13,15 @@ pub enum Severity {
 
 /// A locale-neutral diagnostic envelope shared by frontends and semantic phases.
 ///
-/// Message keys and structured evidence will extend this envelope in a later
-/// vertical slice. Keeping the type in the domain crate already prevents
-/// semantic phases from depending on a locale frontend.
+/// Human-readable sentences are rendered at a locale boundary. The compiler
+/// contract contains only a stable message key and deterministic arguments.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Diagnostic {
     pub rule_id: String,
     pub severity: Severity,
-    pub message: String,
+    pub message_key: String,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub arguments: BTreeMap<String, String>,
     pub span: TextRange,
 }
 
@@ -26,27 +29,41 @@ impl Diagnostic {
     pub fn new(
         rule_id: impl Into<String>,
         severity: Severity,
-        message: impl Into<String>,
+        message_key: impl Into<String>,
         span: TextRange,
     ) -> Self {
         Self {
             rule_id: rule_id.into(),
             severity,
-            message: message.into(),
+            message_key: message_key.into(),
+            arguments: BTreeMap::new(),
             span,
         }
     }
 
-    pub fn error(rule_id: impl Into<String>, message: impl Into<String>, span: TextRange) -> Self {
-        Self::new(rule_id, Severity::Error, message, span)
+    pub fn error(
+        rule_id: impl Into<String>,
+        message_key: impl Into<String>,
+        span: TextRange,
+    ) -> Self {
+        Self::new(rule_id, Severity::Error, message_key, span)
     }
 
     pub fn warning(
         rule_id: impl Into<String>,
-        message: impl Into<String>,
+        message_key: impl Into<String>,
         span: TextRange,
     ) -> Self {
-        Self::new(rule_id, Severity::Warning, message, span)
+        Self::new(rule_id, Severity::Warning, message_key, span)
+    }
+
+    pub fn with_argument(mut self, key: impl Into<String>, value: impl ToString) -> Self {
+        self.arguments.insert(key.into(), value.to_string());
+        self
+    }
+
+    pub fn argument(&self, key: &str) -> Option<&str> {
+        self.arguments.get(key).map(String::as_str)
     }
 
     pub fn is_error(&self) -> bool {

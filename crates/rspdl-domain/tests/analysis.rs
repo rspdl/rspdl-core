@@ -111,7 +111,9 @@ fn unresolved_symbols_are_rejected_by_the_shared_analyzer() {
 
     assert!(output.module.is_none());
     assert!(output.diagnostics.iter().any(|diagnostic| {
-        diagnostic.rule_id == "RSPDL-LINK-003" && diagnostic.message.contains("없는 역할")
+        diagnostic.rule_id == "RSPDL-LINK-003"
+            && diagnostic.message_key == "semantic.symbol.not_found"
+            && diagnostic.argument("reference") == Some("없는 역할")
     }));
 }
 

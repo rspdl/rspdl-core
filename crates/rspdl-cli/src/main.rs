@@ -6,7 +6,7 @@ use rspdl_compiler::{
     CheckOptions, KoSource, PolicyStatus, WorkspaceCheckReport, check_ko, check_ko_files,
     compile_ko, compile_ko_files,
 };
-use rspdl_ko::{Diagnostic, ParseOutput, format_document, parse};
+use rspdl_ko::{Diagnostic, ParseOutput, format_document, parse, render_diagnostic};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -265,7 +265,10 @@ fn print_human_report(report: &rspdl_compiler::CheckReport) {
     for diagnostic in &report.compilation.diagnostics {
         eprintln!(
             "{} [{}..{}] {}",
-            diagnostic.rule_id, diagnostic.span.start, diagnostic.span.end, diagnostic.message
+            diagnostic.rule_id,
+            diagnostic.span.start,
+            diagnostic.span.end,
+            render_diagnostic(diagnostic)
         );
     }
     for diagnostic in &report.runtime_diagnostics {
@@ -303,7 +306,10 @@ fn print_diagnostics(diagnostics: &[Diagnostic]) {
     for diagnostic in diagnostics {
         eprintln!(
             "{} [{}..{}] {}",
-            diagnostic.rule_id, diagnostic.span.start, diagnostic.span.end, diagnostic.message
+            diagnostic.rule_id,
+            diagnostic.span.start,
+            diagnostic.span.end,
+            render_diagnostic(diagnostic)
         );
     }
 }
@@ -316,7 +322,7 @@ fn print_file_diagnostics(path: &str, diagnostics: &[Diagnostic]) {
             diagnostic.rule_id,
             diagnostic.span.start,
             diagnostic.span.end,
-            diagnostic.message
+            render_diagnostic(diagnostic)
         );
     }
 }
@@ -330,7 +336,7 @@ fn print_workspace_human_report(report: &WorkspaceCheckReport) {
                 diagnostic.rule_id,
                 diagnostic.span.start,
                 diagnostic.span.end,
-                diagnostic.message
+                render_diagnostic(diagnostic)
             );
         }
     }

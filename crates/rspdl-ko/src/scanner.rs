@@ -58,7 +58,7 @@ pub fn scan(source: &str) -> ScanOutput {
         if let Some(index) = bad_tab {
             diagnostics.push(Diagnostic::error(
                 "RSPDL-KO-LEX-001",
-                "들여쓰기에 tab을 사용할 수 없습니다.",
+                "ko.lex.tab_indentation",
                 Span {
                     start: offset + index,
                     end: offset + index + 1,
@@ -93,7 +93,7 @@ pub fn scan(source: &str) -> ScanOutput {
                 if indents.last().copied() != Some(width) {
                     diagnostics.push(Diagnostic::error(
                         "RSPDL-KO-LEX-002",
-                        "이전 블록과 일치하지 않는 들여쓰기입니다.",
+                        "ko.lex.inconsistent_dedent",
                         Span {
                             start: offset,
                             end: offset + prefix_end,
@@ -190,7 +190,7 @@ fn scan_content(
                 if cursor == content.len() {
                     diagnostics.push(Diagnostic::error(
                         "RSPDL-KO-LEX-003",
-                        "닫히지 않은 backtick 식별자입니다.",
+                        "ko.lex.unclosed_quoted_identifier",
                         Span {
                             start: base + start,
                             end: base + cursor,
@@ -219,14 +219,17 @@ fn scan_content(
                         .len_utf8();
                 }
                 if cursor == content.len() {
-                    diagnostics.push(Diagnostic::error(
-                        "RSPDL-KO-LEX-004",
-                        format!("`{closing}`로 닫히지 않은 stable ID입니다."),
-                        Span {
-                            start: base + start,
-                            end: base + cursor,
-                        },
-                    ));
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "RSPDL-KO-LEX-004",
+                            "ko.lex.unclosed_stable_id",
+                            Span {
+                                start: base + start,
+                                end: base + cursor,
+                            },
+                        )
+                        .with_argument("closing", closing),
+                    );
                     break;
                 }
                 let value = content[value_start..cursor].to_owned();
@@ -262,7 +265,7 @@ fn scan_content(
                     ),
                     Err(_) => diagnostics.push(Diagnostic::error(
                         "RSPDL-KO-LEX-005",
-                        "문자열 literal 형식이 올바르지 않습니다.",
+                        "ko.lex.invalid_string_literal",
                         Span {
                             start: base + start,
                             end: base + end.min(content.len()),

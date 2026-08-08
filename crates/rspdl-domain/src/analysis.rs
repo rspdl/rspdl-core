@@ -8,7 +8,7 @@ use crate::{
     ActionDefinition, CanonicalId, CanonicalType, CanonicalValue, ConstraintDefinition,
     ConstraintOperand, DataModelDefinition, DerivationDefinition, DerivationExpression, Diagnostic,
     EnumDefinition, EnumType, EnumVariantDefinition, FieldDefinition, FieldIntentDefinition,
-    PolicyDefinition, PolicyEffect, RelationOperator, RoleDefinition, ScreenDefinition,
+    ModelError, PolicyDefinition, PolicyEffect, RelationOperator, RoleDefinition, ScreenDefinition,
     ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SurfaceRef,
     TextRange, UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedFieldIntent,
     UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
@@ -48,7 +48,7 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
             .insert(value.declaration.name.clone(), id.clone())
             .is_some()
         {
-            duplicate_name("열거형", &value.declaration, &mut diagnostics);
+            duplicate_name("enum", &value.declaration, &mut diagnostics);
         }
         let mut variants = Vec::new();
         let mut variant_ids = BTreeSet::new();
@@ -58,18 +58,25 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
                 continue;
             };
             if !variant_ids.insert(local_id.clone()) {
-                diagnostics.push(link_error(
-                    format!("열거형 값 ID `{local_id}`가 중복 선언되었습니다."),
-                    variant.declaration.span,
-                ));
+                diagnostics.push(
+                    link_error(
+                        "semantic.enum.duplicate_variant_id",
+                        variant.declaration.span,
+                    )
+                    .with_argument("id", &local_id),
+                );
             }
             if !variant_names.insert(variant.declaration.name.clone()) {
-                duplicate_name("열거형 값", &variant.declaration, &mut diagnostics);
+                duplicate_name("enum_variant", &variant.declaration, &mut diagnostics);
             }
             let full_id = match CanonicalId::new(format!("{id}.{local_id}")) {
                 Ok(id) => id,
                 Err(error) => {
-                    diagnostics.push(link_error(error.to_string(), variant.declaration.span));
+                    diagnostics.push(model_error(
+                        "RSPDL-LINK-003",
+                        error,
+                        variant.declaration.span,
+                    ));
                     continue;
                 }
             };
@@ -89,7 +96,9 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
                 enum_type,
                 variants,
             }),
-            Err(error) => diagnostics.push(link_error(error.to_string(), value.declaration.span)),
+            Err(error) => {
+                diagnostics.push(model_error("RSPDL-LINK-003", error, value.declaration.span))
+            }
         }
     }
 
@@ -109,7 +118,7 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
             .insert(value.declaration.name.clone(), id.clone())
             .is_some()
         {
-            duplicate_name("역할", &value.declaration, &mut diagnostics);
+            duplicate_name("role", &value.declaration, &mut diagnostics);
         }
         roles.push(RoleDefinition {
             id,
@@ -133,7 +142,7 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
             .insert(value.declaration.name.clone(), id.clone())
             .is_some()
         {
-            duplicate_name("행동", &value.declaration, &mut diagnostics);
+            duplicate_name("action", &value.declaration, &mut diagnostics);
         }
         actions.push(ActionDefinition {
             id,
@@ -204,12 +213,20 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
     }
 
     diagnostics.sort_by(|left, right| {
-        (left.span.start, left.span.end, &left.rule_id, &left.message).cmp(&(
-            right.span.start,
-            right.span.end,
-            &right.rule_id,
-            &right.message,
-        ))
+        (
+            left.span.start,
+            left.span.end,
+            &left.rule_id,
+            &left.message_key,
+            &left.arguments,
+        )
+            .cmp(&(
+                right.span.start,
+                right.span.end,
+                &right.rule_id,
+                &right.message_key,
+                &right.arguments,
+            ))
     });
     if diagnostics.iter().any(Diagnostic::is_error) {
         return AnalysisOutput {
@@ -254,7 +271,7 @@ fn lower_model(
         .insert(value.declaration.name.clone(), id.clone())
         .is_some()
     {
-        duplicate_name("데이터 모델", &value.declaration, diagnostics);
+        duplicate_name("data_model", &value.declaration, diagnostics);
     }
 
     let mut fields = Vec::new();
@@ -265,10 +282,10 @@ fn lower_model(
             continue;
         };
         if !local_ids.insert(local_id.clone()) {
-            duplicate_name("필드 ID", &field.declaration, diagnostics);
+            duplicate_name("field_id", &field.declaration, diagnostics);
         }
         if !names.insert(field.declaration.name.clone()) {
-            duplicate_name("필드", &field.declaration, diagnostics);
+            duplicate_name("field", &field.declaration, diagnostics);
         }
         let value_type = match field.value_type {
             UnlinkedTypeReference::String => Some(CanonicalType::String),
@@ -278,10 +295,10 @@ fn lower_model(
                 .get(&reference.text)
                 .map(|definition| CanonicalType::Enum(definition.enum_type.clone()))
                 .or_else(|| {
-                    diagnostics.push(link_error(
-                        format!("열거형 `{}`을 찾을 수 없습니다.", reference.text),
-                        reference.span,
-                    ));
+                    diagnostics.push(
+                        link_error("semantic.enum.not_found", reference.span)
+                            .with_argument("reference", &reference.text),
+                    );
                     None
                 }),
         };
@@ -291,7 +308,7 @@ fn lower_model(
         let full_id = match CanonicalId::new(format!("{id}.{local_id}")) {
             Ok(id) => id,
             Err(error) => {
-                diagnostics.push(link_error(error.to_string(), field.declaration.span));
+                diagnostics.push(model_error("RSPDL-LINK-003", error, field.declaration.span));
                 continue;
             }
         };
@@ -326,7 +343,7 @@ fn link_constraint(
     let right_type = operand_type(&right, model);
     if left_type != right_type {
         diagnostics.push(type_error(
-            "제약의 양쪽 operand 타입이 다릅니다.",
+            "semantic.constraint.operand_type_mismatch",
             value.span,
         ));
         return None;
@@ -340,7 +357,7 @@ fn link_constraint(
     ) && left_type != Some(CanonicalType::Integer)
     {
         diagnostics.push(type_error(
-            "대소 비교는 정수 필드에만 사용할 수 있습니다.",
+            "semantic.constraint.order_requires_integer",
             value.span,
         ));
         return None;
@@ -377,10 +394,10 @@ fn link_policy(
     top_level_ids: &mut BTreeSet<CanonicalId>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<PolicyDefinition> {
-    let role_id = resolve_named_id("역할", roles, &value.role, diagnostics)?;
+    let role_id = resolve_named_id("role", roles, &value.role, diagnostics)?;
     let model = resolve_model(models, &value.model, diagnostics)?;
     let field = resolve_field(model, &value.field, diagnostics)?;
-    let action_id = resolve_named_id("행동", actions, &value.action, diagnostics)?;
+    let action_id = resolve_named_id("action", actions, &value.action, diagnostics)?;
     let local_id = value.declaration.id.clone().unwrap_or_else(|| {
         generated_policy_id(&role_id, &model.id, &field.id, &action_id, value.effect)
     });
@@ -444,15 +461,17 @@ fn analyze_data_usage(
         };
         if let Some(existing) = screen_map.get(&screen_id) {
             if existing.name != screen.declaration.name {
-                diagnostics.push(data_diagnostic(
-                    "RSPDL-DATA-004",
-                    Severity::Error,
-                    format!(
-                        "화면 ID `{screen_id}`가 `{}`와 `{}` 두 이름으로 사용되었습니다.",
-                        existing.name, screen.declaration.name
-                    ),
-                    screen.span,
-                ));
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-DATA-004",
+                        Severity::Error,
+                        "semantic.screen.id_name_conflict",
+                        screen.span,
+                    )
+                    .with_argument("screen_id", &screen_id)
+                    .with_argument("existing_name", &existing.name)
+                    .with_argument("new_name", &screen.declaration.name),
+                );
                 continue;
             }
         } else {
@@ -509,12 +528,15 @@ fn analyze_data_usage(
             .get_mut(&screen_id)
             .expect("screen was inserted above");
         if definition.operations.contains(&operation) {
-            diagnostics.push(data_diagnostic(
-                "RSPDL-DATA-004",
-                Severity::Error,
-                format!("화면 `{screen_id}`의 데이터 동작이 중복 선언되었습니다."),
-                screen.span,
-            ));
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-004",
+                    Severity::Error,
+                    "semantic.screen.duplicate_operation",
+                    screen.span,
+                )
+                .with_argument("screen_id", &screen_id),
+            );
         } else {
             definition.operations.push(operation);
         }
@@ -548,37 +570,40 @@ fn analyze_data_usage(
             diagnostics.push(data_diagnostic(
                 "RSPDL-DATA-005",
                 Severity::Error,
-                "합계의 원본과 결과 필드는 모두 정수여야 합니다.",
+                "semantic.derivation.sum_requires_integer",
                 derivation.span,
             ));
             continue;
         }
         if input_fields.contains(&target_field.id) {
-            diagnostics.push(data_diagnostic(
-                "RSPDL-DATA-004",
-                Severity::Error,
-                format!(
-                    "계산 필드 `{}`은 화면 입력과 계산 결과를 동시에 생산자로 가질 수 없습니다.",
-                    target_field.id
-                ),
-                derivation.span,
-            ));
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-004",
+                    Severity::Error,
+                    "semantic.derivation.multiple_producers",
+                    derivation.span,
+                )
+                .with_argument("field_id", &target_field.id),
+            );
             continue;
         }
         if !derivation_targets.insert(target_field.id.clone()) {
-            diagnostics.push(data_diagnostic(
-                "RSPDL-DATA-004",
-                Severity::Error,
-                format!("필드 `{}`의 계산식이 중복 선언되었습니다.", target_field.id),
-                derivation.span,
-            ));
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-004",
+                    Severity::Error,
+                    "semantic.derivation.duplicate_target",
+                    derivation.span,
+                )
+                .with_argument("field_id", &target_field.id),
+            );
             continue;
         }
         if target_model.id != source_model.id {
             diagnostics.push(data_diagnostic(
                 "RSPDL-DATA-W002",
                 Severity::Warning,
-                "교차 모델 합계의 레코드 선택 관계가 아직 정의되지 않아 의존성만 보존하고 계산 범위는 `unknown`으로 둡니다.",
+                "semantic.derivation.cross_model_scope_unknown",
                 derivation.span,
             ));
         }
@@ -627,26 +652,31 @@ fn analyze_data_usage(
             .remove(&derivation.target_field_id)
             .unwrap_or_default();
         if declarations.len() != 1 {
-            diagnostics.push(data_diagnostic(
-                "RSPDL-DATA-003",
-                Severity::Error,
-                format!(
-                    "계산 필드 `{}`은 재계산 시점을 정확히 하나 선언해야 합니다.",
-                    derivation.target_field_id
-                ),
-                declarations
-                    .first()
-                    .map_or(derivation.span, |(_, span)| *span),
-            ));
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-003",
+                    Severity::Error,
+                    "semantic.recalculation.exactly_one_required",
+                    declarations
+                        .first()
+                        .map_or(derivation.span, |(_, span)| *span),
+                )
+                .with_argument("field_id", &derivation.target_field_id)
+                .with_argument("actual", declarations.len()),
+            );
             continue;
         }
         if declarations[0].0 != derivation.source_field_id {
-            diagnostics.push(data_diagnostic(
-                "RSPDL-DATA-004",
-                Severity::Error,
-                "재계산 조건의 원본 필드가 계산식의 원본 필드와 다릅니다.",
-                declarations[0].1,
-            ));
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-004",
+                    Severity::Error,
+                    "semantic.recalculation.source_mismatch",
+                    declarations[0].1,
+                )
+                .with_argument("expected_field_id", &derivation.source_field_id)
+                .with_argument("actual_field_id", &declarations[0].0),
+            );
             continue;
         }
         derivation_definitions.push(DerivationDefinition {
@@ -658,12 +688,15 @@ fn analyze_data_usage(
         });
     }
     for (target, declarations) in refreshes {
-        diagnostics.push(data_diagnostic(
-            "RSPDL-DATA-004",
-            Severity::Error,
-            format!("필드 `{target}`의 재계산 조건에 대응하는 계산식이 없습니다."),
-            declarations[0].1,
-        ));
+        diagnostics.push(
+            data_diagnostic(
+                "RSPDL-DATA-004",
+                Severity::Error,
+                "semantic.recalculation.derivation_missing",
+                declarations[0].1,
+            )
+            .with_argument("field_id", target),
+        );
     }
 
     let mut intents = Vec::<FieldIntentDefinition>::new();
@@ -683,20 +716,15 @@ fn analyze_data_usage(
             .iter()
             .find(|existing| existing.field_id == definition.field_id)
         {
-            let message = if existing.intent == definition.intent {
-                format!("필드 `{}`의 사용 의도가 중복 선언되었습니다.", field.id)
+            let message_key = if existing.intent == definition.intent {
+                "semantic.field_intent.duplicate"
             } else {
-                format!(
-                    "필드 `{}`에 내부 관리와 비표시 의도를 함께 선언할 수 없습니다.",
-                    field.id
-                )
+                "semantic.field_intent.conflict"
             };
-            diagnostics.push(data_diagnostic(
-                "RSPDL-DATA-004",
-                Severity::Error,
-                message,
-                intent.span,
-            ));
+            diagnostics.push(
+                data_diagnostic("RSPDL-DATA-004", Severity::Error, message_key, intent.span)
+                    .with_argument("field_id", &field.id),
+            );
         } else {
             intents.push(definition);
             intentional_non_reads.insert(field.id.clone());
@@ -717,32 +745,41 @@ fn analyze_data_usage(
     }
     for (field, span) in consumers {
         if !available.contains(&field) {
-            diagnostics.push(data_diagnostic(
-                "RSPDL-DATA-001",
-                Severity::Error,
-                format!("필드 `{field}`을 만드는 화면 입력 또는 계산이 없습니다."),
-                span,
-            ));
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-001",
+                    Severity::Error,
+                    "semantic.lifecycle.field_producer_missing",
+                    span,
+                )
+                .with_argument("field_id", field),
+            );
         }
     }
     for (model, span) in model_uses {
         if !model_creators.contains(&model) {
-            diagnostics.push(data_diagnostic(
-                "RSPDL-DATA-002",
-                Severity::Error,
-                format!("데이터 모델 `{model}`을 생성하는 화면이 없습니다."),
-                span,
-            ));
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-002",
+                    Severity::Error,
+                    "semantic.lifecycle.model_creator_missing",
+                    span,
+                )
+                .with_argument("model_id", model),
+            );
         }
     }
     for field in available {
         if !read_fields.contains(&field) && !intentional_non_reads.contains(&field) {
-            diagnostics.push(data_diagnostic(
-                "RSPDL-DATA-W001",
-                Severity::Warning,
-                format!("필드 `{field}`은 만들어지지만 어떤 화면에서도 조회되지 않습니다. 내부 관리용 또는 비표시 의도를 명시해 주세요."),
-                producer_spans.get(&field).copied().unwrap_or_default(),
-            ));
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-W001",
+                    Severity::Warning,
+                    "semantic.lifecycle.produced_field_unread",
+                    producer_spans.get(&field).copied().unwrap_or_default(),
+                )
+                .with_argument("field_id", field),
+            );
         }
     }
 
@@ -768,7 +805,7 @@ fn resolve_operand(
         UnlinkedOperand::Literal(literal) => {
             let Some(expected) = expected else {
                 diagnostics.push(type_error(
-                    "literal 타입을 결정할 수 없습니다.",
+                    "semantic.literal.type_undetermined",
                     literal_span(literal),
                 ));
                 return None;
@@ -808,10 +845,10 @@ fn literal_value(
             match variant {
                 Some(variant) => Some(CanonicalValue::enum_variant(enum_type.clone(), variant)),
                 None => {
-                    diagnostics.push(link_error(
-                        format!("열거형 값 `{}`을 찾을 수 없습니다.", reference.text),
-                        reference.span,
-                    ));
+                    diagnostics.push(
+                        link_error("semantic.enum.variant_not_found", reference.span)
+                            .with_argument("reference", &reference.text),
+                    );
                     return None;
                 }
             }
@@ -821,14 +858,14 @@ fn literal_value(
     match result {
         Some(Ok(value)) => Some(value),
         Some(Err(error)) => {
-            diagnostics.push(type_error(error.to_string(), literal_span(literal)));
+            diagnostics.push(model_error("RSPDL-TYPE-001", error, literal_span(literal)));
             None
         }
         None => {
-            diagnostics.push(type_error(
-                format!("literal이 필드 타입 `{expected}`과 맞지 않습니다."),
-                literal_span(literal),
-            ));
+            diagnostics.push(
+                type_error("semantic.literal.type_mismatch", literal_span(literal))
+                    .with_argument("expected_type", expected),
+            );
             None
         }
     }
@@ -860,10 +897,10 @@ fn resolve_model<'a>(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<&'a DataModelDefinition> {
     models.get(&reference.text).or_else(|| {
-        diagnostics.push(link_error(
-            format!("데이터 모델 `{}`을 찾을 수 없습니다.", reference.text),
-            reference.span,
-        ));
+        diagnostics.push(
+            link_error("semantic.model.not_found", reference.span)
+                .with_argument("reference", &reference.text),
+        );
         None
     })
 }
@@ -877,12 +914,15 @@ fn find_model<'a>(
         .iter()
         .find(|model| model.name == reference.text)
         .or_else(|| {
-            diagnostics.push(data_diagnostic(
-                "RSPDL-DATA-006",
-                Severity::Error,
-                format!("데이터 모델 `{}`을 찾을 수 없습니다.", reference.text),
-                reference.span,
-            ));
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-006",
+                    Severity::Error,
+                    "semantic.model.not_found",
+                    reference.span,
+                )
+                .with_argument("reference", &reference.text),
+            );
             None
         })
 }
@@ -897,13 +937,11 @@ fn resolve_field<'a>(
         .iter()
         .find(|field| field.name == reference.text)
         .or_else(|| {
-            diagnostics.push(link_error(
-                format!(
-                    "데이터 모델 `{}`에서 필드 `{}`을 찾을 수 없습니다.",
-                    model.id, reference.text
-                ),
-                reference.span,
-            ));
+            diagnostics.push(
+                link_error("semantic.field.not_found", reference.span)
+                    .with_argument("model_id", &model.id)
+                    .with_argument("reference", &reference.text),
+            );
             None
         })
 }
@@ -915,10 +953,11 @@ fn resolve_named_id(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<CanonicalId> {
     definitions.get(&reference.text).cloned().or_else(|| {
-        diagnostics.push(link_error(
-            format!("{kind} `{}`을 찾을 수 없습니다.", reference.text),
-            reference.span,
-        ));
+        diagnostics.push(
+            link_error("semantic.symbol.not_found", reference.span)
+                .with_argument("kind", kind)
+                .with_argument("reference", &reference.text),
+        );
         None
     })
 }
@@ -929,7 +968,7 @@ fn canonical_required(
 ) -> Option<CanonicalId> {
     let Some(value) = declaration.id.as_ref() else {
         diagnostics.push(link_error(
-            "선언에 stable ID가 필요합니다.",
+            "semantic.declaration.stable_id_required",
             declaration.span,
         ));
         return None;
@@ -937,7 +976,7 @@ fn canonical_required(
     match CanonicalId::new(value) {
         Ok(id) => Some(id),
         Err(error) => {
-            diagnostics.push(link_error(error.to_string(), declaration.span));
+            diagnostics.push(model_error("RSPDL-LINK-003", error, declaration.span));
             None
         }
     }
@@ -955,7 +994,7 @@ fn canonical_member(
     match CanonicalId::new(format!("{module_id}.{local}")) {
         Ok(id) => Some(id),
         Err(error) => {
-            diagnostics.push(link_error(error.to_string(), declaration.span));
+            diagnostics.push(model_error("RSPDL-LINK-003", error, declaration.span));
             None
         }
     }
@@ -968,10 +1007,8 @@ fn duplicate_id(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     if !ids.insert(id.clone()) {
-        diagnostics.push(link_error(
-            format!("stable ID `{id}`가 중복 선언되었습니다."),
-            span,
-        ));
+        diagnostics
+            .push(link_error("semantic.declaration.duplicate_id", span).with_argument("id", id));
     }
 }
 
@@ -980,13 +1017,11 @@ fn duplicate_name(
     declaration: &UnlinkedDeclaration,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    diagnostics.push(link_error(
-        format!(
-            "{kind} 표시 이름 `{}`이 중복 선언되었습니다.",
-            declaration.name
-        ),
-        declaration.span,
-    ));
+    diagnostics.push(
+        link_error("semantic.declaration.duplicate_name", declaration.span)
+            .with_argument("kind", kind)
+            .with_argument("name", &declaration.name),
+    );
 }
 
 fn generated_constraint_id(
@@ -1064,19 +1099,99 @@ fn relation_identity(operator: RelationOperator) -> &'static str {
     }
 }
 
-fn link_error(message: impl Into<String>, span: TextRange) -> Diagnostic {
-    Diagnostic::error("RSPDL-LINK-003", message, span)
+fn link_error(message_key: impl Into<String>, span: TextRange) -> Diagnostic {
+    Diagnostic::error("RSPDL-LINK-003", message_key, span)
 }
 
-fn type_error(message: impl Into<String>, span: TextRange) -> Diagnostic {
-    Diagnostic::error("RSPDL-TYPE-001", message, span)
+fn type_error(message_key: impl Into<String>, span: TextRange) -> Diagnostic {
+    Diagnostic::error("RSPDL-TYPE-001", message_key, span)
 }
 
 fn data_diagnostic(
     rule_id: &str,
     severity: Severity,
-    message: impl Into<String>,
+    message_key: impl Into<String>,
     span: TextRange,
 ) -> Diagnostic {
-    Diagnostic::new(rule_id, severity, message, span)
+    Diagnostic::new(rule_id, severity, message_key, span)
+}
+
+fn model_error(rule_id: &str, error: ModelError, span: TextRange) -> Diagnostic {
+    match error {
+        ModelError::InvalidCanonicalId { value } => {
+            Diagnostic::error(rule_id, "model.invalid_canonical_id", span)
+                .with_argument("value", value)
+        }
+        ModelError::EmptyEnum { type_id } => {
+            Diagnostic::error(rule_id, "model.empty_enum", span).with_argument("type_id", type_id)
+        }
+        ModelError::DuplicateEnumVariant { type_id, variant } => {
+            Diagnostic::error(rule_id, "model.duplicate_enum_variant", span)
+                .with_argument("type_id", type_id)
+                .with_argument("variant", variant)
+        }
+        ModelError::UnknownEnumVariant { type_id, variant } => {
+            Diagnostic::error(rule_id, "model.unknown_enum_variant", span)
+                .with_argument("type_id", type_id)
+                .with_argument("variant", variant)
+        }
+        ModelError::InvalidRefinementBase {
+            refinement,
+            expected,
+            actual,
+        } => Diagnostic::error(rule_id, "model.invalid_refinement_base", span)
+            .with_argument("refinement", refinement)
+            .with_argument("expected", expected)
+            .with_argument("actual", actual),
+        ModelError::InvalidRefinedValue { value_type, value } => {
+            Diagnostic::error(rule_id, "model.invalid_refined_value", span)
+                .with_argument("value_type", value_type)
+                .with_argument("value", value)
+        }
+        ModelError::RefinementMagnitudeExceeded {
+            refinement,
+            value,
+            maximum,
+        } => Diagnostic::error(rule_id, "model.refinement_magnitude_exceeded", span)
+            .with_argument("refinement", refinement)
+            .with_argument("value", value)
+            .with_argument("maximum", maximum),
+        ModelError::TypeMismatch {
+            context,
+            expected,
+            actual,
+        } => Diagnostic::error(rule_id, "model.type_mismatch", span)
+            .with_argument("context", context)
+            .with_argument("expected", expected)
+            .with_argument("actual", actual),
+        ModelError::EmptyOperands { operation } => {
+            Diagnostic::error(rule_id, "model.empty_operands", span)
+                .with_argument("operation", operation)
+        }
+        ModelError::ArityMismatch {
+            predicate,
+            expected,
+            actual,
+        } => Diagnostic::error(rule_id, "model.arity_mismatch", span)
+            .with_argument("predicate", predicate)
+            .with_argument("expected", expected)
+            .with_argument("actual", actual),
+        ModelError::InvalidInteger { value } => {
+            Diagnostic::error(rule_id, "model.invalid_integer", span).with_argument("value", value)
+        }
+        ModelError::UnknownPredicate { predicate } => {
+            Diagnostic::error(rule_id, "model.unknown_predicate", span)
+                .with_argument("predicate", predicate)
+        }
+        ModelError::ConflictingPredicateSignature { predicate } => {
+            Diagnostic::error(rule_id, "model.conflicting_predicate_signature", span)
+                .with_argument("predicate", predicate)
+        }
+        ModelError::NonGroundFact {
+            predicate,
+            variable,
+        } => Diagnostic::error(rule_id, "model.non_ground_fact", span)
+            .with_argument("predicate", predicate)
+            .with_argument("variable", variable),
+    }
 }

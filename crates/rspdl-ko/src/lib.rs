@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod ast;
+mod diagnostic;
 mod formatter;
 mod lowering;
 mod parser;
@@ -14,6 +15,7 @@ pub use ast::{
     NamedIdAst, OperandAst, PolicyAst, PolicyEffectAst, RecalculationAst, RelationOperatorAst,
     RoleAst, ScreenAst, ScreenOperationKindAst, SumDerivationAst, TypeReferenceAst,
 };
+pub use diagnostic::render_diagnostic;
 pub use formatter::{FormatError, format_document};
 pub use lowering::{KoreanFrontend, LowerOutput, lower};
 pub use parser::{ParseOutput, parse};

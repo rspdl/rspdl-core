@@ -100,12 +100,20 @@ fn compile_frontend_output(output: FrontendOutput) -> (Compilation, TextRange) {
         None
     };
     diagnostics.sort_by(|left, right| {
-        (left.span.start, left.span.end, &left.rule_id, &left.message).cmp(&(
-            right.span.start,
-            right.span.end,
-            &right.rule_id,
-            &right.message,
-        ))
+        (
+            left.span.start,
+            left.span.end,
+            &left.rule_id,
+            &left.message_key,
+            &left.arguments,
+        )
+            .cmp(&(
+                right.span.start,
+                right.span.end,
+                &right.rule_id,
+                &right.message_key,
+                &right.arguments,
+            ))
     });
     (
         Compilation {
@@ -152,12 +160,14 @@ pub fn compile_files_with_frontend(
             continue;
         }
         for index in source_indexes {
-            files[index].diagnostics.push(Diagnostic {
-                rule_id: "RSPDL-SOURCE-001".into(),
-                severity: Severity::Error,
-                message: format!("source 경로 `{path}`가 중복 지정되었습니다."),
-                span: Default::default(),
-            });
+            files[index].diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-SOURCE-001",
+                    "compiler.source.duplicate_path",
+                    Default::default(),
+                )
+                .with_argument("path", &path),
+            );
         }
     }
 
@@ -178,12 +188,10 @@ pub fn compile_files_with_frontend(
         for index in source_indexes {
             duplicate_module_sources.insert(index);
             let span = files[index].declaration_span;
-            files[index].diagnostics.push(Diagnostic {
-                rule_id: "RSPDL-LINK-001".into(),
-                severity: Severity::Error,
-                message: format!("모듈 ID `{module_id}`가 여러 파일에 선언되었습니다."),
-                span,
-            });
+            files[index].diagnostics.push(
+                Diagnostic::error("RSPDL-LINK-001", "compiler.module.duplicate_id", span)
+                    .with_argument("module_id", &module_id),
+            );
         }
     }
 
@@ -214,23 +222,29 @@ pub fn compile_files_with_frontend(
         }
         for index in source_indexes {
             let span = files[index].declaration_span;
-            files[index].diagnostics.push(Diagnostic {
-                rule_id: "RSPDL-LINK-002".into(),
-                severity: Severity::Error,
-                message: format!("stable ID `{symbol_id}`가 여러 파일에 선언되었습니다."),
-                span,
-            });
+            files[index].diagnostics.push(
+                Diagnostic::error("RSPDL-LINK-002", "compiler.symbol.duplicate_id", span)
+                    .with_argument("symbol_id", &symbol_id),
+            );
         }
     }
 
     for file in &mut files {
         file.diagnostics.sort_by(|left, right| {
-            (left.span.start, left.span.end, &left.rule_id, &left.message).cmp(&(
-                right.span.start,
-                right.span.end,
-                &right.rule_id,
-                &right.message,
-            ))
+            (
+                left.span.start,
+                left.span.end,
+                &left.rule_id,
+                &left.message_key,
+                &left.arguments,
+            )
+                .cmp(&(
+                    right.span.start,
+                    right.span.end,
+                    &right.rule_id,
+                    &right.message_key,
+                    &right.arguments,
+                ))
         });
     }
 
