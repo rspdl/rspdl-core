@@ -1,7 +1,8 @@
 use rspdl_compiler::compile_with_frontend;
 use rspdl_domain::{
-    Diagnostic, Frontend, FrontendOutput, TextRange, UnlinkedDataModel, UnlinkedDeclaration,
-    UnlinkedField, UnlinkedModule, UnlinkedTypeReference,
+    Diagnostic, Frontend, FrontendOutput, RelationOperator, SurfaceRef, TextRange,
+    UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedField, UnlinkedLiteral,
+    UnlinkedModule, UnlinkedOperand, UnlinkedTypeReference,
 };
 
 struct TestFrontend;
@@ -28,7 +29,24 @@ impl Frontend for TestFrontend {
                 derivations: Vec::new(),
                 recalculations: Vec::new(),
                 field_intents: Vec::new(),
-                constraints: Vec::new(),
+                constraints: vec![UnlinkedConstraint {
+                    declaration: UnlinkedDeclaration {
+                        name: String::new(),
+                        id: None,
+                        span: TextRange::default(),
+                    },
+                    model: SurfaceRef::stable_id("item", TextRange::default()),
+                    left: UnlinkedOperand::Field(SurfaceRef::stable_id(
+                        "value",
+                        TextRange::default(),
+                    )),
+                    operator: RelationOperator::GreaterThan,
+                    right: UnlinkedOperand::Literal(UnlinkedLiteral::Integer {
+                        value: "0".into(),
+                        span: TextRange::default(),
+                    }),
+                    span: TextRange::default(),
+                }],
                 roles: Vec::new(),
                 actions: Vec::new(),
                 policies: Vec::new(),
@@ -54,4 +72,5 @@ fn compiler_accepts_a_non_korean_frontend_through_the_shared_contract() {
     let module = compilation.module.expect("test frontend should compile");
     assert_eq!(module.id.as_str(), "test");
     assert_eq!(module.models[0].id.as_str(), "test.item");
+    assert_eq!(module.constraints[0].model_id.as_str(), "test.item");
 }

@@ -291,16 +291,10 @@ fn lower_model(
             UnlinkedTypeReference::String => Some(CanonicalType::String),
             UnlinkedTypeReference::Integer => Some(CanonicalType::Integer),
             UnlinkedTypeReference::Boolean => Some(CanonicalType::Boolean),
-            UnlinkedTypeReference::Named(reference) => enums
-                .get(&reference.text)
-                .map(|definition| CanonicalType::Enum(definition.enum_type.clone()))
-                .or_else(|| {
-                    diagnostics.push(
-                        link_error("semantic.enum.not_found", reference.span)
-                            .with_argument("reference", &reference.text),
-                    );
-                    None
-                }),
+            UnlinkedTypeReference::Named(reference) => {
+                resolve_enum(enums.values(), &reference, diagnostics)
+                    .map(|definition| CanonicalType::Enum(definition.enum_type.clone()))
+            }
         };
         let Some(value_type) = value_type else {
             continue;
@@ -832,6 +826,9 @@ fn literal_value(
             Some(Ok(CanonicalValue::boolean(*value)))
         }
         (UnlinkedLiteral::Named(reference), CanonicalType::Enum(enum_type)) => {
+            if !validate_reference(reference, "RSPDL-LINK-003", diagnostics) {
+                return None;
+            }
             let variant = enums
                 .values()
                 .find(|definition| definition.id == *enum_type.id())
@@ -839,15 +836,17 @@ fn literal_value(
                     definition
                         .variants
                         .iter()
-                        .find(|variant| variant.name == reference.text)
+                        .find(|variant| {
+                            member_reference_matches(&variant.id, &variant.local_id, reference)
+                        })
                         .map(|variant| variant.id.clone())
                 });
             match variant {
                 Some(variant) => Some(CanonicalValue::enum_variant(enum_type.clone(), variant)),
                 None => {
                     diagnostics.push(
-                        link_error("semantic.enum.variant_not_found", reference.span)
-                            .with_argument("reference", &reference.text),
+                        link_error("semantic.enum.variant_not_found", reference.span())
+                            .with_argument("reference", reference.id()),
                     );
                     return None;
                 }
@@ -873,7 +872,7 @@ fn literal_value(
 
 fn literal_span(literal: &UnlinkedLiteral) -> TextRange {
     match literal {
-        UnlinkedLiteral::Named(reference) => reference.span,
+        UnlinkedLiteral::Named(reference) => reference.span(),
         UnlinkedLiteral::String { span, .. }
         | UnlinkedLiteral::Integer { span, .. }
         | UnlinkedLiteral::Boolean { span, .. } => *span,
@@ -896,13 +895,19 @@ fn resolve_model<'a>(
     reference: &SurfaceRef,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<&'a DataModelDefinition> {
-    models.get(&reference.text).or_else(|| {
-        diagnostics.push(
-            link_error("semantic.model.not_found", reference.span)
-                .with_argument("reference", &reference.text),
-        );
-        None
-    })
+    if !validate_reference(reference, "RSPDL-LINK-003", diagnostics) {
+        return None;
+    }
+    models
+        .values()
+        .find(|model| top_level_reference_matches(&model.id, reference))
+        .or_else(|| {
+            diagnostics.push(
+                link_error("semantic.model.not_found", reference.span())
+                    .with_argument("reference", reference.id()),
+            );
+            None
+        })
 }
 
 fn find_model<'a>(
@@ -910,18 +915,21 @@ fn find_model<'a>(
     reference: &SurfaceRef,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<&'a DataModelDefinition> {
+    if !validate_reference(reference, "RSPDL-DATA-006", diagnostics) {
+        return None;
+    }
     models
         .iter()
-        .find(|model| model.name == reference.text)
+        .find(|model| top_level_reference_matches(&model.id, reference))
         .or_else(|| {
             diagnostics.push(
                 data_diagnostic(
                     "RSPDL-DATA-006",
                     Severity::Error,
                     "semantic.model.not_found",
-                    reference.span,
+                    reference.span(),
                 )
-                .with_argument("reference", &reference.text),
+                .with_argument("reference", reference.id()),
             );
             None
         })
@@ -932,15 +940,18 @@ fn resolve_field<'a>(
     reference: &SurfaceRef,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<&'a FieldDefinition> {
+    if !validate_reference(reference, "RSPDL-LINK-003", diagnostics) {
+        return None;
+    }
     model
         .fields
         .iter()
-        .find(|field| field.name == reference.text)
+        .find(|field| member_reference_matches(&field.id, &field.local_id, reference))
         .or_else(|| {
             diagnostics.push(
-                link_error("semantic.field.not_found", reference.span)
+                link_error("semantic.field.not_found", reference.span())
                     .with_argument("model_id", &model.id)
-                    .with_argument("reference", &reference.text),
+                    .with_argument("reference", reference.id()),
             );
             None
         })
@@ -952,14 +963,68 @@ fn resolve_named_id(
     reference: &SurfaceRef,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<CanonicalId> {
-    definitions.get(&reference.text).cloned().or_else(|| {
-        diagnostics.push(
-            link_error("semantic.symbol.not_found", reference.span)
-                .with_argument("kind", kind)
-                .with_argument("reference", &reference.text),
-        );
-        None
-    })
+    if !validate_reference(reference, "RSPDL-LINK-003", diagnostics) {
+        return None;
+    }
+    definitions
+        .iter()
+        .find(|(_, id)| top_level_reference_matches(id, reference))
+        .map(|(_, id)| id.clone())
+        .or_else(|| {
+            diagnostics.push(
+                link_error("semantic.symbol.not_found", reference.span())
+                    .with_argument("kind", kind)
+                    .with_argument("reference", reference.id()),
+            );
+            None
+        })
+}
+
+fn resolve_enum<'a>(
+    definitions: impl IntoIterator<Item = &'a EnumDefinition>,
+    reference: &SurfaceRef,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<&'a EnumDefinition> {
+    if !validate_reference(reference, "RSPDL-LINK-003", diagnostics) {
+        return None;
+    }
+    definitions
+        .into_iter()
+        .find(|definition| top_level_reference_matches(&definition.id, reference))
+        .or_else(|| {
+            diagnostics.push(
+                link_error("semantic.enum.not_found", reference.span())
+                    .with_argument("reference", reference.id()),
+            );
+            None
+        })
+}
+
+fn validate_reference(
+    reference: &SurfaceRef,
+    rule_id: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> bool {
+    match CanonicalId::new(reference.id()) {
+        Ok(_) => true,
+        Err(error) => {
+            diagnostics.push(model_error(rule_id, error, reference.span()));
+            false
+        }
+    }
+}
+
+fn top_level_reference_matches(id: &CanonicalId, reference: &SurfaceRef) -> bool {
+    id.as_str() == reference.id()
+        || (!reference.id().contains('.') && id.as_str().rsplit('.').next() == Some(reference.id()))
+}
+
+fn member_reference_matches(
+    id: &CanonicalId,
+    local_id: &CanonicalId,
+    reference: &SurfaceRef,
+) -> bool {
+    id.as_str() == reference.id() || local_id.as_str() == reference.id()
 }
 
 fn canonical_required(

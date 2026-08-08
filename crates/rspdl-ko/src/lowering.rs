@@ -1,15 +1,265 @@
+use std::collections::BTreeSet;
+
 use rspdl_domain::{
-    FieldIntentKind, Frontend, FrontendOutput, PolicyEffect, RelationOperator, ScreenOperationKind,
-    SurfaceRef, UnlinkedAction, UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration,
-    UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral,
-    UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRole,
-    UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    Diagnostic, FieldIntentKind, Frontend, FrontendOutput, PolicyEffect, RelationOperator,
+    ScreenOperationKind, SurfaceRef, UnlinkedAction, UnlinkedConstraint, UnlinkedDataModel,
+    UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent,
+    UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
+    UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 use crate::ast::*;
 use crate::{Span, parse};
 
 pub type LowerOutput = FrontendOutput;
+
+#[derive(Clone, Debug)]
+struct Symbol {
+    name: String,
+    id: String,
+}
+
+impl From<&NamedIdAst> for Symbol {
+    fn from(value: &NamedIdAst) -> Self {
+        Self {
+            name: value.name.clone(),
+            id: value.id.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct EnumSymbols {
+    symbol: Symbol,
+    variants: Vec<Symbol>,
+}
+
+#[derive(Clone, Debug)]
+struct FieldSymbol {
+    symbol: Symbol,
+    value_type: TypeReferenceAst,
+}
+
+#[derive(Clone, Debug)]
+struct ModelSymbols {
+    symbol: Symbol,
+    fields: Vec<FieldSymbol>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct StableIdIndex {
+    enums: Vec<EnumSymbols>,
+    models: Vec<ModelSymbols>,
+    roles: Vec<Symbol>,
+    actions: Vec<Symbol>,
+}
+
+impl StableIdIndex {
+    fn new(document: &DocumentAst) -> Self {
+        let mut index = Self::default();
+        for declaration in &document.declarations {
+            match declaration {
+                DeclarationAst::Enum(value) => index.enums.push(EnumSymbols {
+                    symbol: Symbol::from(&value.declaration),
+                    variants: value
+                        .values
+                        .iter()
+                        .map(|variant| Symbol::from(&variant.declaration))
+                        .collect(),
+                }),
+                DeclarationAst::DataModel(value) => index.models.push(ModelSymbols {
+                    symbol: Symbol::from(&value.declaration),
+                    fields: value
+                        .fields
+                        .iter()
+                        .map(|field| FieldSymbol {
+                            symbol: Symbol::from(&field.declaration),
+                            value_type: field.value_type.clone(),
+                        })
+                        .collect(),
+                }),
+                DeclarationAst::Role(value) => {
+                    index.roles.push(Symbol::from(&value.declaration));
+                }
+                DeclarationAst::Action(value) => {
+                    index.actions.push(Symbol::from(&value.declaration));
+                }
+                _ => {}
+            }
+        }
+        index
+    }
+
+    fn enum_reference(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        resolve_symbols(
+            self.enums.iter().map(|value| &value.symbol),
+            value,
+            "enum",
+            span,
+            diagnostics,
+        )
+    }
+
+    fn model_reference(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        resolve_symbols(
+            self.models.iter().map(|value| &value.symbol),
+            value,
+            "model",
+            span,
+            diagnostics,
+        )
+    }
+
+    fn role_reference(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        resolve_symbols(self.roles.iter(), value, "role", span, diagnostics)
+    }
+
+    fn action_reference(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        resolve_symbols(self.actions.iter(), value, "action", span, diagnostics)
+    }
+
+    fn field_reference(
+        &self,
+        model: Option<&SurfaceRef>,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let model_id = model?.id();
+        resolve_symbols(
+            self.models
+                .iter()
+                .filter(|model| model.symbol.id == model_id)
+                .flat_map(|model| model.fields.iter().map(|field| &field.symbol)),
+            value,
+            "field",
+            span,
+            diagnostics,
+        )
+    }
+
+    fn enum_variant_reference(
+        &self,
+        enum_id: Option<&str>,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let enum_id = enum_id?;
+        resolve_symbols(
+            self.enums
+                .iter()
+                .filter(|definition| definition.symbol.id == enum_id)
+                .flat_map(|definition| definition.variants.iter()),
+            value,
+            "enum_variant",
+            span,
+            diagnostics,
+        )
+    }
+
+    fn field_enum_id(
+        &self,
+        model: Option<&SurfaceRef>,
+        field: Option<&SurfaceRef>,
+    ) -> Option<&str> {
+        let model_id = model?.id();
+        let field_id = field?.id();
+        let enum_name = self
+            .models
+            .iter()
+            .find(|model| model.symbol.id == model_id)?
+            .fields
+            .iter()
+            .find(|field| field.symbol.id == field_id)?
+            .value_type
+            .clone();
+        let TypeReferenceAst::Named(enum_name) = enum_name else {
+            return None;
+        };
+        unique_symbol_id(
+            self.enums.iter().map(|definition| &definition.symbol),
+            &enum_name,
+        )
+    }
+}
+
+fn resolve_symbols<'a>(
+    symbols: impl IntoIterator<Item = &'a Symbol>,
+    value: &str,
+    kind: &str,
+    span: Span,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<SurfaceRef> {
+    let ids = matching_symbol_ids(symbols, value);
+    match ids.len() {
+        1 => Some(SurfaceRef::stable_id(
+            ids.into_iter().next().expect("one ID must exist"),
+            span,
+        )),
+        0 => {
+            diagnostics.push(
+                Diagnostic::error("RSPDL-KO-REF-001", "ko.reference.not_found", span)
+                    .with_argument("kind", kind)
+                    .with_argument("reference", value),
+            );
+            None
+        }
+        _ => {
+            diagnostics.push(
+                Diagnostic::error("RSPDL-KO-REF-002", "ko.reference.ambiguous", span)
+                    .with_argument("kind", kind)
+                    .with_argument("reference", value),
+            );
+            None
+        }
+    }
+}
+
+fn unique_symbol_id<'a>(
+    symbols: impl IntoIterator<Item = &'a Symbol>,
+    value: &str,
+) -> Option<&'a str> {
+    let ids = matching_symbol_ids(symbols, value);
+    (ids.len() == 1).then(|| *ids.first().expect("one ID must exist"))
+}
+
+fn matching_symbol_ids<'a>(
+    symbols: impl IntoIterator<Item = &'a Symbol>,
+    value: &str,
+) -> Vec<&'a str> {
+    symbols
+        .into_iter()
+        .filter(|symbol| symbol.name == value || symbol.id == value)
+        .map(|symbol| symbol.id.as_str())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn required_reference(reference: Option<SurfaceRef>, span: Span) -> SurfaceRef {
+    reference.unwrap_or_else(|| SurfaceRef::stable_id("_invalid", span))
+}
 
 /// The controlled-Korean frontend implementation.
 #[derive(Clone, Copy, Debug, Default)]
@@ -41,9 +291,11 @@ impl Frontend for KoreanFrontend {
 
 /// Desugars a Korean AST into locale-neutral, unresolved semantic intent.
 ///
-/// This phase deliberately performs no symbol resolution, type checking, or
-/// semantic analysis. Those rules belong to the shared domain analyzer.
+/// Locale display names are mapped to declaration stable IDs here. Validation,
+/// type checking, and semantic analysis still belong to the shared analyzer.
 pub fn lower(document: &DocumentAst) -> LowerOutput {
+    let index = StableIdIndex::new(document);
+    let mut diagnostics = Vec::new();
     let mut module = UnlinkedModule {
         declaration: declaration(&document.module.declaration, true),
         enums: Vec::new(),
@@ -78,43 +330,101 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                     .map(|field| UnlinkedField {
                         declaration: declaration(&field.declaration, true),
                         required: field.required,
-                        value_type: type_reference(&field.value_type, field.declaration.span),
+                        value_type: type_reference(
+                            &field.value_type,
+                            field.declaration.span,
+                            &index,
+                            &mut diagnostics,
+                        ),
                     })
                     .collect(),
             }),
-            DeclarationAst::Screen(value) => module.screens.push(UnlinkedScreen {
-                declaration: declaration(&value.declaration, true),
-                model: reference(&value.model, value.span),
-                fields: value
+            DeclarationAst::Screen(value) => {
+                let model = index.model_reference(&value.model, value.span, &mut diagnostics);
+                let fields = value
                     .fields
                     .iter()
-                    .map(|field| reference(field, value.span))
-                    .collect(),
-                operation: screen_operation(value.operation),
-                span: value.span,
-            }),
+                    .map(|field| {
+                        required_reference(
+                            index.field_reference(
+                                model.as_ref(),
+                                field,
+                                value.span,
+                                &mut diagnostics,
+                            ),
+                            value.span,
+                        )
+                    })
+                    .collect();
+                module.screens.push(UnlinkedScreen {
+                    declaration: declaration(&value.declaration, true),
+                    model: required_reference(model, value.span),
+                    fields,
+                    operation: screen_operation(value.operation),
+                    span: value.span,
+                });
+            }
             DeclarationAst::SumDerivation(value) => {
+                let target_model =
+                    index.model_reference(&value.target_model, value.span, &mut diagnostics);
+                let target_field = index.field_reference(
+                    target_model.as_ref(),
+                    &value.target_field,
+                    value.span,
+                    &mut diagnostics,
+                );
+                let source_model =
+                    index.model_reference(&value.source_model, value.span, &mut diagnostics);
+                let source_field = index.field_reference(
+                    source_model.as_ref(),
+                    &value.source_field,
+                    value.span,
+                    &mut diagnostics,
+                );
                 module.derivations.push(UnlinkedSumDerivation {
-                    target_model: reference(&value.target_model, value.span),
-                    target_field: reference(&value.target_field, value.span),
-                    source_model: reference(&value.source_model, value.span),
-                    source_field: reference(&value.source_field, value.span),
+                    target_model: required_reference(target_model, value.span),
+                    target_field: required_reference(target_field, value.span),
+                    source_model: required_reference(source_model, value.span),
+                    source_field: required_reference(source_field, value.span),
                     span: value.span,
                 });
             }
             DeclarationAst::Recalculation(value) => {
+                let source_model =
+                    index.model_reference(&value.source_model, value.span, &mut diagnostics);
+                let source_field = index.field_reference(
+                    source_model.as_ref(),
+                    &value.source_field,
+                    value.span,
+                    &mut diagnostics,
+                );
+                let target_model =
+                    index.model_reference(&value.target_model, value.span, &mut diagnostics);
+                let target_field = index.field_reference(
+                    target_model.as_ref(),
+                    &value.target_field,
+                    value.span,
+                    &mut diagnostics,
+                );
                 module.recalculations.push(UnlinkedRecalculation {
-                    source_model: reference(&value.source_model, value.span),
-                    source_field: reference(&value.source_field, value.span),
-                    target_model: reference(&value.target_model, value.span),
-                    target_field: reference(&value.target_field, value.span),
+                    source_model: required_reference(source_model, value.span),
+                    source_field: required_reference(source_field, value.span),
+                    target_model: required_reference(target_model, value.span),
+                    target_field: required_reference(target_field, value.span),
                     span: value.span,
                 });
             }
             DeclarationAst::FieldIntent(value) => {
+                let model = index.model_reference(&value.model, value.span, &mut diagnostics);
+                let field = index.field_reference(
+                    model.as_ref(),
+                    &value.field,
+                    value.span,
+                    &mut diagnostics,
+                );
                 module.field_intents.push(UnlinkedFieldIntent {
-                    model: reference(&value.model, value.span),
-                    field: reference(&value.field, value.span),
+                    model: required_reference(model, value.span),
+                    field: required_reference(field, value.span),
                     intent: match value.intent {
                         FieldIntentKindAst::Internal => FieldIntentKind::Internal,
                         FieldIntentKindAst::Hidden => FieldIntentKind::Hidden,
@@ -123,14 +433,49 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                 });
             }
             DeclarationAst::Constraint(value) => {
+                let model = index.model_reference(
+                    &value.expression.model,
+                    value.expression.span,
+                    &mut diagnostics,
+                );
+                let left_field = operand_field_reference(
+                    &value.expression.left,
+                    model.as_ref(),
+                    value.expression.span,
+                    &index,
+                    &mut diagnostics,
+                );
+                let right_field = operand_field_reference(
+                    &value.expression.right,
+                    model.as_ref(),
+                    value.expression.span,
+                    &index,
+                    &mut diagnostics,
+                );
+                let left_enum = index.field_enum_id(model.as_ref(), right_field.as_ref());
+                let right_enum = index.field_enum_id(model.as_ref(), left_field.as_ref());
                 module.constraints.push(UnlinkedConstraint {
                     // Anonymous semantic IDs are generated by the shared linker
-                    // after references have been resolved to stable IDs.
+                    // from the stable IDs supplied by this frontend.
                     declaration: declaration(&value.declaration, false),
-                    model: reference(&value.expression.model, value.expression.span),
-                    left: operand(&value.expression.left, value.expression.span),
+                    model: required_reference(model, value.expression.span),
+                    left: operand(
+                        &value.expression.left,
+                        left_field,
+                        left_enum,
+                        value.expression.span,
+                        &index,
+                        &mut diagnostics,
+                    ),
                     operator: relation(value.expression.operator),
-                    right: operand(&value.expression.right, value.expression.span),
+                    right: operand(
+                        &value.expression.right,
+                        right_field,
+                        right_enum,
+                        value.expression.span,
+                        &index,
+                        &mut diagnostics,
+                    ),
                     span: value.expression.span,
                 });
             }
@@ -140,26 +485,38 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
             DeclarationAst::Action(value) => module.actions.push(UnlinkedAction {
                 declaration: declaration(&value.declaration, true),
             }),
-            DeclarationAst::Policy(value) => module.policies.push(UnlinkedPolicy {
-                // See the constraint note above. Locale display text never
-                // participates in the canonical generated ID.
-                declaration: declaration(&value.declaration, false),
-                role: reference(&value.role, value.span),
-                model: reference(&value.model, value.span),
-                field: reference(&value.field, value.span),
-                action: reference(&value.action, value.span),
-                effect: match value.effect {
-                    PolicyEffectAst::Allow => PolicyEffect::Allow,
-                    PolicyEffectAst::Deny => PolicyEffect::Deny,
-                },
-                span: value.span,
-            }),
+            DeclarationAst::Policy(value) => {
+                let role = index.role_reference(&value.role, value.span, &mut diagnostics);
+                let model = index.model_reference(&value.model, value.span, &mut diagnostics);
+                let field = index.field_reference(
+                    model.as_ref(),
+                    &value.field,
+                    value.span,
+                    &mut diagnostics,
+                );
+                let action = index.action_reference(&value.action, value.span, &mut diagnostics);
+                module.policies.push(UnlinkedPolicy {
+                    // See the constraint note above. Locale display text never
+                    // participates in the canonical generated ID.
+                    declaration: declaration(&value.declaration, false),
+                    role: required_reference(role, value.span),
+                    model: required_reference(model, value.span),
+                    field: required_reference(field, value.span),
+                    action: required_reference(action, value.span),
+                    effect: match value.effect {
+                        PolicyEffectAst::Allow => PolicyEffect::Allow,
+                        PolicyEffectAst::Deny => PolicyEffect::Deny,
+                    },
+                    span: value.span,
+                });
+            }
         }
     }
 
+    let module = (!diagnostics.iter().any(Diagnostic::is_error)).then_some(module);
     FrontendOutput {
-        module: Some(module),
-        diagnostics: Vec::new(),
+        module,
+        diagnostics,
     }
 }
 
@@ -171,16 +528,20 @@ fn declaration(value: &NamedIdAst, keep_id: bool) -> UnlinkedDeclaration {
     }
 }
 
-fn reference(value: &str, span: Span) -> SurfaceRef {
-    SurfaceRef::new(value, span)
-}
-
-fn type_reference(value: &TypeReferenceAst, span: Span) -> UnlinkedTypeReference {
+fn type_reference(
+    value: &TypeReferenceAst,
+    span: Span,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> UnlinkedTypeReference {
     match value {
         TypeReferenceAst::String => UnlinkedTypeReference::String,
         TypeReferenceAst::Integer => UnlinkedTypeReference::Integer,
         TypeReferenceAst::Boolean => UnlinkedTypeReference::Boolean,
-        TypeReferenceAst::Named(value) => UnlinkedTypeReference::Named(reference(value, span)),
+        TypeReferenceAst::Named(value) => UnlinkedTypeReference::Named(required_reference(
+            index.enum_reference(value, span, diagnostics),
+            span,
+        )),
     }
 }
 
@@ -205,9 +566,29 @@ fn relation(value: RelationOperatorAst) -> RelationOperator {
     }
 }
 
-fn operand(value: &OperandAst, span: Span) -> UnlinkedOperand {
+fn operand_field_reference(
+    value: &OperandAst,
+    model: Option<&SurfaceRef>,
+    span: Span,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<SurfaceRef> {
     match value {
-        OperandAst::Field(value) => UnlinkedOperand::Field(reference(value, span)),
+        OperandAst::Field(value) => index.field_reference(model, value, span, diagnostics),
+        OperandAst::Literal(_) => None,
+    }
+}
+
+fn operand(
+    value: &OperandAst,
+    field: Option<SurfaceRef>,
+    expected_enum_id: Option<&str>,
+    span: Span,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> UnlinkedOperand {
+    match value {
+        OperandAst::Field(_) => UnlinkedOperand::Field(required_reference(field, span)),
         OperandAst::Literal(value) => UnlinkedOperand::Literal(match value {
             LiteralAst::String(value) => UnlinkedLiteral::String {
                 value: value.clone(),
@@ -221,7 +602,10 @@ fn operand(value: &OperandAst, span: Span) -> UnlinkedOperand {
                 value: *value,
                 span,
             },
-            LiteralAst::Named(value) => UnlinkedLiteral::Named(reference(value, span)),
+            LiteralAst::Named(value) => UnlinkedLiteral::Named(required_reference(
+                index.enum_variant_reference(expected_enum_id, value, span, diagnostics),
+                span,
+            )),
         }),
     }
 }
@@ -233,7 +617,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lowers_surface_references_without_resolving_them() {
+    fn lowers_surface_names_to_stable_id_references() {
         let source = r#"@모듈 승인(expense)
 신청(request)은 다음 필드들로 구성되어 있다.
     금액(amount): 필수 정수
@@ -249,31 +633,36 @@ mod tests {
         let module = output.module.unwrap();
 
         assert_eq!(module.declaration.id.as_deref(), Some("expense"));
-        assert_eq!(module.constraints[0].model.text, "신청");
+        assert_eq!(module.constraints[0].model.id(), "request");
         assert!(module.constraints[0].declaration.id.is_none());
         assert!(matches!(
             &module.constraints[0].left,
-            UnlinkedOperand::Field(reference) if reference.text == "금액"
+            UnlinkedOperand::Field(reference) if reference.id() == "amount"
         ));
-        assert_eq!(module.policies[0].role.text, "관리자");
+        assert_eq!(module.policies[0].role.id(), "manager");
         assert!(module.policies[0].declaration.id.is_none());
     }
 
     #[test]
-    fn frontend_contract_stops_after_syntax_and_desugaring() {
+    fn unresolved_surface_names_stop_at_the_locale_boundary() {
         let source = r#"@모듈 승인(expense)
 신청(request)은 다음 필드들로 구성되어 있다.
     금액(amount): 필수 정수
-없는 역할은 신청의 금액을 없는 행동할 수 있다.
+미등록자는 신청의 금액을 삭제할 수 있다.
 "#;
         let output = KoreanFrontend.lower_source(source);
 
-        assert!(output.module.is_some());
+        assert!(output.module.is_none());
         assert!(
             output
                 .diagnostics
                 .iter()
-                .all(|diagnostic| diagnostic.rule_id.starts_with("RSPDL-KO-"))
+                .any(|diagnostic| diagnostic.rule_id == "RSPDL-KO-REF-001"
+                    && diagnostic.message_key == "ko.reference.not_found"
+                    && diagnostic.argument("kind") == Some("role")
+                    && diagnostic.argument("reference") == Some("미등록자")),
+            "{:?}",
+            output.diagnostics
         );
     }
 }

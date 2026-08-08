@@ -17,8 +17,8 @@ fn declaration(name: &str, id: Option<&str>) -> UnlinkedDeclaration {
     }
 }
 
-fn reference(name: &str) -> SurfaceRef {
-    SurfaceRef::new(name, span())
+fn reference(id: &str) -> SurfaceRef {
+    SurfaceRef::stable_id(id, span())
 }
 
 fn empty_module(name: &str) -> UnlinkedModule {
@@ -56,8 +56,8 @@ fn policy_module(labels: [&str; 5]) -> UnlinkedModule {
     });
     module.constraints.push(UnlinkedConstraint {
         declaration: declaration("", None),
-        model: reference(model_name),
-        left: UnlinkedOperand::Field(reference(field_name)),
+        model: reference("request"),
+        left: UnlinkedOperand::Field(reference("amount")),
         operator: RelationOperator::GreaterThan,
         right: UnlinkedOperand::Literal(UnlinkedLiteral::Integer {
             value: "0".into(),
@@ -67,10 +67,10 @@ fn policy_module(labels: [&str; 5]) -> UnlinkedModule {
     });
     module.policies.push(UnlinkedPolicy {
         declaration: declaration("", None),
-        role: reference(role_name),
-        model: reference(model_name),
-        field: reference(field_name),
-        action: reference(action_name),
+        role: reference("manager"),
+        model: reference("request"),
+        field: reference("amount"),
+        action: reference("change"),
         effect: PolicyEffect::Allow,
         span: span(),
     });
@@ -83,13 +83,29 @@ fn canonical_generated_ids_do_not_depend_on_locale_labels() {
     let english = analyze(policy_module([
         "Approval", "Request", "Amount", "Manager", "Change",
     ]));
+    let mut qualified = policy_module(["Approval", "Request", "Amount", "Manager", "Change"]);
+    qualified.constraints[0].model = reference("expense.request");
+    qualified.constraints[0].left = UnlinkedOperand::Field(reference("expense.request.amount"));
+    qualified.policies[0].role = reference("expense.manager");
+    qualified.policies[0].model = reference("expense.request");
+    qualified.policies[0].field = reference("expense.request.amount");
+    qualified.policies[0].action = reference("expense.change");
+    let qualified = analyze(qualified);
     assert!(korean.diagnostics.is_empty(), "{:?}", korean.diagnostics);
     assert!(english.diagnostics.is_empty(), "{:?}", english.diagnostics);
+    assert!(
+        qualified.diagnostics.is_empty(),
+        "{:?}",
+        qualified.diagnostics
+    );
 
     let korean = korean.module.unwrap();
     let english = english.module.unwrap();
+    let qualified = qualified.module.unwrap();
     assert_eq!(korean.constraints[0].id, english.constraints[0].id);
+    assert_eq!(english.constraints[0].id, qualified.constraints[0].id);
     assert_eq!(korean.policies[0].id, english.policies[0].id);
+    assert_eq!(english.policies[0].id, qualified.policies[0].id);
     assert_eq!(
         korean.constraints[0].id.as_str(),
         "expense.constraint_72fbbd5f8aa621cb"
@@ -103,9 +119,30 @@ fn canonical_generated_ids_do_not_depend_on_locale_labels() {
 }
 
 #[test]
+fn invalid_stable_references_are_rejected_before_name_lookup() {
+    let mut module = policy_module(["Approval", "Request", "Amount", "Manager", "Change"]);
+    module.policies[0].role = reference("Not-Canonical");
+
+    let output = analyze(module);
+
+    assert!(output.module.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-LINK-003"
+            && diagnostic.message_key == "model.invalid_canonical_id"
+            && diagnostic.argument("value") == Some("Not-Canonical")
+    }));
+    assert!(
+        !output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message_key == "semantic.symbol.not_found")
+    );
+}
+
+#[test]
 fn unresolved_symbols_are_rejected_by_the_shared_analyzer() {
     let mut module = policy_module(["승인", "신청", "금액", "관리자", "변경"]);
-    module.policies[0].role = reference("없는 역할");
+    module.policies[0].role = reference("missing_role");
 
     let output = analyze(module);
 
@@ -113,7 +150,7 @@ fn unresolved_symbols_are_rejected_by_the_shared_analyzer() {
     assert!(output.diagnostics.iter().any(|diagnostic| {
         diagnostic.rule_id == "RSPDL-LINK-003"
             && diagnostic.message_key == "semantic.symbol.not_found"
-            && diagnostic.argument("reference") == Some("없는 역할")
+            && diagnostic.argument("reference") == Some("missing_role")
     }));
 }
 
@@ -129,7 +166,7 @@ fn data_usage_module(include_input: bool, include_read: bool) -> UnlinkedModule 
     });
     module.screens.push(UnlinkedScreen {
         declaration: declaration("작성 화면", Some("create_item")),
-        model: reference("항목"),
+        model: reference("item"),
         fields: Vec::new(),
         operation: ScreenOperationKind::Create,
         span: span(),
@@ -137,8 +174,8 @@ fn data_usage_module(include_input: bool, include_read: bool) -> UnlinkedModule 
     if include_input {
         module.screens.push(UnlinkedScreen {
             declaration: declaration("작성 화면", Some("create_item")),
-            model: reference("항목"),
-            fields: vec![reference("금액")],
+            model: reference("item"),
+            fields: vec![reference("amount")],
             operation: ScreenOperationKind::Input,
             span: span(),
         });
@@ -146,8 +183,8 @@ fn data_usage_module(include_input: bool, include_read: bool) -> UnlinkedModule 
     if include_read {
         module.screens.push(UnlinkedScreen {
             declaration: declaration("상세 화면", Some("item_detail")),
-            model: reference("항목"),
-            fields: vec![reference("금액")],
+            model: reference("item"),
+            fields: vec![reference("amount")],
             operation: ScreenOperationKind::Read,
             span: span(),
         });
@@ -174,8 +211,8 @@ fn lifecycle_rules_run_without_a_locale_frontend() {
     intentional_non_read
         .field_intents
         .push(UnlinkedFieldIntent {
-            model: reference("항목"),
-            field: reference("금액"),
+            model: reference("item"),
+            field: reference("amount"),
             intent: FieldIntentKind::Hidden,
             span: span(),
         });

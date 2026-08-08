@@ -30,16 +30,25 @@ pub struct UnlinkedDeclaration {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SurfaceRef {
-    pub text: String,
+    /// Locale-independent declaration ID, either module-local or fully qualified.
+    pub id: String,
     pub span: TextRange,
 }
 
 impl SurfaceRef {
-    pub fn new(text: impl Into<String>, span: TextRange) -> Self {
+    pub fn stable_id(id: impl Into<String>, span: TextRange) -> Self {
         Self {
-            text: text.into(),
+            id: id.into(),
             span,
         }
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub const fn span(&self) -> TextRange {
+        self.span
     }
 }
 

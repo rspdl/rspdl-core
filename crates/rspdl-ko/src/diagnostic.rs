@@ -123,6 +123,16 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "name"),
             argument(diagnostic, "expected")
         ),
+        "ko.reference.not_found" => format!(
+            "{} 참조 {}에 대응하는 stable ID를 찾을 수 없습니다.",
+            argument(diagnostic, "kind"),
+            argument(diagnostic, "reference")
+        ),
+        "ko.reference.ambiguous" => format!(
+            "{} 참조 {}가 둘 이상의 stable ID와 일치합니다.",
+            argument(diagnostic, "kind"),
+            argument(diagnostic, "reference")
+        ),
         "compiler.source.duplicate_path" => {
             format!(
                 "source 경로 {}가 중복 지정되었습니다.",
