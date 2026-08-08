@@ -3,7 +3,7 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "0.3"
+version: "0.4"
 summary: Defines the implemented stable-ID Unlinked IR boundary, locale-neutral diagnostics, analyzer pipeline, dependency direction, and test architecture.
 topics:
   - rust
@@ -122,7 +122,7 @@ flowchart TD
 - `rspdl-ko -> future rspdl-en`
 - semantic rule에서 Locale token 또는 Locale message 직접 참조
 
-## Compiler pipeline
+## 구현된 compiler pipeline
 
 ```mermaid
 flowchart LR
@@ -134,17 +134,27 @@ flowchart LR
     AST --> LINT["Surface Lint"]
     AST --> LOWER["Lowering"]
     LOWER --> UIR["Stable-ID Unlinked IR"]
-    UIR --> LINK["Workspace Linker"]
-    LINK --> CIR["Canonical Workspace"]
-    CIR --> GRAPH["Semantic Graph"]
-    GRAPH --> RULES["Semantic Rules"]
-    RULES --> DIAG["Structured Diagnostics"]
+    UIR --> ANALYZE["rspdl-domain::analyze"]
+    ANALYZE --> SM["SemanticModule"]
+    ANALYZE --> DIAG["Structured Diagnostics"]
     CST --> FORMAT["ko-KR Formatter"]
 ```
 
 Surface lint 진단은 lowering을 차단하지 않는다. Scanner 또는 parser의 오류가 있더라도 안전한 복구가 가능한 범위에서 CST와 복수 진단을 반환한다.
 
-Frontend lowering 결과인 `UnlinkedModule`은 stable-ID reference와 source provenance를 보존한다. Locale frontend는 표시 이름을 자기 선언 ID로 바꾸며, 공통 analyzer는 ID를 검증·qualification·linking하고 타입 검사와 data usage semantic rule을 실행해 `SemanticModule`을 만든다. Workspace import linker, Canonical Workspace와 Semantic Graph는 후속 범위다.
+Frontend lowering 결과인 `UnlinkedModule`은 stable-ID reference와 source provenance를 보존한다. Locale frontend는 표시 이름을 자기 선언 ID로 바꾸며, 현재 공통 `analyze` 함수는 ID를 검증·qualification·linking하고 타입 검사와 data usage semantic rule을 실행해 module별 `SemanticModule`을 만든다.
+
+## 제안된 workspace 확장 pipeline
+
+```mermaid
+flowchart LR
+    UIR["Stable-ID Unlinked Modules"] --> LINK["Workspace Linker (proposed)"]
+    LINK --> CIR["Canonical Workspace (proposed)"]
+    CIR --> GRAPH["Semantic Graph (proposed)"]
+    GRAPH --> RULES["Cross-module Semantic Rules (proposed)"]
+```
+
+현재 `compile_files_with_frontend`는 source별 `SemanticModule`을 만든 뒤 module·symbol stable ID의 workspace 중복만 검사한다. import resolution, Canonical Workspace와 전체 Semantic Graph는 후속 범위다.
 
 ## Crate 책임
 
@@ -242,7 +252,7 @@ Canonical IR을 정책표나 사용자·리소스별 조회 모델로 투영하�
 
 모든 token과 AST node는 UTF-8 byte range를 유지한다. Line과 column은 source line index에서 표시 시 계산한다.
 
-`rspdl-domain::Diagnostic`은 `rule_id`, `severity`, `message_key`, key가 정렬된 `arguments`와 `span`만 보존한다. 번역된 표시 문장은 core에 저장하지 않는다. CLI의 사람용 출력은 `rspdl-ko` renderer를 사용하고 JSON 출력은 Locale 중립 구조를 그대로 직렬화한다. 다른 frontend와 application은 같은 key/argument 계약 위에 자기 renderer를 제공한다.
+`rspdl-domain::Diagnostic`은 `rule_id`, `severity`, `message_key`, key가 정렬된 `arguments`와 `span`만 보존한다. Runtime input과 backend 오류도 같은 원칙의 `RuntimeDiagnostic`에 `path`, `message_key`, 정렬된 `arguments`로 저장한다. 번역된 표시 문장은 core나 compiler facade에 저장하지 않는다. CLI의 사람용 출력은 한국어 renderer를 사용하고 JSON 출력은 Locale 중립 구조를 그대로 직렬화한다. 다른 frontend와 application은 같은 key/argument 계약 위에 자기 renderer를 제공한다.
 
 진단 정렬 키는 최소한 다음 순서로 고정한다.
 

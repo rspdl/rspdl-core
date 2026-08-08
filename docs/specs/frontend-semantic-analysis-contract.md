@@ -3,7 +3,7 @@ id: frontend-semantic-analysis-contract
 title: Frontend and Semantic Analysis Contract
 type: spec
 status: implemented
-version: "2"
+version: "3"
 summary: Defines the stable-ID Unlinked IR and structured diagnostic boundary that lets independent surface-language frontends use one semantic analyzer.
 topics:
   - compiler-frontend
@@ -66,7 +66,9 @@ pub struct SurfaceRef {
 
 `rspdl-compiler::compile_with_frontend`와 `compile_files_with_frontend`는 구체 Locale 타입이 아니라 이 계약을 입력으로 받는다.
 
-`SurfaceRef.id`는 module-local ID 또는 fully-qualified ID다. 표시 이름, 번역 문자열 또는 source 문장 조각을 넣을 수 없다. 공통 analyzer는 local ID를 현재 module로 한정하고 fully-qualified ID는 그대로 검증한다.
+`Frontend::language_id`는 미래 Locale registry와 artifact provenance를 위한 식별 hook이다. 현재 compiler entry point는 호출자가 frontend 구현을 직접 주입하므로 compilation artifact나 진단에 이 값을 복사하지 않는다.
+
+`SurfaceRef.id`는 module-local ID 또는 fully-qualified ID다. 표시 이름, 번역 문자열 또는 source 문장 조각을 넣을 수 없다. 공통 analyzer는 local ID를 현재 module로 한정하고 fully-qualified ID는 그대로 검증한다. Bare local reference가 둘 이상의 qualified declaration suffix와 일치하면 첫 선언을 선택하지 않고 ambiguity 진단을 반환한다.
 
 ## Frontend responsibility
 
@@ -115,6 +117,8 @@ pub struct Diagnostic {
     pub span: TextRange,
 }
 ```
+
+Runtime input과 backend 실행 진단은 source `span` 대신 JSON `path`를 갖는 `RuntimeDiagnostic`을 사용하되, 동일하게 `rule_id`, `severity`, `message_key`와 정렬된 `arguments`만 저장한다.
 
 - `rule_id`는 의미 규칙의 안정적인 식별자다.
 - `message_key`와 `arguments`는 기계 비교와 Locale rendering의 입력이다.

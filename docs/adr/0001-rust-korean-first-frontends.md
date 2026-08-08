@@ -3,7 +3,7 @@ id: rust-korean-first-frontend
 title: Rust와 한국어 우선 독립 Locale Frontend
 type: adr
 status: accepted
-version: "3"
+version: "4"
 summary: Selects Rust, a Korean-first rollout, and independent deterministic frontends that lower surface names to a shared stable-ID Unlinked IR.
 topics:
   - rust
@@ -110,5 +110,4 @@ compiler correctness는 Kiwi 또는 다른 형태소·품사·자연어 분석�
 - 세부 선언 문법과 전체 예약어
 - parser library 사용 여부
 - 한국어에서 지원할 문형의 최종 목록
-- stable machine ID와 한국어 표시 이름을 연결하는 표면 문법
 - 영어 frontend의 구체적인 문형과 구현 시점
