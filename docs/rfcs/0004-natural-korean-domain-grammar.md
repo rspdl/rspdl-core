@@ -3,8 +3,8 @@ id: natural-korean-domain-grammar
 title: Korean Domain Frontend Language Specification
 type: rfc
 status: implemented
-version: "0.1"
-summary: Defines sparse annotation-led blocks, natural Korean data headers, indentation-based CFG items, and controlled constraint and policy sentences implemented by rspdl-ko.
+version: "0.3"
+summary: Defines Korean surface grammar and its deterministic lowering to the shared locale-neutral Unlinked IR contract.
 topics:
   - ko-KR
   - controlled-language
@@ -16,20 +16,21 @@ related:
   - controlled-korean-surface-grammar
   - typed-domains-and-logic-core
   - rspdl-compiler-architecture
+  - frontend-semantic-analysis-contract
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-02"
+last_updated: "2026-08-08"
 owners:
   - rspdl-maintainers
-target_spec: "0.1.0"
+target_spec: "0.2.0"
 ---
 
 # Korean Domain Frontend Language Specification
 
 ## 1. 범위
 
-이 문서는 `rspdl-ko` 0.1 frontend의 규범 문법과 의미를 정의한다. 데이터와 열거형의 header는 자연스러운 한국어 문장이고, 들여쓴 field와 enum value는 별도 `@` 없이 CFG 항목으로 작성한다. 제약과 정책은 이름이나 source ID가 없는 독립적인 최상위 문장이다.
+이 문서는 `rspdl-ko` frontend의 규범 문법과 공통 Unlinked IR로의 lowering을 정의한다. 데이터와 열거형의 header는 자연스러운 한국어 문장이고, 들여쓴 field와 enum value는 별도 `@` 없이 CFG 항목으로 작성한다. 제약과 정책은 이름이나 source ID가 없는 독립적인 최상위 문장이다. 한국어 표시 이름을 선언 stable ID로 연결하는 일은 frontend가, stable ID linking·타입 검사와 의미 규칙은 [Frontend and Semantic Analysis Contract](../specs/frontend-semantic-analysis-contract.md)의 공통 analyzer가 소유한다.
 
 관계, 컬렉션, 유저 플로우, 조건부 정책, 일반 `AND`/`OR`/`NOT`, 모듈 import와 자유 한국어 해석은 0.1 범위에 포함하지 않는다.
 
@@ -261,27 +262,29 @@ policy-statement =
 ### 6.1 이름과 ID
 
 - module 아래의 enum, model, role과 action은 짧은 local ID를 사용할 수 있다.
-- 짧은 top-level ID `request`는 `<module-id>.request`로 lowering한다. 점이 포함된 ID는 이미 qualified된 것으로 취급한다.
+- 짧은 top-level ID `request`는 공통 analyzer가 `<module-id>.request`로 qualification한다. 점이 포함된 ID는 이미 qualified된 것으로 취급한다.
 - lowering된 top-level canonical ID는 module 안에서 중복될 수 없다.
 - constraint와 policy는 source ID나 표시 이름을 갖지 않는다.
-- constraint와 policy의 local ID는 아래 canonical serialization의 UTF-8 byte sequence에 FNV-1a 64-bit를 적용한 `constraint_<hex>`, `policy_<hex>` 형식이다. `<hex>`는 leading zero를 포함한 16자리 소문자 hexadecimal이며 canonical ID는 다시 module ID로 한정한다.
-- v0.1 canonical serialization은 lowering 전의 정확한 display name byte sequence를 사용한다. Unicode normalization은 적용하지 않으며, NFC와 NFD처럼 다른 byte sequence는 다른 이름이다. lexer가 무시하는 공백, 들여쓰기와 source 위치는 serialization에 포함하지 않는다.
-- constraint는 `model NUL operand NUL operator NUL operand` 순서다. field operand는 `field:<display-name>`, string literal은 `string:<JSON-string>`, integer literal은 `integer:<canonical-decimal>`, boolean literal은 `boolean:true|false`, named literal은 `named:<display-name>`이다. operator는 `equal`, `not_equal`, `less_than`, `less_than_or_equal`, `greater_than`, `greater_than_or_equal` 중 하나다.
-- policy는 `role NUL model NUL field NUL action NUL effect` 순서며 effect는 `allow` 또는 `deny`다. `NUL`은 U+0000 byte 하나를 뜻한다.
-- Known vectors: `항목 NUL field:값 NUL greater_than NUL integer:0`은 `constraint_cc0c5c741f5a3664`이고, `관리자 NUL 항목 NUL 값 NUL 변경 NUL allow`는 `policy_c9929d0f292dc92b`이다. 같은 token sequence를 만드는 공백 변화와 future Locale이 동일 serialization을 사용하면 같은 ID를 만든다.
-- 내부 rule ID는 공백, 들여쓰기와 source 위치가 바뀌어도 동일하고, 규칙의 의미가 달라지면 함께 달라진다.
+- `rspdl-ko`는 constraint와 policy에 Locale별 ID를 만들지 않고 anonymous declaration으로 lowering한다.
+- 한국어 frontend가 표시 이름 reference를 선언 stable ID로 연결하고, 공통 linker가 이를 Canonical ID로 검증·qualification한 뒤 semantic identity의 UTF-8 byte sequence에 FNV-1a 64-bit를 적용해 `constraint_<hex>`, `policy_<hex>`를 만든다. `<hex>`는 leading zero를 포함한 16자리 소문자 hexadecimal이며 canonical ID는 module ID로 한정한다.
+- constraint identity는 `model-id NUL operand NUL operator NUL operand` 순서다. field operand에는 canonical field ID를 사용하고 literal은 canonical value representation을 사용한다.
+- policy identity는 `role-id NUL model-id NUL field-id NUL action-id NUL effect` 순서며 effect는 `allow` 또는 `deny`다.
+- `expense.request`의 `expense.request.amount > 0`은 `expense.constraint_72fbbd5f8aa621cb`, `expense.manager`가 같은 필드를 `expense.change`하도록 허용하는 정책은 `expense.policy_45439f1d15749ca3`인 known vector다.
+- 내부 rule ID는 Locale display text, 공백, 들여쓰기와 source 위치에 의존하지 않고 stable ID와 의미가 달라질 때만 함께 달라진다.
 - enum value ID는 해당 enum 안에서, field ID는 해당 model 안에서 고유해야 한다.
 - 자연어 문장의 참조는 선언된 표시 이름과 정확히 일치해야 한다.
 - 같은 namespace에 표시 이름이 중복되면 참조가 모호하므로 compile 오류다.
 - lowering 후 enum value와 field canonical ID는 각각 `<enum-id>.<local-value-id>`, `<model-id>.<local-field-id>`다.
 
-### 6.2 타입 검사
+### 6.2 공통 타입 검사
 
 - `보다`, `이상`, `이하` 비교는 정수 field에만 적용한다.
 - equality literal의 타입은 field 타입과 같아야 한다.
 - enum literal은 field가 참조하는 enum에 선언된 표시 이름이어야 한다.
 - field-to-field equality는 양쪽 field 타입이 같아야 한다.
 - policy가 참조하는 role, model, field와 action은 모두 선언되어야 한다.
+
+위 규칙은 한국어 frontend가 아니라 공통 analyzer가 모든 `UnlinkedModule`에 동일하게 적용한다.
 
 조사 선택이 부자연스러우면 `RSPDL-KO-W001` warning을 만들지만 compile을 막지 않는다.
 

@@ -1,19 +1,5 @@
+use rspdl_domain::TextRange as Span;
 use serde::Serialize;
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl Span {
-    pub fn join(self, other: Self) -> Self {
-        Self {
-            start: self.start.min(other.start),
-            end: self.end.max(other.end),
-        }
-    }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NamedIdAst {

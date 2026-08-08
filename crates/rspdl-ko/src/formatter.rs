@@ -276,35 +276,42 @@ fn has_final_consonant(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use rspdl_domain::{SemanticModule, analyze};
+
     use crate::{lower, parse};
 
     use super::*;
+
+    fn semantic_module(document: &DocumentAst) -> SemanticModule {
+        let lowered = lower(document);
+        let analyzed = analyze(lowered.module.expect("parsed document should lower"));
+        analyzed
+            .module
+            .unwrap_or_else(|| panic!("{:?}", analyzed.diagnostics))
+    }
 
     #[test]
     fn formatting_is_idempotent() {
         let source = "@모듈 승인(approval)\n신청(request)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n신청의 금액은 0보다 커야 한다.\n@역할 관리자(manager)\n@행동 변경(change)\n관리자는 신청의 금액을 변경할 수 있다.\n";
         let original = parse(source).document.unwrap();
-        let original_module = lower(&original).module.unwrap();
+        let original_module = semantic_module(&original);
         let first = format_document(&original).unwrap();
         let formatted = parse(&first).document.unwrap();
         let second = format_document(&formatted).unwrap();
         assert_eq!(first, second);
-        assert_eq!(original_module, lower(&formatted).module.unwrap());
+        assert_eq!(original_module, semantic_module(&formatted));
     }
 
     #[test]
     fn literal_not_equal_constraints_round_trip() {
         let source = "@모듈 비교(comparison)\n항목(item)은 다음 필드들로 구성되어 있다.\n  값(value): 필수 정수\n항목의 값은 0과 달라야 한다.\n";
         let original = parse(source).document.unwrap();
-        let lowered = lower(&original);
-        let original_module = lowered
-            .module
-            .unwrap_or_else(|| panic!("{:?}", lowered.diagnostics));
+        let original_module = semantic_module(&original);
 
         let formatted = format_document(&original).unwrap();
         let reparsed = parse(&formatted).document.unwrap();
 
-        assert_eq!(original_module, lower(&reparsed).module.unwrap());
+        assert_eq!(original_module, semantic_module(&reparsed));
     }
 
     #[test]
@@ -313,7 +320,7 @@ mod tests {
         let parsed = parse(source);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
         let document = parsed.document.unwrap();
-        let original_module = lower(&document).module.unwrap();
+        let original_module = semantic_module(&document);
         let first = format_document(&document).unwrap();
         let reparsed = parse(&first);
         assert!(
@@ -322,7 +329,7 @@ mod tests {
             reparsed.diagnostics
         );
         let reparsed_document = reparsed.document.unwrap();
-        assert_eq!(original_module, lower(&reparsed_document).module.unwrap());
+        assert_eq!(original_module, semantic_module(&reparsed_document));
         let second = format_document(&reparsed_document).unwrap();
         assert_eq!(first, second);
     }

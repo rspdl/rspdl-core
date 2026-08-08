@@ -74,7 +74,7 @@ fn sentence_shaped_data_usage_conformance_suite() {
         {
             assert_eq!(actual.rule_id, expected.rule_id, "case {name}");
             assert_eq!(
-                serde_json::to_value(&actual.severity)
+                serde_json::to_value(actual.severity)
                     .unwrap()
                     .as_str()
                     .unwrap(),

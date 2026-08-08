@@ -4,7 +4,7 @@ title: RSPDL Product Requirements
 type: prd
 status: draft
 created: 2026-07-26
-version: "0.5"
+version: "0.7"
 summary: Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context.
 topics:
   - language-design
@@ -21,7 +21,7 @@ related:
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-03"
+last_updated: "2026-08-08"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -64,6 +64,7 @@ target_spec: "0.2.0"
 - 언어와 호환성 요구사항은 다음과 같다.
   - `SYNTAX-001`: 초기 문법은 자유 자연어가 아닌 구조화된 블록 형식이어야 한다.
   - `LOCALE-001`: 같은 의미의 Locale 문서는 정규화 후 동일한 Canonical IR을 생성해야 한다.
+  - `LOCALE-002`: Locale frontend는 표시 이름을 stable ID로 연결한 공통 Unlinked IR을 만들고, stable ID validation·linking, type checking과 의미 규칙은 공통 analyzer가 한 번만 구현해야 한다.
   - `MODULE-001`: 여러 문서와 Locale에 걸쳐 심볼을 선언, 참조하고 연결할 수 있어야 한다.
   - `VERSION-001`: source는 사용한 언어 명세와 필요한 의미 규칙 버전을 선언할 수 있어야 한다.
   - `COMPAT-001`: 호환 구현체는 구현 독립 Conformance Test Suite로 의미 동등성을 증명해야 한다.
@@ -84,6 +85,7 @@ target_spec: "0.2.0"
   - 화면 입력과 합계 계산을 생산자로 연결한 field provenance 검증
   - 단일 정수 필드 합계, 원본 변경 시 재계산과 내부/비표시 의도
   - parser, formatter, Canonical domain model, Z3 constraint check와 Datalog policy match
+  - 공통 `Frontend` trait, stable-ID Unlinked IR과 Locale 독립 linking, type checking 및 data usage analyzer
   - runtime request별 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - 아직 구현하지 않은 요구사항은 다음과 같다.
   - 화면 간 순서·분기, 삭제 이후 접근과 path별 데이터 availability

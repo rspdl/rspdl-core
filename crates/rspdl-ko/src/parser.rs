@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use crate::ast::*;
 use crate::scanner::{Token, TokenKind, scan};
-use crate::{Diagnostic, Severity};
+use crate::{Diagnostic, Span};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ParseOutput {
@@ -26,7 +26,7 @@ pub fn parse(source: &str) -> ParseOutput {
     let Some(module_line) = lines.first() else {
         diagnostics.push(Diagnostic::error(
             "RSPDL-KO-SYN-001",
-            "문서는 모듈 선언으로 시작해야 합니다.",
+            "ko.syntax.module_required",
             Span::default(),
         ));
         return ParseOutput {
@@ -52,7 +52,7 @@ pub fn parse(source: &str) -> ParseOutput {
         if line.indent != 0 {
             diagnostics.push(Diagnostic::error(
                 "RSPDL-KO-SYN-002",
-                "최상위 선언이 아닌 위치에 들여쓴 항목이 있습니다.",
+                "ko.syntax.unexpected_top_level_indent",
                 line.span,
             ));
             cursor += 1;
@@ -95,7 +95,7 @@ pub fn parse(source: &str) -> ParseOutput {
             }
             _ => Err(Diagnostic::error(
                 "RSPDL-KO-SYN-003",
-                "알 수 없는 최상위 선언입니다.",
+                "ko.syntax.unknown_top_level_declaration",
                 line.span,
             )),
         };
@@ -245,7 +245,7 @@ fn parse_module(line: &Line, _diagnostics: &mut Vec<Diagnostic>) -> Result<Modul
     if line.indent != 0 {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-001",
-            "문서는 `@모듈 표시 이름(stable_id)` 선언으로 시작해야 합니다.",
+            "ko.syntax.module_header_required",
             line.span,
         ));
     }
@@ -277,12 +277,16 @@ fn parse_enum(
         {
             return Err(Diagnostic::error(
                 "RSPDL-KO-SYN-012",
-                "선언 항목에는 마침표를 사용하지 않습니다.",
+                "ko.syntax.item_period_forbidden",
                 item.span,
             ));
         }
         let id_index = item.tokens.len().checked_sub(1).ok_or_else(|| {
-            Diagnostic::error("RSPDL-KO-SYN-005", "열거형 값이 필요합니다.", item.span)
+            Diagnostic::error(
+                "RSPDL-KO-SYN-005",
+                "ko.syntax.enum_value_required",
+                item.span,
+            )
         })?;
         let declaration = parse_cfg_item_name(item, id_index)?;
         values.push(EnumValueAst { declaration });
@@ -317,14 +321,14 @@ fn parse_model(
             .ok_or_else(|| {
                 Diagnostic::error(
                     "RSPDL-KO-SYN-010",
-                    "필드 표시 이름 뒤에 `:`이 필요합니다.",
+                    "ko.syntax.field_colon_required",
                     item.span,
                 )
             })?;
         let id_index = colon_index.checked_sub(1).ok_or_else(|| {
             Diagnostic::error(
                 "RSPDL-KO-SYN-010",
-                "필드는 `표시 이름(local_id): 필수|선택 타입` 형식이어야 합니다.",
+                "ko.syntax.field_shape_required",
                 item.span,
             )
         })?;
@@ -336,7 +340,7 @@ fn parse_model(
         {
             return Err(Diagnostic::error(
                 "RSPDL-KO-SYN-012",
-                "선언 항목에는 마침표를 사용하지 않습니다.",
+                "ko.syntax.item_period_forbidden",
                 item.span,
             ));
         }
@@ -346,7 +350,7 @@ fn parse_model(
             _ => {
                 return Err(Diagnostic::error(
                     "RSPDL-KO-SYN-010",
-                    "필드는 `필수` 또는 `선택`을 선언해야 합니다.",
+                    "ko.syntax.field_requiredness_required",
                     item.span,
                 ));
             }
@@ -372,7 +376,7 @@ fn parse_screen(
     if !body.is_empty() {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-060",
-            "화면 동작은 들여쓰기 블록 없이 한 문장으로 작성해야 합니다.",
+            "ko.syntax.screen_must_be_sentence",
             line.span,
         ));
     }
@@ -383,7 +387,7 @@ fn parse_screen(
         .ok_or_else(|| {
             Diagnostic::error(
                 "RSPDL-KO-SYN-061",
-                "화면 stable ID가 필요합니다.",
+                "ko.syntax.screen_stable_id_required",
                 line.span,
             )
         })?;
@@ -394,7 +398,7 @@ fn parse_screen(
 
     let (fields, operation) = if marker == "의" {
         if cursor.tokens.len().saturating_sub(cursor.index) < 3 {
-            return Err(cursor.error("화면의 필드 동작이 누락되었습니다."));
+            return Err(cursor.error("ko.syntax.screen_field_operation_required"));
         }
         let operation_index = cursor.tokens.len() - 3;
         let fields = parse_field_list(&cursor.tokens[cursor.index..operation_index], line.span)?;
@@ -404,9 +408,7 @@ fn parse_screen(
             Some("입력할") => ScreenOperationKindAst::Input,
             Some("수정할") => ScreenOperationKindAst::Update,
             _ => {
-                return Err(
-                    cursor.error("필드 동작은 `입력할`, `조회할`, `수정할` 중 하나여야 합니다.")
-                );
+                return Err(cursor.error("ko.syntax.screen_field_operation_invalid"));
             }
         };
         (fields, operation)
@@ -417,9 +419,7 @@ fn parse_screen(
             Some("수정할") => ScreenOperationKindAst::Update,
             Some("삭제할") => ScreenOperationKindAst::Delete,
             _ => {
-                return Err(cursor.error(
-                    "데이터 동작은 `생성할`, `조회할`, `수정할`, `삭제할` 중 하나여야 합니다.",
-                ));
+                return Err(cursor.error("ko.syntax.screen_model_operation_invalid"));
             }
         };
         (Vec::new(), operation)
@@ -443,7 +443,7 @@ fn parse_field_list(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnos
     if tokens.is_empty() {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-062",
-            "필드 목록이 필요합니다.",
+            "ko.syntax.field_list_required",
             span,
         ));
     }
@@ -456,7 +456,7 @@ fn parse_field_list(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnos
         if segment.is_empty() {
             return Err(Diagnostic::error(
                 "RSPDL-KO-SYN-062",
-                "빈 필드 이름은 사용할 수 없습니다.",
+                "ko.syntax.field_list_empty_name",
                 span,
             ));
         }
@@ -467,7 +467,7 @@ fn parse_field_list(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnos
                 TokenKind::Word(word) | TokenKind::QuotedIdentifier(word) => Ok(word.clone()),
                 _ => Err(Diagnostic::error(
                     "RSPDL-KO-SYN-062",
-                    "필드 목록 형식이 올바르지 않습니다.",
+                    "ko.syntax.field_list_invalid",
                     token.span,
                 )),
             })
@@ -489,7 +489,7 @@ fn parse_field_list(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnos
                 let Some(stripped) = stripped else {
                     return Err(Diagnostic::error(
                         "RSPDL-KO-SYN-062",
-                        "마지막 필드에는 `을` 또는 `를`이 필요합니다.",
+                        "ko.syntax.field_list_final_marker_required",
                         span,
                     ));
                 };
@@ -503,7 +503,7 @@ fn parse_field_list(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnos
 }
 
 fn parse_sum_derivation(line: &Line, body: &[Line]) -> Result<SumDerivationAst, Diagnostic> {
-    reject_sentence_body(body, line.span, "계산")?;
+    reject_sentence_body(body, line.span, "sum_derivation")?;
     let mut cursor = BodyCursor::new(sentence_tokens(line)?, line.span);
     let (target_model, _) = cursor.marked_ref(&["의"])?;
     let (target_field, _) = cursor.marked_ref(&["은", "는"])?;
@@ -522,7 +522,7 @@ fn parse_sum_derivation(line: &Line, body: &[Line]) -> Result<SumDerivationAst, 
 }
 
 fn parse_recalculation(line: &Line, body: &[Line]) -> Result<RecalculationAst, Diagnostic> {
-    reject_sentence_body(body, line.span, "재계산")?;
+    reject_sentence_body(body, line.span, "recalculation")?;
     let mut cursor = BodyCursor::new(sentence_tokens(line)?, line.span);
     let (source_model, _) = cursor.marked_ref(&["의"])?;
     let (source_field, _) = cursor.marked_ref(&["이", "가"])?;
@@ -543,7 +543,7 @@ fn parse_recalculation(line: &Line, body: &[Line]) -> Result<RecalculationAst, D
 }
 
 fn parse_field_intent(line: &Line, body: &[Line]) -> Result<FieldIntentAst, Diagnostic> {
-    reject_sentence_body(body, line.span, "필드 사용 의도")?;
+    reject_sentence_body(body, line.span, "field_intent")?;
     let mut cursor = BodyCursor::new(sentence_tokens(line)?, line.span);
     let (model, _) = cursor.marked_ref(&["의"])?;
     let (field, _) = cursor.marked_ref(&["은", "는"])?;
@@ -559,7 +559,7 @@ fn parse_field_intent(line: &Line, body: &[Line]) -> Result<FieldIntentAst, Diag
             cursor.expect_word("않는다")?;
             FieldIntentKindAst::Hidden
         }
-        _ => return Err(cursor.error("필드는 `내부 관리에만 사용한다` 또는 `사용자 화면에서 조회하지 않는다`로 분류해야 합니다.")),
+        _ => return Err(cursor.error("ko.syntax.field_intent_invalid")),
     };
     cursor.expect_end()?;
     Ok(FieldIntentAst {
@@ -576,9 +576,10 @@ fn reject_sentence_body(body: &[Line], span: Span, kind: &str) -> Result<(), Dia
     } else {
         Err(Diagnostic::error(
             "RSPDL-KO-SYN-063",
-            format!("{kind} 문장 아래에는 들여쓰기 블록을 둘 수 없습니다."),
+            "ko.syntax.sentence_block_forbidden",
             span,
-        ))
+        )
+        .with_argument("kind", kind))
     }
 }
 
@@ -590,12 +591,12 @@ fn parse_constraint(
     if !body.is_empty() {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-020",
-            "제약 문장 아래에는 별도 블록을 둘 수 없습니다.",
+            "ko.syntax.constraint_block_forbidden",
             line.span,
         ));
     }
     let expression = parse_constraint_sentence(line, diagnostics)?;
-    let declaration = internal_constraint_declaration(&expression, line.span);
+    let declaration = anonymous_declaration(line.span);
     Ok(ConstraintAst {
         declaration,
         expression,
@@ -610,7 +611,7 @@ fn parse_policy(
     if !body.is_empty() {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-030",
-            "정책 문장 아래에는 별도 블록을 둘 수 없습니다.",
+            "ko.syntax.policy_block_forbidden",
             line.span,
         ));
     }
@@ -625,7 +626,7 @@ fn parse_policy(
     let effect = match cursor.next_word() {
         Some("있다") => PolicyEffectAst::Allow,
         Some("없다") => PolicyEffectAst::Deny,
-        _ => return Err(cursor.error("정책은 `수 있다` 또는 `수 없다`로 끝나야 합니다.")),
+        _ => return Err(cursor.error("ko.syntax.policy_effect_invalid")),
     };
     cursor.expect_end()?;
     lint_marker(&role, &role_marker, "은", "는", body_line.span, diagnostics);
@@ -637,8 +638,7 @@ fn parse_policy(
         body_line.span,
         diagnostics,
     );
-    let declaration =
-        internal_policy_declaration(&role, &model, &field, &action, effect, body_line.span);
+    let declaration = anonymous_declaration(body_line.span);
     Ok(PolicyAst {
         declaration,
         role,
@@ -664,7 +664,7 @@ fn parse_constraint_sentence(
         let operator = match cursor.next_word() {
             Some("같아야") => RelationOperatorAst::Equal,
             Some("달라야") => RelationOperatorAst::NotEqual,
-            _ => return Err(cursor.error("필드 비교는 `같아야` 또는 `달라야`를 사용해야 합니다.")),
+            _ => return Err(cursor.error("ko.syntax.field_comparison_invalid")),
         };
         cursor.expect_word("한다")?;
         cursor.expect_end()?;
@@ -692,69 +692,11 @@ fn parse_constraint_sentence(
     })
 }
 
-fn internal_constraint_declaration(expression: &ConstraintExpressionAst, span: Span) -> NamedIdAst {
-    let identity = format!(
-        "{}\u{0}{}\u{0}{}\u{0}{}",
-        expression.model,
-        operand_identity(&expression.left),
-        operator_identity(expression.operator),
-        operand_identity(&expression.right)
-    );
-    internal_declaration("constraint", &identity, span)
-}
-
-fn internal_policy_declaration(
-    role: &str,
-    model: &str,
-    field: &str,
-    action: &str,
-    effect: PolicyEffectAst,
-    span: Span,
-) -> NamedIdAst {
-    let effect = match effect {
-        PolicyEffectAst::Allow => "allow",
-        PolicyEffectAst::Deny => "deny",
-    };
-    let identity = format!("{role}\u{0}{model}\u{0}{field}\u{0}{action}\u{0}{effect}");
-    internal_declaration("policy", &identity, span)
-}
-
-fn internal_declaration(kind: &str, identity: &str, span: Span) -> NamedIdAst {
-    let mut hash = 0xcbf29ce484222325u64;
-    for byte in identity.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
+fn anonymous_declaration(span: Span) -> NamedIdAst {
     NamedIdAst {
         name: String::new(),
-        id: format!("{kind}_{hash:016x}"),
+        id: String::new(),
         span,
-    }
-}
-
-fn operand_identity(operand: &OperandAst) -> String {
-    match operand {
-        OperandAst::Field(value) => format!("field:{value}"),
-        OperandAst::Literal(LiteralAst::String(value)) => {
-            format!(
-                "string:{}",
-                serde_json::to_string(value).expect("a string always serializes")
-            )
-        }
-        OperandAst::Literal(LiteralAst::Integer(value)) => format!("integer:{value}"),
-        OperandAst::Literal(LiteralAst::Boolean(value)) => format!("boolean:{value}"),
-        OperandAst::Literal(LiteralAst::Named(value)) => format!("named:{value}"),
-    }
-}
-
-fn operator_identity(operator: RelationOperatorAst) -> &'static str {
-    match operator {
-        RelationOperatorAst::Equal => "equal",
-        RelationOperatorAst::NotEqual => "not_equal",
-        RelationOperatorAst::LessThan => "less_than",
-        RelationOperatorAst::LessThanOrEqual => "less_than_or_equal",
-        RelationOperatorAst::GreaterThan => "greater_than",
-        RelationOperatorAst::GreaterThanOrEqual => "greater_than_or_equal",
     }
 }
 
@@ -765,7 +707,7 @@ fn sentence_tokens(line: &Line) -> Result<&[Token], Diagnostic> {
     ) {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-040",
-            "완전한 문장은 마침표로 끝나야 합니다.",
+            "ko.syntax.period_required",
             line.span,
         ));
     }
@@ -784,9 +726,11 @@ fn parse_annotated_name(line: &Line, keyword: &str) -> Result<NamedIdAst, Diagno
     if word_at(line, 0) != Some(keyword) {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-004",
-            format!("`{keyword} 표시 이름(stable_id)` 선언이 필요합니다."),
+            "ko.syntax.annotated_declaration_required",
             line.span,
-        ));
+        )
+        .with_argument("keyword", keyword)
+        .with_argument("id_kind", "stable_id"));
     }
     if line
         .tokens
@@ -795,14 +739,17 @@ fn parse_annotated_name(line: &Line, keyword: &str) -> Result<NamedIdAst, Diagno
     {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-004",
-            "선언 줄에는 마침표나 콜론을 사용하지 않습니다.",
+            "ko.syntax.declaration_punctuation_forbidden",
             line.span,
         ));
     }
-    let id_index =
-        line.tokens.len().checked_sub(1).ok_or_else(|| {
-            Diagnostic::error("RSPDL-KO-SYN-006", "선언 ID가 필요합니다.", line.span)
-        })?;
+    let id_index = line.tokens.len().checked_sub(1).ok_or_else(|| {
+        Diagnostic::error(
+            "RSPDL-KO-SYN-006",
+            "ko.syntax.declaration_id_required",
+            line.span,
+        )
+    })?;
     parse_name_with_id(line, 1, id_index)
 }
 
@@ -816,9 +763,11 @@ fn parse_natural_block_header(
         if word_at(line, 0) != Some(keyword) {
             return Err(Diagnostic::error(
                 "RSPDL-KO-SYN-004",
-                format!("`{keyword} 표시 이름(local_id)` 선언이 필요합니다."),
+                "ko.syntax.annotated_declaration_required",
                 line.span,
-            ));
+            )
+            .with_argument("keyword", keyword)
+            .with_argument("id_kind", "local_id"));
         }
         1
     } else {
@@ -830,7 +779,7 @@ fn parse_natural_block_header(
     ) {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-004",
-            "데이터와 열거형 header는 마침표로 끝나는 문장이어야 합니다.",
+            "ko.syntax.natural_header_period_required",
             line.span,
         ));
     }
@@ -838,14 +787,20 @@ fn parse_natural_block_header(
         .tokens
         .iter()
         .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
-        .ok_or_else(|| Diagnostic::error("RSPDL-KO-SYN-006", "선언 ID가 필요합니다.", line.span))?;
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-006",
+                "ko.syntax.declaration_id_required",
+                line.span,
+            )
+        })?;
     let declaration = parse_name_with_id(line, name_start, id_index)?;
     let sentence = &line.tokens[id_index + 1..line.tokens.len() - 1];
     let mut cursor = BodyCursor::new(sentence, line.span);
     let marker = cursor
         .next_word()
         .filter(|marker| matches!(*marker, "은" | "는"))
-        .ok_or_else(|| cursor.error("선언 이름 뒤에 `은` 또는 `는`이 필요합니다."))?;
+        .ok_or_else(|| cursor.error("ko.syntax.declaration_topic_marker_required"))?;
     for expected in predicate {
         cursor.expect_word(expected)?;
     }
@@ -884,7 +839,7 @@ fn canonical_id_at(line: &Line, index: usize) -> Result<String, Diagnostic> {
         Some(TokenKind::CanonicalId(value)) if !value.is_empty() => Ok(value.clone()),
         _ => Err(Diagnostic::error(
             "RSPDL-KO-SYN-006",
-            "선언에 `(stable_id)`가 필요합니다.",
+            "ko.syntax.stable_id_required",
             line.span,
         )),
     }
@@ -894,7 +849,7 @@ fn surface_name(line: &Line, start: usize, end: usize) -> Result<(String, Span),
     if start >= end {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-005",
-            "표시 이름이 필요합니다.",
+            "ko.syntax.display_name_required",
             line.span,
         ));
     }
@@ -907,7 +862,7 @@ fn surface_name(line: &Line, start: usize, end: usize) -> Result<(String, Span),
             _ => {
                 return Err(Diagnostic::error(
                     "RSPDL-KO-SYN-005",
-                    "표시 이름 형식이 올바르지 않습니다.",
+                    "ko.syntax.display_name_invalid",
                     token.span,
                 ));
             }
@@ -922,7 +877,7 @@ fn ensure_body(body: &[Line], span: Span) -> Result<(), Diagnostic> {
     if body.is_empty() {
         Err(Diagnostic::error(
             "RSPDL-KO-SYN-008",
-            "블록에는 하나 이상의 항목이 필요합니다.",
+            "ko.syntax.block_item_required",
             span,
         ))
     } else {
@@ -933,7 +888,7 @@ fn ensure_body(body: &[Line], span: Span) -> Result<(), Diagnostic> {
 fn bad_block_indent(line: &Line) -> Diagnostic {
     Diagnostic::error(
         "RSPDL-KO-SYN-009",
-        "블록 항목의 들여쓰기 깊이가 일정하지 않습니다.",
+        "ko.syntax.block_indent_inconsistent",
         line.span,
     )
 }
@@ -958,7 +913,7 @@ fn parse_type_reference(line: &Line, start: usize) -> Result<TypeReferenceAst, D
     if start >= line.tokens.len() {
         return Err(Diagnostic::error(
             "RSPDL-KO-SYN-011",
-            "필드 타입이 필요합니다.",
+            "ko.syntax.field_type_required",
             line.span,
         ));
     }
@@ -971,7 +926,7 @@ fn parse_type_reference(line: &Line, start: usize) -> Result<TypeReferenceAst, D
             _ => {
                 return Err(Diagnostic::error(
                     "RSPDL-KO-SYN-011",
-                    "필드 타입 형식이 올바르지 않습니다.",
+                    "ko.syntax.field_type_invalid",
                     token.span,
                 ));
             }
@@ -984,7 +939,7 @@ fn parse_type_reference(line: &Line, start: usize) -> Result<TypeReferenceAst, D
         "불리언" => Ok(TypeReferenceAst::Boolean),
         "" => Err(Diagnostic::error(
             "RSPDL-KO-SYN-011",
-            "필드 타입이 필요합니다.",
+            "ko.syntax.field_type_required",
             line.span,
         )),
         _ => Ok(TypeReferenceAst::Named(name)),
@@ -1010,21 +965,20 @@ impl<'a> BodyCursor<'a> {
         let token = self
             .tokens
             .get(self.index)
-            .ok_or_else(|| self.error("문장에 필요한 이름과 조사가 누락되었습니다."))?;
+            .ok_or_else(|| self.error("ko.syntax.reference_and_marker_required"))?;
         match &token.kind {
             TokenKind::QuotedIdentifier(value) => {
                 self.index += 1;
                 let marker = self
                     .next_word()
-                    .ok_or_else(|| self.error("인용된 이름 뒤에 구조 marker가 필요합니다."))?;
+                    .ok_or_else(|| self.error("ko.syntax.quoted_reference_marker_required"))?;
                 if markers.contains(&marker) {
                     Ok((value.clone(), marker.to_owned()))
                 } else {
-                    Err(self.error(format!(
-                        "`{}` 뒤에는 {} 중 하나가 필요합니다.",
-                        value,
-                        markers.join("/")
-                    )))
+                    Err(self
+                        .error("ko.syntax.reference_marker_invalid")
+                        .with_argument("reference", value)
+                        .with_argument("expected", markers.join("/")))
                 }
             }
             TokenKind::Word(_) => {
@@ -1044,13 +998,12 @@ impl<'a> BodyCursor<'a> {
                     parts.push(value.clone());
                     self.index += 1;
                 }
-                Err(self.error(format!(
-                    "`{}`에서 {} marker를 찾을 수 없습니다.",
-                    parts.join(" "),
-                    markers.join("/")
-                )))
+                Err(self
+                    .error("ko.syntax.reference_marker_missing")
+                    .with_argument("reference", parts.join(" "))
+                    .with_argument("expected", markers.join("/")))
             }
-            _ => Err(self.error("표면 이름이 필요합니다.")),
+            _ => Err(self.error("ko.syntax.surface_name_required")),
         }
     }
 
@@ -1058,7 +1011,7 @@ impl<'a> BodyCursor<'a> {
         let token = self
             .tokens
             .get(self.index)
-            .ok_or_else(|| self.error("제약의 비교 값이 누락되었습니다."))?;
+            .ok_or_else(|| self.error("ko.syntax.comparison_value_required"))?;
         if let TokenKind::StringLiteral(value) = &token.kind {
             let literal = LiteralAst::String(value.clone());
             if matches!(
@@ -1095,7 +1048,7 @@ impl<'a> BodyCursor<'a> {
                     if self.next_word() == Some("달라야") {
                         return Ok((RelationOperatorAst::NotEqual, parse_word_literal(literal)));
                     }
-                    return Err(self.error("`과/와 달라야 한다` 문형이 필요합니다."));
+                    return Err(self.error("ko.syntax.not_equal_shape_required"));
                 }
             }
             if let Some(number) = value.strip_suffix("보다") {
@@ -1105,9 +1058,7 @@ impl<'a> BodyCursor<'a> {
                         Some("커야") => RelationOperatorAst::GreaterThan,
                         Some("작아야") => RelationOperatorAst::LessThan,
                         _ => {
-                            return Err(
-                                self.error("`<정수>보다 커야/작아야 한다` 문형이 필요합니다.")
-                            );
+                            return Err(self.error("ko.syntax.integer_order_shape_required"));
                         }
                     };
                     return Ok((operator, LiteralAst::Integer(number.to_owned())));
@@ -1122,10 +1073,10 @@ impl<'a> BodyCursor<'a> {
                     Some("보다") => match self.next_word() {
                         Some("커야") => RelationOperatorAst::GreaterThan,
                         Some("작아야") => RelationOperatorAst::LessThan,
-                        _ => return Err(self.error("`보다 커야/작아야`가 필요합니다.")),
+                        _ => return Err(self.error("ko.syntax.order_suffix_required")),
                     },
                     Some("이어야") => RelationOperatorAst::Equal,
-                    _ => return Err(self.error("지원하지 않는 정수 비교 문형입니다.")),
+                    _ => return Err(self.error("ko.syntax.integer_comparison_unsupported")),
                 };
                 return Ok((operator, LiteralAst::Integer(number)));
             }
@@ -1151,7 +1102,7 @@ impl<'a> BodyCursor<'a> {
             TokenKind::StringLiteral(value) => LiteralAst::String(value.clone()),
             TokenKind::QuotedIdentifier(value) => LiteralAst::Named(value.clone()),
             TokenKind::Word(value) => parse_word_literal(value),
-            _ => return Err(self.error("지원하지 않는 literal입니다.")),
+            _ => return Err(self.error("ko.syntax.literal_unsupported")),
         };
         self.index += 1;
         self.expect_word("이어야")?;
@@ -1161,7 +1112,9 @@ impl<'a> BodyCursor<'a> {
     fn expect_word(&mut self, expected: &str) -> Result<(), Diagnostic> {
         match self.next_word() {
             Some(actual) if actual == expected => Ok(()),
-            _ => Err(self.error(format!("`{expected}`가 필요합니다."))),
+            _ => Err(self
+                .error("ko.syntax.word_required")
+                .with_argument("expected", expected)),
         }
     }
 
@@ -1180,17 +1133,17 @@ impl<'a> BodyCursor<'a> {
         if self.index == self.tokens.len() {
             Ok(())
         } else {
-            Err(self.error("문장 뒤에 예상하지 못한 표현이 있습니다."))
+            Err(self.error("ko.syntax.trailing_expression"))
         }
     }
 
-    fn error(&self, message: impl Into<String>) -> Diagnostic {
+    fn error(&self, message_key: &'static str) -> Diagnostic {
         let span = self
             .tokens
             .get(self.index)
             .map(|token| token.span)
             .unwrap_or(self.span);
-        Diagnostic::error("RSPDL-KO-SYN-041", message, span)
+        Diagnostic::error("RSPDL-KO-SYN-041", message_key, span)
     }
 }
 
@@ -1232,17 +1185,19 @@ fn lint_marker(
         consonant
     };
     if actual != expected {
-        diagnostics.push(Diagnostic {
-            rule_id: "RSPDL-KO-W001".into(),
-            severity: Severity::Warning,
-            message: format!("`{name}{actual}`보다 `{name}{expected}`이 자연스럽습니다."),
-            span,
-        });
+        diagnostics.push(
+            Diagnostic::warning("RSPDL-KO-W001", "ko.lint.marker_preference", span)
+                .with_argument("name", name)
+                .with_argument("actual", actual)
+                .with_argument("expected", expected),
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::Severity;
+
     use super::*;
 
     const SOURCE: &str = r#"@모듈 비용 승인(expense)
@@ -1274,35 +1229,36 @@ mod tests {
             panic!("third declaration should be a constraint sentence");
         };
         assert!(constraint.declaration.name.is_empty());
-        assert!(constraint.declaration.id.starts_with("constraint_"));
+        assert!(constraint.declaration.id.is_empty());
         let DeclarationAst::Policy(policy) = &document.declarations[5] else {
             panic!("last declaration should be a policy sentence");
         };
         assert!(policy.declaration.name.is_empty());
-        assert!(policy.declaration.id.starts_with("policy_"));
+        assert!(policy.declaration.id.is_empty());
     }
 
     #[test]
-    fn internal_rule_ids_ignore_whitespace_but_have_stable_known_vectors() {
-        let compact = parse(SOURCE).document.unwrap();
-        let spaced = parse(&SOURCE.replace("비용 신청의 금액은", "비용   신청의   금액은"))
-            .document
-            .unwrap();
+    fn anonymous_semantic_rules_do_not_allocate_locale_ids() {
+        let alternate_labels = SOURCE
+            .replace("비용 승인", "지출 승인")
+            .replace("비용 상태", "처리 상태")
+            .replace("비용 신청", "지출 요청")
+            .replace("회계 관리자", "재무 담당자")
+            .replace("금액", "합계")
+            .replace("상태", "단계")
+            .replace("변경", "수정");
 
-        let DeclarationAst::Constraint(compact_constraint) = &compact.declarations[2] else {
-            panic!("third declaration should be a constraint sentence");
-        };
-        let DeclarationAst::Constraint(spaced_constraint) = &spaced.declarations[2] else {
-            panic!("third declaration should be a constraint sentence");
-        };
-        assert_eq!(
-            compact_constraint.declaration.id,
-            spaced_constraint.declaration.id
-        );
-        assert_eq!(
-            compact_constraint.declaration.id,
-            "constraint_a5efd7b979720186"
-        );
+        for source in [SOURCE, &alternate_labels] {
+            let document = parse(source).document.unwrap();
+            let DeclarationAst::Constraint(constraint) = &document.declarations[2] else {
+                panic!("third declaration should be a constraint sentence");
+            };
+            let DeclarationAst::Policy(policy) = &document.declarations[5] else {
+                panic!("last declaration should be a policy sentence");
+            };
+            assert!(constraint.declaration.id.is_empty());
+            assert!(policy.declaration.id.is_empty());
+        }
     }
 
     #[test]
