@@ -1239,15 +1239,26 @@ mod tests {
 
     #[test]
     fn anonymous_semantic_rules_do_not_allocate_locale_ids() {
-        let document = parse(SOURCE).document.unwrap();
-        let DeclarationAst::Constraint(constraint) = &document.declarations[2] else {
-            panic!("third declaration should be a constraint sentence");
-        };
-        let DeclarationAst::Policy(policy) = &document.declarations[5] else {
-            panic!("last declaration should be a policy sentence");
-        };
-        assert!(constraint.declaration.id.is_empty());
-        assert!(policy.declaration.id.is_empty());
+        let alternate_labels = SOURCE
+            .replace("비용 승인", "지출 승인")
+            .replace("비용 상태", "처리 상태")
+            .replace("비용 신청", "지출 요청")
+            .replace("회계 관리자", "재무 담당자")
+            .replace("금액", "합계")
+            .replace("상태", "단계")
+            .replace("변경", "수정");
+
+        for source in [SOURCE, &alternate_labels] {
+            let document = parse(source).document.unwrap();
+            let DeclarationAst::Constraint(constraint) = &document.declarations[2] else {
+                panic!("third declaration should be a constraint sentence");
+            };
+            let DeclarationAst::Policy(policy) = &document.declarations[5] else {
+                panic!("last declaration should be a policy sentence");
+            };
+            assert!(constraint.declaration.id.is_empty());
+            assert!(policy.declaration.id.is_empty());
+        }
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use serde::Serialize;
@@ -68,5 +69,23 @@ impl Diagnostic {
 
     pub fn is_error(&self) -> bool {
         self.severity == Severity::Error
+    }
+
+    /// Canonical ordering shared by every compiler phase.
+    pub fn stable_cmp(left: &Self, right: &Self) -> Ordering {
+        (
+            left.span.start,
+            left.span.end,
+            &left.rule_id,
+            &left.message_key,
+            &left.arguments,
+        )
+            .cmp(&(
+                right.span.start,
+                right.span.end,
+                &right.rule_id,
+                &right.message_key,
+                &right.arguments,
+            ))
     }
 }

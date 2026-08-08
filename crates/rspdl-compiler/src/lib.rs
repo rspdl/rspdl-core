@@ -99,22 +99,7 @@ fn compile_frontend_output(output: FrontendOutput) -> (Compilation, TextRange) {
     } else {
         None
     };
-    diagnostics.sort_by(|left, right| {
-        (
-            left.span.start,
-            left.span.end,
-            &left.rule_id,
-            &left.message_key,
-            &left.arguments,
-        )
-            .cmp(&(
-                right.span.start,
-                right.span.end,
-                &right.rule_id,
-                &right.message_key,
-                &right.arguments,
-            ))
-    });
+    diagnostics.sort_by(Diagnostic::stable_cmp);
     (
         Compilation {
             module,
@@ -208,8 +193,11 @@ pub fn compile_files_with_frontend(
             .iter()
             .map(|value| &value.id)
             .chain(module.models.iter().map(|value| &value.id))
+            .chain(module.screens.iter().map(|value| &value.id))
+            .chain(module.constraints.iter().map(|value| &value.id))
             .chain(module.roles.iter().map(|value| &value.id))
             .chain(module.actions.iter().map(|value| &value.id))
+            .chain(module.policies.iter().map(|value| &value.id))
         {
             symbol_sources.entry(id.clone()).or_default().push(index);
         }
@@ -230,22 +218,7 @@ pub fn compile_files_with_frontend(
     }
 
     for file in &mut files {
-        file.diagnostics.sort_by(|left, right| {
-            (
-                left.span.start,
-                left.span.end,
-                &left.rule_id,
-                &left.message_key,
-                &left.arguments,
-            )
-                .cmp(&(
-                    right.span.start,
-                    right.span.end,
-                    &right.rule_id,
-                    &right.message_key,
-                    &right.arguments,
-                ))
-        });
+        file.diagnostics.sort_by(Diagnostic::stable_cmp);
     }
 
     WorkspaceCompilation { files }
@@ -269,7 +242,35 @@ pub struct RuntimeDiagnostic {
     pub rule_id: String,
     pub severity: Severity,
     pub path: String,
-    pub message: String,
+    pub message_key: String,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub arguments: BTreeMap<String, String>,
+}
+
+impl RuntimeDiagnostic {
+    pub fn with_argument(mut self, key: impl Into<String>, value: impl ToString) -> Self {
+        self.arguments.insert(key.into(), value.to_string());
+        self
+    }
+
+    pub fn argument(&self, key: &str) -> Option<&str> {
+        self.arguments.get(key).map(String::as_str)
+    }
+
+    fn stable_cmp(left: &Self, right: &Self) -> std::cmp::Ordering {
+        (
+            &left.path,
+            &left.rule_id,
+            &left.message_key,
+            &left.arguments,
+        )
+            .cmp(&(
+                &right.path,
+                &right.rule_id,
+                &right.message_key,
+                &right.arguments,
+            ))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -375,24 +376,17 @@ pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> Chec
     let input = match serde_json::from_str::<RuntimeInput>(runtime_json) {
         Ok(input) => input,
         Err(error) => {
-            report.runtime_diagnostics.push(runtime_error(
-                "RSPDL-INPUT-001",
-                "$",
-                format!("JSON 형식이 올바르지 않습니다: {error}"),
-            ));
+            report.runtime_diagnostics.push(
+                runtime_error("RSPDL-INPUT-001", "$", "runtime.json.invalid")
+                    .with_argument("reason", error),
+            );
             return report;
         }
     };
     let runtime = match bind_runtime(&[module], input) {
         Ok(runtime) => runtime,
         Err(mut diagnostics) => {
-            diagnostics.sort_by(|left, right| {
-                (&left.path, &left.rule_id, &left.message).cmp(&(
-                    &right.path,
-                    &right.rule_id,
-                    &right.message,
-                ))
-            });
+            diagnostics.sort_by(RuntimeDiagnostic::stable_cmp);
             report.runtime_diagnostics = diagnostics;
             return report;
         }
@@ -407,11 +401,14 @@ pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> Chec
     );
     match execute_policies(&[module], &runtime) {
         Ok(results) => report.policy_results = results,
-        Err(message) => report.runtime_diagnostics.push(runtime_error(
-            "RSPDL-BACKEND-DATALOG-001",
-            "$.action_requests",
-            message,
-        )),
+        Err(message) => report.runtime_diagnostics.push(
+            runtime_error(
+                "RSPDL-BACKEND-DATALOG-001",
+                "$.action_requests",
+                "runtime.backend.datalog_error",
+            )
+            .with_argument("reason", message),
+        ),
     }
     report.constraint_violations.sort_by(|left, right| {
         (&left.model_id, &left.record_id, &left.constraint_id).cmp(&(
@@ -420,13 +417,9 @@ pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> Chec
             &right.constraint_id,
         ))
     });
-    report.runtime_diagnostics.sort_by(|left, right| {
-        (&left.path, &left.rule_id, &left.message).cmp(&(
-            &right.path,
-            &right.rule_id,
-            &right.message,
-        ))
-    });
+    report
+        .runtime_diagnostics
+        .sort_by(RuntimeDiagnostic::stable_cmp);
     report
 }
 
@@ -449,24 +442,17 @@ pub fn check_ko_files(
     let input = match serde_json::from_str::<RuntimeInput>(runtime_json) {
         Ok(input) => input,
         Err(error) => {
-            report.runtime_diagnostics.push(runtime_error(
-                "RSPDL-INPUT-001",
-                "$",
-                format!("JSON 형식이 올바르지 않습니다: {error}"),
-            ));
+            report.runtime_diagnostics.push(
+                runtime_error("RSPDL-INPUT-001", "$", "runtime.json.invalid")
+                    .with_argument("reason", error),
+            );
             return report;
         }
     };
     let runtime = match bind_runtime(&modules, input) {
         Ok(runtime) => runtime,
         Err(mut diagnostics) => {
-            diagnostics.sort_by(|left, right| {
-                (&left.path, &left.rule_id, &left.message).cmp(&(
-                    &right.path,
-                    &right.rule_id,
-                    &right.message,
-                ))
-            });
+            diagnostics.sort_by(RuntimeDiagnostic::stable_cmp);
             report.runtime_diagnostics = diagnostics;
             return report;
         }
@@ -481,11 +467,14 @@ pub fn check_ko_files(
     );
     match execute_policies(&modules, &runtime) {
         Ok(results) => report.policy_results = results,
-        Err(message) => report.runtime_diagnostics.push(runtime_error(
-            "RSPDL-BACKEND-DATALOG-001",
-            "$.action_requests",
-            message,
-        )),
+        Err(message) => report.runtime_diagnostics.push(
+            runtime_error(
+                "RSPDL-BACKEND-DATALOG-001",
+                "$.action_requests",
+                "runtime.backend.datalog_error",
+            )
+            .with_argument("reason", message),
+        ),
     }
     report.constraint_violations.sort_by(|left, right| {
         (&left.model_id, &left.record_id, &left.constraint_id).cmp(&(
@@ -494,13 +483,9 @@ pub fn check_ko_files(
             &right.constraint_id,
         ))
     });
-    report.runtime_diagnostics.sort_by(|left, right| {
-        (&left.path, &left.rule_id, &left.message).cmp(&(
-            &right.path,
-            &right.rule_id,
-            &right.message,
-        ))
-    });
+    report
+        .runtime_diagnostics
+        .sort_by(RuntimeDiagnostic::stable_cmp);
     report
 }
 
@@ -572,11 +557,14 @@ fn bind_runtime(
 
     for (model_text, values) in input.records {
         let Some(model) = models.get(model_text.as_str()).copied() else {
-            diagnostics.push(runtime_error(
-                "RSPDL-INPUT-010",
-                format!("$.records.{model_text}"),
-                format!("데이터 모델 `{model_text}`이 선언되지 않았습니다."),
-            ));
+            diagnostics.push(
+                runtime_error(
+                    "RSPDL-INPUT-010",
+                    format!("$.records.{model_text}"),
+                    "runtime.model.not_found",
+                )
+                .with_argument("model_id", model_text),
+            );
             continue;
         };
         let mut bound = Vec::new();
@@ -594,25 +582,31 @@ fn bind_runtime(
                     diagnostics.push(runtime_error(
                         "RSPDL-INPUT-011",
                         format!("{path}.$id"),
-                        "레코드에는 문자열 `$id`가 필요합니다.",
+                        "runtime.record.id_required",
                     ));
                     continue;
                 }
             };
             if !ids.insert(id.clone()) {
-                diagnostics.push(runtime_error(
-                    "RSPDL-INPUT-012",
-                    format!("{path}.$id"),
-                    format!("레코드 ID `{id}`가 중복되었습니다."),
-                ));
+                diagnostics.push(
+                    runtime_error(
+                        "RSPDL-INPUT-012",
+                        format!("{path}.$id"),
+                        "runtime.record.duplicate_id",
+                    )
+                    .with_argument("record_id", &id),
+                );
             }
             for key in object.keys() {
                 if key != "$id" && !known_fields.contains_key(key.as_str()) {
-                    diagnostics.push(runtime_error(
-                        "RSPDL-INPUT-013",
-                        format!("{path}.{key}"),
-                        format!("필드 `{key}`가 모델에 선언되지 않았습니다."),
-                    ));
+                    diagnostics.push(
+                        runtime_error(
+                            "RSPDL-INPUT-013",
+                            format!("{path}.{key}"),
+                            "runtime.field.not_found",
+                        )
+                        .with_argument("field_id", key),
+                    );
                 }
             }
             let mut field_values = BTreeMap::new();
@@ -622,11 +616,14 @@ fn bind_runtime(
                     .filter(|value| !value.is_null());
                 let Some(value) = value else {
                     if field.required {
-                        diagnostics.push(runtime_error(
-                            "RSPDL-INPUT-014",
-                            format!("{path}.{}", field.local_id),
-                            format!("필수 필드 `{}`가 누락되었습니다.", field.local_id),
-                        ));
+                        diagnostics.push(
+                            runtime_error(
+                                "RSPDL-INPUT-014",
+                                format!("{path}.{}", field.local_id),
+                                "runtime.field.required_missing",
+                            )
+                            .with_argument("field_id", &field.local_id),
+                        );
                     }
                     continue;
                 };
@@ -655,11 +652,14 @@ fn bind_runtime(
     for (index, assignment) in input.role_assignments.into_iter().enumerate() {
         match role_ids.get(assignment.role.as_str()) {
             Some(role) => roles.push((assignment.actor, role.clone())),
-            None => diagnostics.push(runtime_error(
-                "RSPDL-INPUT-020",
-                format!("$.role_assignments[{index}].role"),
-                format!("역할 `{}`이 선언되지 않았습니다.", assignment.role),
-            )),
+            None => diagnostics.push(
+                runtime_error(
+                    "RSPDL-INPUT-020",
+                    format!("$.role_assignments[{index}].role"),
+                    "runtime.role.not_found",
+                )
+                .with_argument("role_id", assignment.role),
+            ),
         }
     }
 
@@ -673,18 +673,24 @@ fn bind_runtime(
     for (index, action) in input.action_requests.into_iter().enumerate() {
         let path = format!("$.action_requests[{index}]");
         if !action_request_ids.insert(action.id.clone()) {
-            diagnostics.push(runtime_error(
-                "RSPDL-INPUT-021",
-                format!("{path}.$id"),
-                format!("행동 요청 ID `{}`가 중복되었습니다.", action.id),
-            ));
+            diagnostics.push(
+                runtime_error(
+                    "RSPDL-INPUT-021",
+                    format!("{path}.$id"),
+                    "runtime.action_request.duplicate_id",
+                )
+                .with_argument("request_id", &action.id),
+            );
         }
         let Some(model) = models.get(action.model.as_str()).copied() else {
-            diagnostics.push(runtime_error(
-                "RSPDL-INPUT-022",
-                format!("{path}.model"),
-                format!("데이터 모델 `{}`이 선언되지 않았습니다.", action.model),
-            ));
+            diagnostics.push(
+                runtime_error(
+                    "RSPDL-INPUT-022",
+                    format!("{path}.model"),
+                    "runtime.model.not_found",
+                )
+                .with_argument("model_id", &action.model),
+            );
             continue;
         };
         let Some(field) = model
@@ -692,30 +698,39 @@ fn bind_runtime(
             .iter()
             .find(|field| field.local_id.as_str() == action.field)
         else {
-            diagnostics.push(runtime_error(
-                "RSPDL-INPUT-023",
-                format!("{path}.field"),
-                format!("필드 `{}`이 모델에 선언되지 않았습니다.", action.field),
-            ));
+            diagnostics.push(
+                runtime_error(
+                    "RSPDL-INPUT-023",
+                    format!("{path}.field"),
+                    "runtime.field.not_found",
+                )
+                .with_argument("field_id", &action.field),
+            );
             continue;
         };
         let Some(action_id) = action_ids.get(action.action.as_str()).cloned() else {
-            diagnostics.push(runtime_error(
-                "RSPDL-INPUT-024",
-                format!("{path}.action"),
-                format!("행동 `{}`이 선언되지 않았습니다.", action.action),
-            ));
+            diagnostics.push(
+                runtime_error(
+                    "RSPDL-INPUT-024",
+                    format!("{path}.action"),
+                    "runtime.action.not_found",
+                )
+                .with_argument("action_id", &action.action),
+            );
             continue;
         };
         if !record_ids
             .get(&model.id)
             .is_some_and(|ids| ids.contains(&action.record))
         {
-            diagnostics.push(runtime_error(
-                "RSPDL-INPUT-025",
-                format!("{path}.record"),
-                format!("레코드 `{}`을 찾을 수 없습니다.", action.record),
-            ));
+            diagnostics.push(
+                runtime_error(
+                    "RSPDL-INPUT-025",
+                    format!("{path}.record"),
+                    "runtime.record.not_found",
+                )
+                .with_argument("record_id", &action.record),
+            );
             continue;
         }
         actions.push(BoundAction {
@@ -746,14 +761,9 @@ fn bind_value(
 ) -> Result<CanonicalValue, RuntimeDiagnostic> {
     let path = format!("{record_path}.{}", field.local_id);
     let invalid = || {
-        runtime_error(
-            "RSPDL-INPUT-015",
-            &path,
-            format!(
-                "필드 `{}` 값이 타입 `{}`과 맞지 않습니다.",
-                field.local_id, field.value_type
-            ),
-        )
+        runtime_error("RSPDL-INPUT-015", &path, "runtime.value.type_mismatch")
+            .with_argument("field_id", &field.local_id)
+            .with_argument("expected_type", &field.value_type)
     };
     match &field.value_type {
         CanonicalType::String => value
@@ -792,11 +802,14 @@ fn execute_constraints(
     let solve_options = match SolveOptions::with_timeout(options.solver_timeout) {
         Ok(options) => options,
         Err(error) => {
-            diagnostics.push(runtime_error(
-                "RSPDL-BACKEND-Z3-001",
-                "$.records",
-                error.to_string(),
-            ));
+            diagnostics.push(
+                runtime_error(
+                    "RSPDL-BACKEND-Z3-001",
+                    "$.records",
+                    "runtime.backend.z3_configuration_error",
+                )
+                .with_argument("reason", error),
+            );
             return;
         }
     };
@@ -815,11 +828,14 @@ fn execute_constraints(
             let expression = match relation_expression(constraint.operator, &left, &right) {
                 Ok(expression) => expression,
                 Err(message) => {
-                    diagnostics.push(runtime_error(
-                        "RSPDL-BACKEND-Z3-002",
-                        format!("$.records.{}[{}]", constraint.model_id, record.id),
-                        message,
-                    ));
+                    diagnostics.push(
+                        runtime_error(
+                            "RSPDL-BACKEND-Z3-002",
+                            format!("$.records.{}[{}]", constraint.model_id, record.id),
+                            "runtime.backend.z3_expression_error",
+                        )
+                        .with_argument("reason", message),
+                    );
                     continue;
                 }
             };
@@ -827,11 +843,14 @@ fn execute_constraints(
                 match ConstraintProblem::new(Vec::new(), BooleanExpression::negate(expression)) {
                     Ok(problem) => problem,
                     Err(error) => {
-                        diagnostics.push(runtime_error(
-                            "RSPDL-BACKEND-Z3-002",
-                            "$.records",
-                            error.to_string(),
-                        ));
+                        diagnostics.push(
+                            runtime_error(
+                                "RSPDL-BACKEND-Z3-002",
+                                "$.records",
+                                "runtime.backend.z3_expression_error",
+                            )
+                            .with_argument("reason", error),
+                        );
                         continue;
                     }
                 };
@@ -844,16 +863,22 @@ fn execute_constraints(
                     right,
                 }),
                 Ok(SolveResult::Unsat) => {}
-                Ok(SolveResult::Unknown { reason }) => diagnostics.push(runtime_error(
-                    "RSPDL-BACKEND-Z3-003",
-                    format!("$.records.{}[{}]", constraint.model_id, record.id),
-                    format!("solver가 결과를 결정하지 못했습니다: {reason}"),
-                )),
-                Err(error) => diagnostics.push(runtime_error(
-                    "RSPDL-BACKEND-Z3-004",
-                    format!("$.records.{}[{}]", constraint.model_id, record.id),
-                    error.to_string(),
-                )),
+                Ok(SolveResult::Unknown { reason }) => diagnostics.push(
+                    runtime_error(
+                        "RSPDL-BACKEND-Z3-003",
+                        format!("$.records.{}[{}]", constraint.model_id, record.id),
+                        "runtime.backend.z3_unknown",
+                    )
+                    .with_argument("reason", reason),
+                ),
+                Err(error) => diagnostics.push(
+                    runtime_error(
+                        "RSPDL-BACKEND-Z3-004",
+                        format!("$.records.{}[{}]", constraint.model_id, record.id),
+                        "runtime.backend.z3_error",
+                    )
+                    .with_argument("reason", error),
+                ),
             }
         }
     }
@@ -1089,13 +1114,14 @@ fn canonical_id(value: &str) -> Result<CanonicalId, String> {
 fn runtime_error(
     rule_id: &str,
     path: impl Into<String>,
-    message: impl Into<String>,
+    message_key: impl Into<String>,
 ) -> RuntimeDiagnostic {
     RuntimeDiagnostic {
         rule_id: rule_id.into(),
         severity: Severity::Error,
         path: path.into(),
-        message: message.into(),
+        message_key: message_key.into(),
+        arguments: BTreeMap::new(),
     }
 }
 
@@ -1179,8 +1205,13 @@ mod tests {
             report
                 .runtime_diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.rule_id == "RSPDL-INPUT-014")
+                .any(|diagnostic| diagnostic.rule_id == "RSPDL-INPUT-014"
+                    && diagnostic.message_key == "runtime.field.required_missing"
+                    && diagnostic.argument("field_id") == Some("id"))
         );
+        let json = serde_json::to_string(&report.runtime_diagnostics).unwrap();
+        assert!(!json.contains("필수 필드"));
+        assert!(!json.contains("\"message\":"));
         assert!(report.policy_results.is_empty());
     }
 
@@ -1303,6 +1334,28 @@ mod tests {
             file.diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.rule_id == "RSPDL-LINK-002")
+        }));
+    }
+
+    #[test]
+    fn duplicate_qualified_screen_ids_across_modules_are_link_errors() {
+        let compilation = compile_ko_files(vec![
+            KoSource::new(
+                "one.rspdl",
+                "@모듈 하나(one)\n항목(item)은 다음 필드들로 구성되어 있다.\n    값(value): 필수 정수\n공통 화면(shared.screen)에서는 항목을 생성할 수 있다.\n",
+            ),
+            KoSource::new(
+                "two.rspdl",
+                "@모듈 둘(two)\n항목(item)은 다음 필드들로 구성되어 있다.\n    값(value): 필수 정수\n공통 화면(shared.screen)에서는 항목을 생성할 수 있다.\n",
+            ),
+        ]);
+
+        assert!(compilation.has_errors());
+        assert!(compilation.files.iter().all(|file| {
+            file.diagnostics.iter().any(|diagnostic| {
+                diagnostic.rule_id == "RSPDL-LINK-002"
+                    && diagnostic.argument("symbol_id") == Some("shared.screen")
+            })
         }));
     }
 

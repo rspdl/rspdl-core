@@ -155,7 +155,7 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
         .map(|definition| (definition.name.clone(), definition.clone()))
         .collect::<BTreeMap<_, _>>();
     let mut models = Vec::new();
-    let mut model_names = BTreeMap::new();
+    let mut model_names = BTreeSet::new();
     for value in module.models {
         lower_model(
             value,
@@ -212,22 +212,7 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
         }
     }
 
-    diagnostics.sort_by(|left, right| {
-        (
-            left.span.start,
-            left.span.end,
-            &left.rule_id,
-            &left.message_key,
-            &left.arguments,
-        )
-            .cmp(&(
-                right.span.start,
-                right.span.end,
-                &right.rule_id,
-                &right.message_key,
-                &right.arguments,
-            ))
-    });
+    diagnostics.sort_by(Diagnostic::stable_cmp);
     if diagnostics.iter().any(Diagnostic::is_error) {
         return AnalysisOutput {
             module: None,
@@ -259,7 +244,7 @@ fn lower_model(
     module_id: &CanonicalId,
     enums: &BTreeMap<String, EnumDefinition>,
     top_level_ids: &mut BTreeSet<CanonicalId>,
-    model_names: &mut BTreeMap<String, CanonicalId>,
+    model_names: &mut BTreeSet<String>,
     models: &mut Vec<DataModelDefinition>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
@@ -267,10 +252,7 @@ fn lower_model(
         return;
     };
     duplicate_id(&id, value.declaration.span, top_level_ids, diagnostics);
-    if model_names
-        .insert(value.declaration.name.clone(), id.clone())
-        .is_some()
-    {
+    if !model_names.insert(value.declaration.name.clone()) {
         duplicate_name("data_model", &value.declaration, diagnostics);
     }
 
@@ -282,7 +264,10 @@ fn lower_model(
             continue;
         };
         if !local_ids.insert(local_id.clone()) {
-            duplicate_name("field_id", &field.declaration, diagnostics);
+            diagnostics.push(
+                link_error("semantic.field.duplicate_local_id", field.declaration.span)
+                    .with_argument("id", &local_id),
+            );
         }
         if !names.insert(field.declaration.name.clone()) {
             duplicate_name("field", &field.declaration, diagnostics);
@@ -898,16 +883,29 @@ fn resolve_model<'a>(
     if !validate_reference(reference, "RSPDL-LINK-003", diagnostics) {
         return None;
     }
-    models
+    let matches = models
         .values()
-        .find(|model| top_level_reference_matches(&model.id, reference))
-        .or_else(|| {
+        .filter(|model| top_level_reference_matches(&model.id, reference))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [model] => Some(*model),
+        [] => {
             diagnostics.push(
                 link_error("semantic.model.not_found", reference.span())
                     .with_argument("reference", reference.id()),
             );
             None
-        })
+        }
+        _ => {
+            diagnostics.push(ambiguous_reference(
+                "RSPDL-LINK-003",
+                "model",
+                reference,
+                matches.iter().map(|model| &model.id),
+            ));
+            None
+        }
+    }
 }
 
 fn find_model<'a>(
@@ -918,10 +916,13 @@ fn find_model<'a>(
     if !validate_reference(reference, "RSPDL-DATA-006", diagnostics) {
         return None;
     }
-    models
+    let matches = models
         .iter()
-        .find(|model| top_level_reference_matches(&model.id, reference))
-        .or_else(|| {
+        .filter(|model| top_level_reference_matches(&model.id, reference))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [model] => Some(*model),
+        [] => {
             diagnostics.push(
                 data_diagnostic(
                     "RSPDL-DATA-006",
@@ -932,7 +933,17 @@ fn find_model<'a>(
                 .with_argument("reference", reference.id()),
             );
             None
-        })
+        }
+        _ => {
+            diagnostics.push(ambiguous_reference(
+                "RSPDL-DATA-006",
+                "model",
+                reference,
+                matches.iter().map(|model| &model.id),
+            ));
+            None
+        }
+    }
 }
 
 fn resolve_field<'a>(
@@ -966,18 +977,31 @@ fn resolve_named_id(
     if !validate_reference(reference, "RSPDL-LINK-003", diagnostics) {
         return None;
     }
-    definitions
+    let matches = definitions
         .iter()
-        .find(|(_, id)| top_level_reference_matches(id, reference))
-        .map(|(_, id)| id.clone())
-        .or_else(|| {
+        .filter(|(_, id)| top_level_reference_matches(id, reference))
+        .map(|(_, id)| id)
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [id] => Some((*id).clone()),
+        [] => {
             diagnostics.push(
                 link_error("semantic.symbol.not_found", reference.span())
                     .with_argument("kind", kind)
                     .with_argument("reference", reference.id()),
             );
             None
-        })
+        }
+        _ => {
+            diagnostics.push(ambiguous_reference(
+                "RSPDL-LINK-003",
+                kind,
+                reference,
+                matches.iter().copied(),
+            ));
+            None
+        }
+    }
 }
 
 fn resolve_enum<'a>(
@@ -988,16 +1012,48 @@ fn resolve_enum<'a>(
     if !validate_reference(reference, "RSPDL-LINK-003", diagnostics) {
         return None;
     }
-    definitions
+    let matches = definitions
         .into_iter()
-        .find(|definition| top_level_reference_matches(&definition.id, reference))
-        .or_else(|| {
+        .filter(|definition| top_level_reference_matches(&definition.id, reference))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [definition] => Some(*definition),
+        [] => {
             diagnostics.push(
                 link_error("semantic.enum.not_found", reference.span())
                     .with_argument("reference", reference.id()),
             );
             None
-        })
+        }
+        _ => {
+            diagnostics.push(ambiguous_reference(
+                "RSPDL-LINK-003",
+                "enum",
+                reference,
+                matches.iter().map(|definition| &definition.id),
+            ));
+            None
+        }
+    }
+}
+
+fn ambiguous_reference<'a>(
+    rule_id: &str,
+    kind: &str,
+    reference: &SurfaceRef,
+    ids: impl IntoIterator<Item = &'a CanonicalId>,
+) -> Diagnostic {
+    let candidates = ids
+        .into_iter()
+        .map(CanonicalId::as_str)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>()
+        .join(",");
+    Diagnostic::error(rule_id, "semantic.reference.ambiguous", reference.span())
+        .with_argument("kind", kind)
+        .with_argument("reference", reference.id())
+        .with_argument("candidates", candidates)
 }
 
 fn validate_reference(

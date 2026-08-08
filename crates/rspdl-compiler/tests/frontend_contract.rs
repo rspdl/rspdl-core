@@ -12,15 +12,20 @@ impl Frontend for TestFrontend {
         "test"
     }
 
-    fn lower_source(&self, _source: &str) -> FrontendOutput {
+    fn lower_source(&self, source: &str) -> FrontendOutput {
+        let model_reference = if source == "missing model" {
+            "missing"
+        } else {
+            "item"
+        };
         FrontendOutput {
             module: Some(UnlinkedModule {
-                declaration: declaration("Test module", "test"),
+                declaration: declaration("Test module", "test", span(0, 10)),
                 enums: Vec::new(),
                 models: vec![UnlinkedDataModel {
-                    declaration: declaration("Item", "item"),
+                    declaration: declaration("Item", "item", span(10, 20)),
                     fields: vec![UnlinkedField {
-                        declaration: declaration("Value", "value"),
+                        declaration: declaration("Value", "value", span(20, 30)),
                         required: true,
                         value_type: UnlinkedTypeReference::Integer,
                     }],
@@ -33,19 +38,16 @@ impl Frontend for TestFrontend {
                     declaration: UnlinkedDeclaration {
                         name: String::new(),
                         id: None,
-                        span: TextRange::default(),
+                        span: span(30, 40),
                     },
-                    model: SurfaceRef::stable_id("item", TextRange::default()),
-                    left: UnlinkedOperand::Field(SurfaceRef::stable_id(
-                        "value",
-                        TextRange::default(),
-                    )),
+                    model: SurfaceRef::stable_id(model_reference, span(40, 50)),
+                    left: UnlinkedOperand::Field(SurfaceRef::stable_id("value", span(50, 60))),
                     operator: RelationOperator::GreaterThan,
                     right: UnlinkedOperand::Literal(UnlinkedLiteral::Integer {
                         value: "0".into(),
-                        span: TextRange::default(),
+                        span: span(60, 61),
                     }),
-                    span: TextRange::default(),
+                    span: span(30, 70),
                 }],
                 roles: Vec::new(),
                 actions: Vec::new(),
@@ -56,11 +58,15 @@ impl Frontend for TestFrontend {
     }
 }
 
-fn declaration(name: &str, id: &str) -> UnlinkedDeclaration {
+fn span(start: usize, end: usize) -> TextRange {
+    TextRange { start, end }
+}
+
+fn declaration(name: &str, id: &str, span: TextRange) -> UnlinkedDeclaration {
     UnlinkedDeclaration {
         name: name.into(),
         id: Some(id.into()),
-        span: TextRange::default(),
+        span,
     }
 }
 
@@ -73,4 +79,17 @@ fn compiler_accepts_a_non_korean_frontend_through_the_shared_contract() {
     assert_eq!(module.id.as_str(), "test");
     assert_eq!(module.models[0].id.as_str(), "test.item");
     assert_eq!(module.constraints[0].model_id.as_str(), "test.item");
+}
+
+#[test]
+fn compiler_preserves_frontend_reference_spans_in_diagnostics() {
+    let compilation = compile_with_frontend(&TestFrontend, "missing model");
+
+    assert!(compilation.module.is_none());
+    let diagnostic = compilation
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.message_key == "semantic.model.not_found")
+        .expect("missing model diagnostic");
+    assert_eq!(diagnostic.span, span(40, 50));
 }

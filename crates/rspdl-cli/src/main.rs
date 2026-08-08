@@ -3,8 +3,8 @@ use std::fs;
 use std::process::ExitCode;
 
 use rspdl_compiler::{
-    CheckOptions, KoSource, PolicyStatus, WorkspaceCheckReport, check_ko, check_ko_files,
-    compile_ko, compile_ko_files,
+    CheckOptions, KoSource, PolicyStatus, RuntimeDiagnostic, WorkspaceCheckReport, check_ko,
+    check_ko_files, compile_ko, compile_ko_files,
 };
 use rspdl_ko::{Diagnostic, ParseOutput, format_document, parse, render_diagnostic};
 use serde::Serialize;
@@ -274,7 +274,9 @@ fn print_human_report(report: &rspdl_compiler::CheckReport) {
     for diagnostic in &report.runtime_diagnostics {
         eprintln!(
             "{} {} {}",
-            diagnostic.rule_id, diagnostic.path, diagnostic.message
+            diagnostic.rule_id,
+            diagnostic.path,
+            render_runtime_diagnostic(diagnostic)
         );
     }
     for violation in &report.constraint_violations {
@@ -343,7 +345,9 @@ fn print_workspace_human_report(report: &WorkspaceCheckReport) {
     for diagnostic in &report.runtime_diagnostics {
         eprintln!(
             "{} {} {}",
-            diagnostic.rule_id, diagnostic.path, diagnostic.message
+            diagnostic.rule_id,
+            diagnostic.path,
+            render_runtime_diagnostic(diagnostic)
         );
     }
     for violation in &report.constraint_violations {
@@ -368,6 +372,75 @@ fn print_workspace_human_report(report: &WorkspaceCheckReport) {
     }
     if !report.has_errors() && !report.has_findings() {
         println!("PASS: 제약 및 정책 위반을 찾지 못했습니다.");
+    }
+}
+
+fn render_runtime_diagnostic(diagnostic: &RuntimeDiagnostic) -> String {
+    let argument = |key| diagnostic.argument(key).unwrap_or("<?>");
+    match diagnostic.message_key.as_str() {
+        "runtime.json.invalid" => {
+            format!("JSON 형식이 올바르지 않습니다: {}", argument("reason"))
+        }
+        "runtime.model.not_found" => format!(
+            "데이터 모델 `{}`이 선언되지 않았습니다.",
+            argument("model_id")
+        ),
+        "runtime.record.id_required" => "레코드에는 문자열 `$id`가 필요합니다.".into(),
+        "runtime.record.duplicate_id" => {
+            format!("레코드 ID `{}`가 중복되었습니다.", argument("record_id"))
+        }
+        "runtime.field.not_found" => format!(
+            "필드 `{}`가 모델에 선언되지 않았습니다.",
+            argument("field_id")
+        ),
+        "runtime.field.required_missing" => {
+            format!("필수 필드 `{}`가 누락되었습니다.", argument("field_id"))
+        }
+        "runtime.role.not_found" => {
+            format!("역할 `{}`이 선언되지 않았습니다.", argument("role_id"))
+        }
+        "runtime.action_request.duplicate_id" => format!(
+            "행동 요청 ID `{}`가 중복되었습니다.",
+            argument("request_id")
+        ),
+        "runtime.action.not_found" => {
+            format!("행동 `{}`이 선언되지 않았습니다.", argument("action_id"))
+        }
+        "runtime.record.not_found" => {
+            format!("레코드 `{}`을 찾을 수 없습니다.", argument("record_id"))
+        }
+        "runtime.value.type_mismatch" => format!(
+            "필드 `{}` 값이 타입 `{}`과 맞지 않습니다.",
+            argument("field_id"),
+            argument("expected_type")
+        ),
+        "runtime.backend.datalog_error" => {
+            format!("Datalog 실행에 실패했습니다: {}", argument("reason"))
+        }
+        "runtime.backend.z3_configuration_error" => {
+            format!("solver 설정이 올바르지 않습니다: {}", argument("reason"))
+        }
+        "runtime.backend.z3_expression_error" => {
+            format!("solver 식을 만들 수 없습니다: {}", argument("reason"))
+        }
+        "runtime.backend.z3_unknown" => format!(
+            "solver가 결과를 결정하지 못했습니다: {}",
+            argument("reason")
+        ),
+        "runtime.backend.z3_error" => {
+            format!("solver 실행에 실패했습니다: {}", argument("reason"))
+        }
+        _ if diagnostic.arguments.is_empty() => diagnostic.message_key.clone(),
+        _ => format!(
+            "{} ({})",
+            diagnostic.message_key,
+            diagnostic
+                .arguments
+                .iter()
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 

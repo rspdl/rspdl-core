@@ -151,14 +151,30 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             "열거형 값 ID {}가 중복 선언되었습니다.",
             argument(diagnostic, "id")
         ),
-        "semantic.enum.not_found" => format!(
-            "열거형 {}을 찾을 수 없습니다.",
-            argument(diagnostic, "reference")
+        "semantic.field.duplicate_local_id" => format!(
+            "필드 stable ID {}가 중복 선언되었습니다.",
+            argument(diagnostic, "id")
         ),
-        "semantic.enum.variant_not_found" => format!(
-            "열거형 값 {}을 찾을 수 없습니다.",
-            argument(diagnostic, "reference")
+        "semantic.reference.ambiguous" => format!(
+            "{} 참조 {}가 여러 stable ID({})와 일치합니다.",
+            symbol_kind(argument(diagnostic, "kind")),
+            argument(diagnostic, "reference"),
+            argument(diagnostic, "candidates")
         ),
+        "semantic.enum.not_found" => {
+            let reference = argument(diagnostic, "reference");
+            format!(
+                "열거형 {reference}{} 찾을 수 없습니다.",
+                object_marker(reference)
+            )
+        }
+        "semantic.enum.variant_not_found" => {
+            let reference = argument(diagnostic, "reference");
+            format!(
+                "열거형 값 {reference}{} 찾을 수 없습니다.",
+                object_marker(reference)
+            )
+        }
         "semantic.constraint.operand_type_mismatch" => {
             "제약의 양쪽 operand 타입이 다릅니다.".into()
         }
@@ -211,14 +227,20 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             "필드 {}에 내부 관리와 비표시 의도를 함께 선언할 수 없습니다.",
             argument(diagnostic, "field_id")
         ),
-        "semantic.lifecycle.field_producer_missing" => format!(
-            "필드 {}을 만드는 화면 입력 또는 계산이 없습니다.",
-            argument(diagnostic, "field_id")
-        ),
-        "semantic.lifecycle.model_creator_missing" => format!(
-            "데이터 모델 {}을 생성하는 화면이 없습니다.",
-            argument(diagnostic, "model_id")
-        ),
+        "semantic.lifecycle.field_producer_missing" => {
+            let field_id = argument(diagnostic, "field_id");
+            format!(
+                "필드 {field_id}{} 만드는 화면 입력 또는 계산이 없습니다.",
+                object_marker(field_id)
+            )
+        }
+        "semantic.lifecycle.model_creator_missing" => {
+            let model_id = argument(diagnostic, "model_id");
+            format!(
+                "데이터 모델 {model_id}{} 생성하는 화면이 없습니다.",
+                object_marker(model_id)
+            )
+        }
         "semantic.lifecycle.produced_field_unread" => format!(
             "필드 {}은 만들어지지만 어떤 화면에서도 조회되지 않습니다.",
             argument(diagnostic, "field_id")
@@ -228,20 +250,29 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             "literal이 필드 타입 {}과 맞지 않습니다.",
             argument(diagnostic, "expected_type")
         ),
-        "semantic.model.not_found" => format!(
-            "데이터 모델 {}을 찾을 수 없습니다.",
-            argument(diagnostic, "reference")
-        ),
-        "semantic.field.not_found" => format!(
-            "데이터 모델 {}에서 필드 {}을 찾을 수 없습니다.",
-            argument(diagnostic, "model_id"),
-            argument(diagnostic, "reference")
-        ),
-        "semantic.symbol.not_found" => format!(
-            "{} {}을 찾을 수 없습니다.",
-            symbol_kind(argument(diagnostic, "kind")),
-            argument(diagnostic, "reference")
-        ),
+        "semantic.model.not_found" => {
+            let reference = argument(diagnostic, "reference");
+            format!(
+                "데이터 모델 {reference}{} 찾을 수 없습니다.",
+                object_marker(reference)
+            )
+        }
+        "semantic.field.not_found" => {
+            let reference = argument(diagnostic, "reference");
+            format!(
+                "데이터 모델 {}에서 필드 {reference}{} 찾을 수 없습니다.",
+                argument(diagnostic, "model_id"),
+                object_marker(reference)
+            )
+        }
+        "semantic.symbol.not_found" => {
+            let reference = argument(diagnostic, "reference");
+            format!(
+                "{} {reference}{} 찾을 수 없습니다.",
+                symbol_kind(argument(diagnostic, "kind")),
+                object_marker(reference)
+            )
+        }
         "semantic.declaration.stable_id_required" => "선언에 stable ID가 필요합니다.".into(),
         "semantic.declaration.duplicate_id" => format!(
             "stable ID {}가 중복 선언되었습니다.",
@@ -274,15 +305,6 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             "{}은 canonical base-10 정수가 아닙니다.",
             argument(diagnostic, "value")
         ),
-        "model.invalid_refinement_base"
-        | "model.invalid_refined_value"
-        | "model.refinement_magnitude_exceeded"
-        | "model.type_mismatch"
-        | "model.empty_operands"
-        | "model.arity_mismatch"
-        | "model.unknown_predicate"
-        | "model.conflicting_predicate_signature"
-        | "model.non_ground_fact" => fallback(diagnostic),
         _ => fallback(diagnostic),
     }
 }
@@ -310,6 +332,17 @@ fn symbol_kind(kind: &str) -> &str {
         "field_id" => "필드 ID",
         "field" => "필드",
         _ => kind,
+    }
+}
+
+fn object_marker(value: &str) -> &'static str {
+    match value
+        .chars()
+        .last()
+        .filter(|character| ('가'..='힣').contains(character))
+    {
+        Some(last) if (last as u32 - '가' as u32) % 28 == 0 => "를",
+        Some(_) | None => "을",
     }
 }
 
@@ -350,6 +383,27 @@ mod tests {
             !serde_json::to_string(&diagnostic)
                 .unwrap()
                 .contains("찾을 수")
+        );
+
+        let vowel_ending = Diagnostic::error(
+            "RSPDL-LINK-003",
+            "semantic.model.not_found",
+            TextRange::default(),
+        )
+        .with_argument("reference", "상태");
+        let consonant_ending = Diagnostic::error(
+            "RSPDL-LINK-003",
+            "semantic.model.not_found",
+            TextRange::default(),
+        )
+        .with_argument("reference", "금액");
+        assert_eq!(
+            render_diagnostic(&vowel_ending),
+            "데이터 모델 상태를 찾을 수 없습니다."
+        );
+        assert_eq!(
+            render_diagnostic(&consonant_ending),
+            "데이터 모델 금액을 찾을 수 없습니다."
         );
     }
 }

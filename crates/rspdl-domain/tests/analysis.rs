@@ -140,6 +140,57 @@ fn invalid_stable_references_are_rejected_before_name_lookup() {
 }
 
 #[test]
+fn bare_stable_references_reject_ambiguous_qualified_suffixes() {
+    let mut module = policy_module(["Approval", "Request", "Amount", "Manager", "Change"]);
+    module.models.push(UnlinkedDataModel {
+        declaration: declaration("Shared request", Some("shared.request")),
+        fields: vec![UnlinkedField {
+            declaration: declaration("Shared amount", Some("amount")),
+            required: true,
+            value_type: UnlinkedTypeReference::Integer,
+        }],
+    });
+
+    let output = analyze(module);
+
+    assert!(output.module.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.message_key == "semantic.reference.ambiguous"
+            && diagnostic.argument("kind") == Some("model")
+            && diagnostic.argument("reference") == Some("request")
+            && diagnostic.argument("candidates") == Some("expense.request,shared.request")
+    }));
+}
+
+#[test]
+fn duplicate_field_ids_have_stable_id_evidence() {
+    let mut module = policy_module(["Approval", "Request", "Amount", "Manager", "Change"]);
+    module.models[0].fields.push(UnlinkedField {
+        declaration: declaration("Total", Some("amount")),
+        required: false,
+        value_type: UnlinkedTypeReference::Integer,
+    });
+
+    let output = analyze(module);
+
+    assert!(output.module.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.message_key == "semantic.field.duplicate_local_id"
+            && diagnostic.argument("id") == Some("amount")
+    }));
+}
+
+#[test]
+fn analyzer_diagnostics_are_stable_across_repeated_execution() {
+    let mut module = policy_module(["Approval", "Request", "Amount", "Manager", "Change"]);
+    module.policies[0].role = reference("missing_role");
+    module.policies[0].action = reference("missing_action");
+    module.constraints[0].model = reference("missing_model");
+
+    assert_eq!(analyze(module.clone()), analyze(module));
+}
+
+#[test]
 fn unresolved_symbols_are_rejected_by_the_shared_analyzer() {
     let mut module = policy_module(["승인", "신청", "금액", "관리자", "변경"]);
     module.policies[0].role = reference("missing_role");
