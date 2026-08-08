@@ -3,7 +3,7 @@ id: natural-korean-domain-grammar
 title: Korean Domain Frontend Language Specification
 type: rfc
 status: implemented
-version: "0.2"
+version: "0.3"
 summary: Defines Korean surface grammar and its deterministic lowering to the shared locale-neutral Unlinked IR contract.
 topics:
   - ko-KR
@@ -20,7 +20,7 @@ related:
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-06"
+last_updated: "2026-08-08"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -30,7 +30,7 @@ target_spec: "0.2.0"
 
 ## 1. 범위
 
-이 문서는 `rspdl-ko` frontend의 규범 문법과 공통 Unlinked IR로의 lowering을 정의한다. 데이터와 열거형의 header는 자연스러운 한국어 문장이고, 들여쓴 field와 enum value는 별도 `@` 없이 CFG 항목으로 작성한다. 제약과 정책은 이름이나 source ID가 없는 독립적인 최상위 문장이다. 이름 해석, 타입 검사와 의미 규칙은 [Frontend and Semantic Analysis Contract](../specs/frontend-semantic-analysis-contract.md)의 공통 analyzer가 소유한다.
+이 문서는 `rspdl-ko` frontend의 규범 문법과 공통 Unlinked IR로의 lowering을 정의한다. 데이터와 열거형의 header는 자연스러운 한국어 문장이고, 들여쓴 field와 enum value는 별도 `@` 없이 CFG 항목으로 작성한다. 제약과 정책은 이름이나 source ID가 없는 독립적인 최상위 문장이다. 한국어 표시 이름을 선언 stable ID로 연결하는 일은 frontend가, stable ID linking·타입 검사와 의미 규칙은 [Frontend and Semantic Analysis Contract](../specs/frontend-semantic-analysis-contract.md)의 공통 analyzer가 소유한다.
 
 관계, 컬렉션, 유저 플로우, 조건부 정책, 일반 `AND`/`OR`/`NOT`, 모듈 import와 자유 한국어 해석은 0.1 범위에 포함하지 않는다.
 
@@ -262,11 +262,11 @@ policy-statement =
 ### 6.1 이름과 ID
 
 - module 아래의 enum, model, role과 action은 짧은 local ID를 사용할 수 있다.
-- 짧은 top-level ID `request`는 `<module-id>.request`로 lowering한다. 점이 포함된 ID는 이미 qualified된 것으로 취급한다.
+- 짧은 top-level ID `request`는 공통 analyzer가 `<module-id>.request`로 qualification한다. 점이 포함된 ID는 이미 qualified된 것으로 취급한다.
 - lowering된 top-level canonical ID는 module 안에서 중복될 수 없다.
 - constraint와 policy는 source ID나 표시 이름을 갖지 않는다.
 - `rspdl-ko`는 constraint와 policy에 Locale별 ID를 만들지 않고 anonymous declaration으로 lowering한다.
-- 공통 linker가 표시 이름 reference를 stable Canonical ID로 해석한 뒤 semantic identity의 UTF-8 byte sequence에 FNV-1a 64-bit를 적용해 `constraint_<hex>`, `policy_<hex>`를 만든다. `<hex>`는 leading zero를 포함한 16자리 소문자 hexadecimal이며 canonical ID는 module ID로 한정한다.
+- 한국어 frontend가 표시 이름 reference를 선언 stable ID로 연결하고, 공통 linker가 이를 Canonical ID로 검증·qualification한 뒤 semantic identity의 UTF-8 byte sequence에 FNV-1a 64-bit를 적용해 `constraint_<hex>`, `policy_<hex>`를 만든다. `<hex>`는 leading zero를 포함한 16자리 소문자 hexadecimal이며 canonical ID는 module ID로 한정한다.
 - constraint identity는 `model-id NUL operand NUL operator NUL operand` 순서다. field operand에는 canonical field ID를 사용하고 literal은 canonical value representation을 사용한다.
 - policy identity는 `role-id NUL model-id NUL field-id NUL action-id NUL effect` 순서며 effect는 `allow` 또는 `deny`다.
 - `expense.request`의 `expense.request.amount > 0`은 `expense.constraint_72fbbd5f8aa621cb`, `expense.manager`가 같은 필드를 `expense.change`하도록 허용하는 정책은 `expense.policy_45439f1d15749ca3`인 known vector다.

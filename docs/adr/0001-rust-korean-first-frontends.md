@@ -3,8 +3,8 @@ id: rust-korean-first-frontend
 title: Rust와 한국어 우선 독립 Locale Frontend
 type: adr
 status: accepted
-version: "2"
-summary: Selects Rust, a Korean-first rollout, and independent deterministic frontends that lower only to shared Unlinked IR.
+version: "3"
+summary: Selects Rust, a Korean-first rollout, and independent deterministic frontends that lower surface names to a shared stable-ID Unlinked IR.
 topics:
   - rust
   - korean-first
@@ -19,7 +19,7 @@ related:
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-06"
+last_updated: "2026-08-08"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -69,9 +69,9 @@ RSPDL의 기준 구현은 Rust workspace로 개발한다.
 - formatter
 - Locale AST에서 공통 Unlinked IR로의 lowering
 
-공통 코어는 한국어 조사나 영어 어순을 알지 않는다. Locale frontend는 내부 문법이 달라도 공통 `FrontendOutput` 계약을 통해 symbolic reference와 source provenance를 가진 `UnlinkedModule`을 반환한다.
+공통 코어는 한국어 조사나 영어 어순을 알지 않는다. Locale frontend는 자기 문법의 표시 이름을 같은 source의 선언 stable ID로 연결하고, 공통 `FrontendOutput` 계약을 통해 stable-ID reference와 source provenance를 가진 `UnlinkedModule`을 반환한다.
 
-Frontend는 symbol resolution, type checking, anonymous semantic ID 생성, lifecycle 또는 policy 분석을 수행하지 않는다. 공통 linker와 analyzer가 모든 frontend output에 같은 규칙을 적용한다. 구체적인 계약은 [Frontend and Semantic Analysis Contract](../specs/frontend-semantic-analysis-contract.md)를 따른다.
+Frontend는 Locale 표시 이름 resolution까지만 수행한다. stable ID 검증·qualification·linking, type checking, anonymous semantic ID 생성, lifecycle과 policy 분석은 수행하지 않는다. 공통 linker와 analyzer가 모든 frontend output에 같은 규칙을 적용한다. 구체적인 계약은 [Frontend and Semantic Analysis Contract](../specs/frontend-semantic-analysis-contract.md)를 따른다.
 
 ### 형태소 분석을 사용하지 않는 정확성 경로
 
@@ -100,6 +100,7 @@ compiler correctness는 Kiwi 또는 다른 형태소·품사·자연어 분석�
 - Locale마다 scanner, parser, lint와 formatter를 구현해야 한다.
 - 새 문형은 명시적인 grammar production, lowering과 fixture를 함께 추가해야 한다.
 - 동일 의미를 표현하는 문형이 늘어날수록 중의성 검토와 오탐 방지 테스트가 필요하다.
+- 각 frontend가 자기 표시 이름을 stable ID로 연결하는 작은 symbol index를 구현해야 한다.
 
 ## 결정하지 않은 사항
 

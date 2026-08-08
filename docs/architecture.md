@@ -3,8 +3,8 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "0.2"
-summary: Defines the implemented Unlinked IR frontend boundary, locale-independent analyzer pipeline, dependency direction, and test architecture.
+version: "0.3"
+summary: Defines the implemented stable-ID Unlinked IR boundary, locale-neutral diagnostics, analyzer pipeline, dependency direction, and test architecture.
 topics:
   - rust
   - compiler-architecture
@@ -24,7 +24,7 @@ related:
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-06"
+last_updated: "2026-08-08"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -40,7 +40,7 @@ target_spec: "0.2.0"
 
 ## 아키텍처 원칙
 
-1. Frontend는 공통 Unlinked IR 입력 계약을 구현하고, 분석 이후에는 Canonical Semantic IR과 구조화된 진단만 Locale 사이의 의미 동등성 계약으로 삼는다.
+1. Frontend는 stable-ID reference를 사용하는 공통 Unlinked IR 입력 계약을 구현하고, 분석 이후에는 Canonical Semantic IR과 구조화된 진단만 Locale 사이의 의미 동등성 계약으로 삼는다.
 2. `rspdl-domain`은 한국어 조사, 영어 어순 또는 Locale AST를 알지 않는다.
 3. 각 Locale frontend는 scanner부터 lowering까지 전체 표면 언어를 소유한다.
 4. Compiler correctness와 표현 품질 lint를 분리한다.
@@ -133,7 +133,7 @@ flowchart LR
     CST --> AST["ko-KR AST"]
     AST --> LINT["Surface Lint"]
     AST --> LOWER["Lowering"]
-    LOWER --> UIR["Unlinked IR"]
+    LOWER --> UIR["Stable-ID Unlinked IR"]
     UIR --> LINK["Workspace Linker"]
     LINK --> CIR["Canonical Workspace"]
     CIR --> GRAPH["Semantic Graph"]
@@ -144,7 +144,7 @@ flowchart LR
 
 Surface lint 진단은 lowering을 차단하지 않는다. Scanner 또는 parser의 오류가 있더라도 안전한 복구가 가능한 범위에서 CST와 복수 진단을 반환한다.
 
-Frontend lowering 결과인 `UnlinkedModule`은 symbolic reference와 source provenance를 보존한다. 현재 공통 analyzer가 module 안의 선언을 stable machine ID에 연결하고 타입 검사와 data usage semantic rule을 실행해 `SemanticModule`을 만든다. Workspace import linker, Canonical Workspace와 Semantic Graph는 후속 범위다.
+Frontend lowering 결과인 `UnlinkedModule`은 stable-ID reference와 source provenance를 보존한다. Locale frontend는 표시 이름을 자기 선언 ID로 바꾸며, 공통 analyzer는 ID를 검증·qualification·linking하고 타입 검사와 data usage semantic rule을 실행해 `SemanticModule`을 만든다. Workspace import linker, Canonical Workspace와 Semantic Graph는 후속 범위다.
 
 ## Crate 책임
 
@@ -156,7 +156,7 @@ Locale에 독립적인 compiler domain을 소유한다.
 - `Diagnostic`, `RuleId`, `Severity`, `MessageKey`, evidence
 - unlinked IR, Canonical IR node와 stable machine ID
 - module, import와 specification version
-- symbol table과 name resolution
+- stable ID symbol table과 linking
 - Semantic Graph
 - 타입, 데이터, 플로우와 정책 의미 규칙
 - 화면 field producer/consumer graph와 합계 derivation dependency
@@ -177,9 +177,10 @@ Controlled Korean surface language 전체를 소유한다.
 - handwritten recursive-descent parser와 오류 복구
 - 한국어 표현 품질 lint
 - 조사와 공백을 정규화하는 formatter
-- `SurfaceRef`를 포함한 AST의 Unlinked IR lowering
+- Locale 표시 이름을 stable-ID `SurfaceRef`로 연결하는 Unlinked IR lowering
 - 화면 동작, 합계 계산, 재계산과 필드 사용 의도 문장의 parsing과 formatting
 - 한국어 syntax diagnostic의 message key와 argument
+- core structured diagnostic의 한국어 rendering
 
 형태소 분석, 품사 분석과 동의어 추론은 포함하지 않는다.
 
@@ -241,6 +242,8 @@ Canonical IR을 정책표나 사용자·리소스별 조회 모델로 투영하�
 
 모든 token과 AST node는 UTF-8 byte range를 유지한다. Line과 column은 source line index에서 표시 시 계산한다.
 
+`rspdl-domain::Diagnostic`은 `rule_id`, `severity`, `message_key`, key가 정렬된 `arguments`와 `span`만 보존한다. 번역된 표시 문장은 core에 저장하지 않는다. CLI의 사람용 출력은 `rspdl-ko` renderer를 사용하고 JSON 출력은 Locale 중립 구조를 그대로 직렬화한다. 다른 frontend와 application은 같은 key/argument 계약 위에 자기 renderer를 제공한다.
+
 진단 정렬 키는 최소한 다음 순서로 고정한다.
 
 1. `SourceId`
@@ -274,9 +277,9 @@ Parser가 recovery node를 만들면 해당 node는 원문 span과 recovery kind
 - formatter idempotence
 - AST to IR lowering
 
-`rspdl-domain`은 Locale source 없이 hand-authored IR fixture로 다음을 테스트한다.
+`rspdl-domain`은 Locale source 없이 stable-ID reference를 가진 hand-authored IR fixture로 다음을 테스트한다.
 
-- symbol resolution
+- stable ID validation과 linking
 - type와 schema validation
 - graph construction
 - 권한·데이터·플로우 교차 규칙
@@ -309,6 +312,8 @@ conformance/ko-KR/policy/capability-basic/
 
 Golden file은 명세 계약이므로 단순 snapshot 갱신으로 승인하지 않는다. 문법 또는 의미 변경 RFC와 같은 review에서 변경한다.
 
+진단 conformance는 번역 문장이 아니라 `rule_id`, `severity`, `message_key`, `arguments`와 source span을 비교한다.
+
 ### Property와 determinism tests
 
 - `format(format(source)) == format(source)`
@@ -327,7 +332,7 @@ Golden file은 명세 계약이므로 단순 snapshot 갱신으로 승인하지 
 2. Actor, Entity, Field와 Action의 최소 선언
 3. 한 개 controlled Korean policy 문장
 4. Locale AST와 Unlinked IR lowering
-5. 공통 linker의 symbol resolution과 type checking
+5. frontend의 표시 이름-to-stable-ID mapping과 공통 linker의 stable ID linking·type checking
 6. 존재하지 않는 symbol 진단 한 종류
 7. 조사 surface lint 한 종류
 8. formatter와 round-trip test

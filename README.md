@@ -40,8 +40,9 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 - 생산자 없는 필드 사용 오류와 미조회 입력 필드 안내
 - role, action과 조건 없는 allow 또는 deny policy
 - deterministic parser, formatter와 Canonical domain model
-- 공통 `Frontend` trait과 Unlinked IR을 통한 교체 가능한 Locale frontend
-- Locale과 분리된 symbol resolution, type checking 및 data usage analyzer
+- 공통 `Frontend` trait과 stable-ID Unlinked IR을 통한 교체 가능한 Locale frontend
+- Locale과 분리된 stable ID linking, type checking 및 data usage analyzer
+- message key와 정렬된 argument를 사용하는 Locale 중립 structured diagnostic
 - Z3 기반 record constraint 검사
 - Datalog 기반 runtime policy match와 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - JSON compilation 및 diagnostic 출력
@@ -86,6 +87,7 @@ cargo build --workspace
 - [Field Provenance and Sum Derivation](docs/rfcs/0005-field-provenance-and-sum-derivation.md): 화면 생산·소비와 합계 계산 문법
 - [Policy Consistency Blind Spots](docs/problems/0002-policy-consistency-blind-spots.md): 충돌·누락·중첩·도달 불가
 - [Problem-driven Development](docs/guides/problem-driven-development.md): 원인에서 코드와 증명까지 연결하는 기여 흐름
+- [Frontend and Semantic Analysis Contract](docs/specs/frontend-semantic-analysis-contract.md): 다른 표현 언어가 구현할 stable-ID IR과 진단 계약
 - [Knowledge Index](docs/index.md): RFC, ADR, architecture를 포함한 전체 문서 인덱스
 - [Contributing](CONTRIBUTING.md): 환경 설정, 테스트와 PR 기준
 
