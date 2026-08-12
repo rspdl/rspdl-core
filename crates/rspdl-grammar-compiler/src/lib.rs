@@ -7,5 +7,6 @@ mod runtime;
 
 pub use compiler::{CompileError, CompileErrorKind, CompiledGrammar, GrammarCompiler};
 pub use runtime::{
-    Capture, Expr, Grammar, InputAdapter, ParseError, ParseFailure, ParseMatch, Rule, TerminalMatch,
+    Capture, Expr, Grammar, GrammarDefinitionError, InputAdapter, ParseError, ParseFailure,
+    ParseLimit, ParseLimits, ParseMatch, Rule, TerminalMatch,
 };

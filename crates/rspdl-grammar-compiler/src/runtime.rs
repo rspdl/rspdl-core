@@ -79,7 +79,7 @@ impl Rule {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Capture {
     pub value: String,
     pub start: usize,
@@ -144,7 +144,59 @@ pub enum ParseError {
     UnknownEntry { name: String },
     NoMatch(ParseFailure),
     Ambiguous { alternatives: usize },
+    LimitExceeded { limit: ParseLimit, maximum: usize },
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParseLimit {
+    Outcomes,
+    RuleDepth,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ParseLimits {
+    pub max_outcomes: usize,
+    pub max_rule_depth: usize,
+}
+
+impl Default for ParseLimits {
+    fn default() -> Self {
+        Self {
+            max_outcomes: 1_000_000,
+            max_rule_depth: 256,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GrammarDefinitionError {
+    DuplicateRule { name: String },
+    UnknownPublicRule { name: String },
+    UndefinedRule { rule: String, reference: String },
+    NullableCapture { rule: String },
+}
+
+impl std::fmt::Display for GrammarDefinitionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DuplicateRule { name } => write!(formatter, "rule {name:?} is defined twice"),
+            Self::UnknownPublicRule { name } => {
+                write!(formatter, "public rule {name:?} is not defined")
+            }
+            Self::UndefinedRule { rule, reference } => {
+                write!(
+                    formatter,
+                    "rule {rule:?} references undefined rule {reference:?}"
+                )
+            }
+            Self::NullableCapture { rule } => {
+                write!(formatter, "rule {rule:?} contains a nullable capture")
+            }
+        }
+    }
+}
+
+impl std::error::Error for GrammarDefinitionError {}
 
 #[derive(Clone, Debug)]
 pub struct Grammar {
@@ -154,18 +206,38 @@ pub struct Grammar {
 
 impl Grammar {
     #[doc(hidden)]
-    pub fn from_generated_parts(public_rules: Vec<String>, rules: Vec<Rule>) -> Self {
-        Self {
-            public_rules: public_rules.into_iter().collect(),
-            rules: rules
-                .into_iter()
-                .map(|rule| (rule.name, rule.expression))
-                .collect(),
+    pub fn from_generated_parts(
+        public_rules: Vec<String>,
+        rules: Vec<Rule>,
+    ) -> Result<Self, GrammarDefinitionError> {
+        let mut definitions = BTreeMap::new();
+        for rule in rules {
+            if definitions
+                .insert(rule.name.clone(), rule.expression)
+                .is_some()
+            {
+                return Err(GrammarDefinitionError::DuplicateRule { name: rule.name });
+            }
         }
-    }
-
-    pub fn public_rules(&self) -> impl Iterator<Item = &str> {
-        self.public_rules.iter().map(String::as_str)
+        let public_rules = public_rules.into_iter().collect::<BTreeSet<_>>();
+        for name in &public_rules {
+            if !definitions.contains_key(name) {
+                return Err(GrammarDefinitionError::UnknownPublicRule { name: name.clone() });
+            }
+        }
+        for (rule, expression) in &definitions {
+            validate_rule_references(rule, expression, &definitions)?;
+        }
+        let nullable = definition_nullable_rules(&definitions);
+        for (rule, expression) in &definitions {
+            if has_nullable_capture(expression, &nullable) {
+                return Err(GrammarDefinitionError::NullableCapture { rule: rule.clone() });
+            }
+        }
+        Ok(Self {
+            public_rules,
+            rules: definitions,
+        })
     }
 
     pub fn parse<T>(
@@ -173,6 +245,16 @@ impl Grammar {
         entry: &str,
         tokens: &[T],
         adapter: &impl InputAdapter<T>,
+    ) -> Result<ParseMatch, ParseError> {
+        self.parse_with_limits(entry, tokens, adapter, ParseLimits::default())
+    }
+
+    pub fn parse_with_limits<T>(
+        &self,
+        entry: &str,
+        tokens: &[T],
+        adapter: &impl InputAdapter<T>,
+        limits: ParseLimits,
     ) -> Result<ParseMatch, ParseError> {
         if !self.public_rules.contains(entry) {
             return Err(ParseError::UnknownEntry {
@@ -182,13 +264,21 @@ impl Grammar {
         let expression = self
             .rules
             .get(entry)
-            .expect("validated public rules refer to an existing rule");
+            .ok_or_else(|| ParseError::UnknownEntry {
+                name: entry.to_owned(),
+            })?;
         let mut failure = FailureAccumulator::default();
+        let mut context = EvaluationContext::new(limits);
+        let mut session = EvaluationSession {
+            failure: &mut failure,
+            context: &mut context,
+            rule_depth: 0,
+        };
         let initial = State {
             position: 0,
             captures: BTreeMap::new(),
         };
-        let outcomes = self.evaluate(expression, initial, tokens, adapter, &mut failure);
+        let outcomes = self.evaluate(expression, initial, tokens, adapter, &mut session)?;
         if let Some(position) = outcomes.iter().map(|outcome| outcome.position).max() {
             failure.record(position, "<end of input>");
         }
@@ -209,15 +299,19 @@ impl Grammar {
         }
     }
 
+    pub fn public_rules(&self) -> impl Iterator<Item = &str> {
+        self.public_rules.iter().map(String::as_str)
+    }
+
     fn evaluate<T>(
         &self,
         expression: &Expr,
         state: State,
         tokens: &[T],
         adapter: &impl InputAdapter<T>,
-        failure: &mut FailureAccumulator,
-    ) -> Vec<Outcome> {
-        match expression {
+        session: &mut EvaluationSession<'_>,
+    ) -> Result<Vec<Outcome>, ParseError> {
+        let outcomes = match expression {
             Expr::Literal(literal) => {
                 let position = state.position;
                 match adapter.match_literal(tokens, position, literal) {
@@ -225,7 +319,7 @@ impl Grammar {
                         vec![Outcome::terminal(state.captures, value)]
                     }
                     _ => {
-                        failure.record(position, format!("{literal:?}"));
+                        session.failure.record(position, format!("{literal:?}"));
                         Vec::new()
                     }
                 }
@@ -239,65 +333,112 @@ impl Grammar {
                     .map(|value| Outcome::terminal(state.captures.clone(), value))
                     .collect::<Vec<_>>();
                 if outcomes.is_empty() {
-                    failure.record(position, format!("@{name}"));
+                    session.failure.record(position, format!("@{name}"));
                 }
                 outcomes
             }
             Expr::RuleRef(name) => {
+                if session.rule_depth >= session.context.limits.max_rule_depth {
+                    return Err(ParseError::LimitExceeded {
+                        limit: ParseLimit::RuleDepth,
+                        maximum: session.context.limits.max_rule_depth,
+                    });
+                }
+                let key = MemoKey {
+                    name: name.clone(),
+                    position: state.position,
+                    captures: state.captures.clone(),
+                    rule_depth: session.rule_depth,
+                };
+                if let Some(cached) = session.context.memo.get(&key).cloned() {
+                    session.failure.merge(&cached.failure);
+                    return session.context.retain(cached.outcomes);
+                }
                 let expression = self
                     .rules
                     .get(name)
-                    .expect("validated rule references exist");
-                self.evaluate(expression, state, tokens, adapter, failure)
+                    .ok_or_else(|| ParseError::UnknownEntry { name: name.clone() })?;
+                let mut local_failure = FailureAccumulator::default();
+                let mut nested_session = EvaluationSession {
+                    failure: &mut local_failure,
+                    context: session.context,
+                    rule_depth: session.rule_depth + 1,
+                };
+                let outcomes =
+                    self.evaluate(expression, state, tokens, adapter, &mut nested_session)?;
+                session.failure.merge(&local_failure);
+                session.context.memo.insert(
+                    key,
+                    CachedRule {
+                        outcomes: outcomes.clone(),
+                        failure: local_failure,
+                    },
+                );
+                outcomes
             }
             Expr::Sequence(expressions) => {
                 let mut outcomes = vec![Outcome::empty(state)];
                 for expression in expressions {
                     let mut next = Vec::new();
                     for outcome in outcomes {
-                        let children =
-                            self.evaluate(expression, outcome.as_state(), tokens, adapter, failure);
+                        let children = self.evaluate(
+                            expression,
+                            outcome.as_state(),
+                            tokens,
+                            adapter,
+                            session,
+                        )?;
                         for child in children {
                             next.push(outcome.clone().append(child));
                         }
                     }
                     if next.is_empty() {
-                        return Vec::new();
+                        return Ok(Vec::new());
                     }
+                    session.context.record(next.len())?;
                     outcomes = next;
                 }
                 outcomes
             }
-            Expr::Choice(expressions) => expressions
-                .iter()
-                .flat_map(|expression| {
-                    self.evaluate(expression, state.clone(), tokens, adapter, failure)
-                })
-                .collect(),
+            Expr::Choice(expressions) => {
+                let mut outcomes = Vec::new();
+                for expression in expressions {
+                    outcomes.extend(self.evaluate(
+                        expression,
+                        state.clone(),
+                        tokens,
+                        adapter,
+                        session,
+                    )?);
+                }
+                outcomes
+            }
             Expr::Optional(expression) => {
                 let mut outcomes = vec![Outcome::empty(state.clone())];
-                outcomes.extend(self.evaluate(expression, state, tokens, adapter, failure));
+                outcomes.extend(self.evaluate(expression, state, tokens, adapter, session)?);
                 outcomes
             }
             Expr::Repeat {
                 expression,
                 minimum,
-            } => self.evaluate_repeat(expression, *minimum, state, tokens, adapter, failure),
+            } => self.evaluate_repeat(expression, *minimum, state, tokens, adapter, session)?,
             Expr::Capture { name, expression } => self
-                .evaluate(expression, state, tokens, adapter, failure)
+                .evaluate(expression, state, tokens, adapter, session)?
                 .into_iter()
-                .filter_map(|mut outcome| {
-                    let captured = combine_values(&outcome.values)?;
+                .map(|mut outcome| {
+                    let captured = combine_values(&outcome.values)
+                        .expect("validated capture expressions are not nullable");
                     outcome
                         .captures
                         .entry(name.clone())
                         .or_default()
                         .push(captured.clone());
                     outcome.values = vec![captured];
-                    Some(outcome)
+                    outcome
                 })
                 .collect(),
-        }
+        };
+        session.context.retain(outcomes)
     }
 
     fn evaluate_repeat<T>(
@@ -307,8 +448,8 @@ impl Grammar {
         state: State,
         tokens: &[T],
         adapter: &impl InputAdapter<T>,
-        failure: &mut FailureAccumulator,
-    ) -> Vec<Outcome> {
+        session: &mut EvaluationSession<'_>,
+    ) -> Result<Vec<Outcome>, ParseError> {
         let initial = Outcome::empty(state);
         let mut accepted = if minimum == 0 {
             vec![initial.clone()]
@@ -319,7 +460,8 @@ impl Grammar {
         while !frontier.is_empty() {
             let mut next = Vec::new();
             for (count, outcome) in frontier {
-                for child in self.evaluate(expression, outcome.as_state(), tokens, adapter, failure)
+                for child in
+                    self.evaluate(expression, outcome.as_state(), tokens, adapter, session)?
                 {
                     if child.position <= outcome.position {
                         continue;
@@ -327,14 +469,92 @@ impl Grammar {
                     let combined = outcome.clone().append(child);
                     let next_count = count + 1;
                     if next_count >= minimum {
+                        session.context.record(1)?;
                         accepted.push(combined.clone());
                     }
+                    session.context.record(1)?;
                     next.push((next_count, combined));
                 }
             }
             frontier = next;
         }
-        accepted
+        Ok(accepted)
+    }
+}
+
+fn validate_rule_references(
+    rule: &str,
+    expression: &Expr,
+    rules: &BTreeMap<String, Expr>,
+) -> Result<(), GrammarDefinitionError> {
+    match expression {
+        Expr::RuleRef(reference) if !rules.contains_key(reference) => {
+            Err(GrammarDefinitionError::UndefinedRule {
+                rule: rule.to_owned(),
+                reference: reference.clone(),
+            })
+        }
+        Expr::Sequence(expressions) | Expr::Choice(expressions) => {
+            for expression in expressions {
+                validate_rule_references(rule, expression, rules)?;
+            }
+            Ok(())
+        }
+        Expr::Optional(expression)
+        | Expr::Repeat { expression, .. }
+        | Expr::Capture { expression, .. } => validate_rule_references(rule, expression, rules),
+        Expr::Literal(_) | Expr::RuleRef(_) | Expr::Matcher { .. } => Ok(()),
+    }
+}
+
+fn definition_nullable_rules(rules: &BTreeMap<String, Expr>) -> BTreeMap<String, bool> {
+    let mut nullable = rules
+        .keys()
+        .map(|name| (name.clone(), false))
+        .collect::<BTreeMap<_, _>>();
+    loop {
+        let mut changed = false;
+        for (name, expression) in rules {
+            if !nullable[name] && definition_is_nullable(expression, &nullable) {
+                nullable.insert(name.clone(), true);
+                changed = true;
+            }
+        }
+        if !changed {
+            return nullable;
+        }
+    }
+}
+
+fn definition_is_nullable(expression: &Expr, nullable: &BTreeMap<String, bool>) -> bool {
+    match expression {
+        Expr::Literal(_) | Expr::Matcher { .. } => false,
+        Expr::RuleRef(name) => nullable.get(name).copied().unwrap_or(false),
+        Expr::Sequence(expressions) => expressions
+            .iter()
+            .all(|expression| definition_is_nullable(expression, nullable)),
+        Expr::Choice(expressions) => expressions
+            .iter()
+            .any(|expression| definition_is_nullable(expression, nullable)),
+        Expr::Optional(_) => true,
+        Expr::Repeat {
+            expression,
+            minimum,
+        } => *minimum == 0 || definition_is_nullable(expression, nullable),
+        Expr::Capture { expression, .. } => definition_is_nullable(expression, nullable),
+    }
+}
+
+fn has_nullable_capture(expression: &Expr, nullable: &BTreeMap<String, bool>) -> bool {
+    match expression {
+        Expr::Capture { expression, .. } if definition_is_nullable(expression, nullable) => true,
+        Expr::Sequence(expressions) | Expr::Choice(expressions) => expressions
+            .iter()
+            .any(|expression| has_nullable_capture(expression, nullable)),
+        Expr::Optional(expression)
+        | Expr::Repeat { expression, .. }
+        | Expr::Capture { expression, .. } => has_nullable_capture(expression, nullable),
+        Expr::Literal(_) | Expr::RuleRef(_) | Expr::Matcher { .. } => false,
     }
 }
 
@@ -360,6 +580,58 @@ fn combine_values(values: &[Capture]) -> Option<Capture> {
 struct State {
     position: usize,
     captures: BTreeMap<String, Vec<Capture>>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct MemoKey {
+    name: String,
+    position: usize,
+    captures: BTreeMap<String, Vec<Capture>>,
+    rule_depth: usize,
+}
+
+#[derive(Clone, Debug)]
+struct CachedRule {
+    outcomes: Vec<Outcome>,
+    failure: FailureAccumulator,
+}
+
+struct EvaluationContext {
+    limits: ParseLimits,
+    generated_outcomes: usize,
+    memo: BTreeMap<MemoKey, CachedRule>,
+}
+
+struct EvaluationSession<'a> {
+    failure: &'a mut FailureAccumulator,
+    context: &'a mut EvaluationContext,
+    rule_depth: usize,
+}
+
+impl EvaluationContext {
+    fn new(limits: ParseLimits) -> Self {
+        Self {
+            limits,
+            generated_outcomes: 0,
+            memo: BTreeMap::new(),
+        }
+    }
+
+    fn record(&mut self, count: usize) -> Result<(), ParseError> {
+        self.generated_outcomes = self.generated_outcomes.saturating_add(count);
+        if self.generated_outcomes > self.limits.max_outcomes {
+            return Err(ParseError::LimitExceeded {
+                limit: ParseLimit::Outcomes,
+                maximum: self.limits.max_outcomes,
+            });
+        }
+        Ok(())
+    }
+
+    fn retain(&mut self, outcomes: Vec<Outcome>) -> Result<Vec<Outcome>, ParseError> {
+        self.record(outcomes.len())?;
+        Ok(outcomes)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -405,7 +677,7 @@ impl Outcome {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 struct FailureAccumulator {
     position: usize,
     expected: BTreeSet<String>,
@@ -428,6 +700,12 @@ impl FailureAccumulator {
         ParseFailure {
             position: self.position,
             expected: self.expected,
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        for expected in &other.expected {
+            self.record(other.position, expected.clone());
         }
     }
 }
@@ -489,7 +767,8 @@ mod tests {
                     Expr::literal("온다"),
                 ]),
             )],
-        );
+        )
+        .unwrap();
         let parsed = grammar
             .parse("greeting", &["민수는", "온다"], &Words)
             .unwrap();
@@ -507,7 +786,8 @@ mod tests {
                     Expr::sequence(vec![Expr::literal("a"), Expr::literal("c")]),
                 ]),
             )],
-        );
+        )
+        .unwrap();
         let error = grammar.parse("entry", &["a", "d"], &Words).unwrap_err();
         let ParseError::NoMatch(failure) = error else {
             panic!("expected a failure");
@@ -527,10 +807,125 @@ mod tests {
                 "entry",
                 Expr::choice(vec![Expr::literal("same"), Expr::literal("same")]),
             )],
-        );
+        )
+        .unwrap();
         assert_eq!(
             grammar.parse("entry", &["same"], &Words),
             Err(ParseError::Ambiguous { alternatives: 2 })
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_generated_grammar_without_parse_panics() {
+        assert_eq!(
+            Grammar::from_generated_parts(vec!["missing".into()], Vec::new()).unwrap_err(),
+            GrammarDefinitionError::UnknownPublicRule {
+                name: "missing".into()
+            }
+        );
+        assert_eq!(
+            Grammar::from_generated_parts(
+                vec!["entry".into()],
+                vec![Rule::new("entry", Expr::rule_ref("missing"))],
+            )
+            .unwrap_err(),
+            GrammarDefinitionError::UndefinedRule {
+                rule: "entry".into(),
+                reference: "missing".into(),
+            }
+        );
+        assert_eq!(
+            Grammar::from_generated_parts(
+                vec!["entry".into()],
+                vec![Rule::new(
+                    "entry",
+                    Expr::capture("value", Expr::optional(Expr::literal("x"))),
+                )],
+            )
+            .unwrap_err(),
+            GrammarDefinitionError::NullableCapture {
+                rule: "entry".into()
+            }
+        );
+    }
+
+    #[test]
+    fn matcher_repetition_and_repeated_parses_are_deterministic() {
+        let grammar = Grammar::from_generated_parts(
+            vec!["entry".into()],
+            vec![Rule::new(
+                "entry",
+                Expr::repeat(
+                    Expr::capture(
+                        "name",
+                        Expr::matcher("suffix", vec!["는".into(), "수는".into()]),
+                    ),
+                    1,
+                ),
+            )],
+        )
+        .unwrap();
+        let expected = Err(ParseError::Ambiguous { alternatives: 2 });
+        for _ in 0..10 {
+            assert_eq!(grammar.parse("entry", &["민수는"], &Words), expected);
+        }
+    }
+
+    #[test]
+    fn configurable_limits_bound_outcomes_and_rule_depth() {
+        let ambiguous = Grammar::from_generated_parts(
+            vec!["entry".into()],
+            vec![Rule::new(
+                "entry",
+                Expr::choice(vec![
+                    Expr::literal("x"),
+                    Expr::literal("x"),
+                    Expr::literal("x"),
+                ]),
+            )],
+        )
+        .unwrap();
+        assert_eq!(
+            ambiguous.parse_with_limits(
+                "entry",
+                &["x"],
+                &Words,
+                ParseLimits {
+                    max_outcomes: 2,
+                    ..ParseLimits::default()
+                },
+            ),
+            Err(ParseError::LimitExceeded {
+                limit: ParseLimit::Outcomes,
+                maximum: 2,
+            })
+        );
+
+        let recursive = Grammar::from_generated_parts(
+            vec!["entry".into()],
+            vec![Rule::new(
+                "entry",
+                Expr::choice(vec![
+                    Expr::literal("done"),
+                    Expr::sequence(vec![Expr::literal("x"), Expr::rule_ref("entry")]),
+                ]),
+            )],
+        )
+        .unwrap();
+        assert_eq!(
+            recursive.parse_with_limits(
+                "entry",
+                &["x", "x", "done"],
+                &Words,
+                ParseLimits {
+                    max_rule_depth: 1,
+                    ..ParseLimits::default()
+                },
+            ),
+            Err(ParseError::LimitExceeded {
+                limit: ParseLimit::RuleDepth,
+                maximum: 1,
+            })
         );
     }
 }

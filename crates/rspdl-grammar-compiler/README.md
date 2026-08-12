@@ -23,10 +23,12 @@ pub policy_statement =
 - `[expression]` 또는 `expression?`: optional
 - `{expression}` 또는 `expression*`: zero-or-more
 - `expression+`: one-or-more
-- `capture: expression`: 이름 있는 capture와 source range
+- `capture: expression`: 이름 있는 non-nullable capture와 source range
 - `@matcher("argument")`: Locale adapter가 구현하는 contextual matcher
 
-Grammar compiler는 duplicate/undefined rule, 등록되지 않은 matcher, nullable repetition과 left recursion을 거부한다. Runtime은 선언 순서로 alternative를 고르지 않으며 완전 parse가 둘 이상이면 ambiguity를 반환한다.
+Grammar compiler는 duplicate/undefined rule, 등록되지 않은 matcher, nullable repetition·capture와 left recursion을 거부한다. Runtime은 선언 순서로 alternative를 고르지 않으며 완전 parse가 둘 이상이면 ambiguity를 반환한다. Generated grammar constructor도 public rule, rule reference와 nullable capture invariant를 검증한다.
+
+Runtime은 기본 outcome 수와 rule-reference depth 한도를 가지며 `parse_with_limits`에서 이를 조정할 수 있다. 한도를 넘으면 panic이나 무제한 탐색 대신 구조화된 `ParseError::LimitExceeded`를 반환한다.
 
 ## Locale production 이관 절차
 

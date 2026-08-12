@@ -456,16 +456,21 @@ mod tests {
 
     #[test]
     fn generated_constraint_capture_spans_exclude_attached_markers() {
-        let sentence = "항목의 값은 0보다 커야 한다.";
-        let generated = parse_constraint(&constraint_tokens(sentence)).unwrap();
-        assert_eq!(
-            &sentence[generated.model.start..generated.model.end],
-            "항목"
-        );
-        assert_eq!(&sentence[generated.left.start..generated.left.end], "값");
-        let GeneratedConstraintRight::Literal(LiteralAst::Integer(value)) = generated.right else {
-            panic!("ordered comparison should capture an integer literal");
-        };
-        assert_eq!(value, "0");
+        for (sentence, expected) in [
+            ("항목의 값은 0보다 커야 한다.", "0"),
+            ("항목의 값은 100보다 작아야 한다.", "100"),
+        ] {
+            let generated = parse_constraint(&constraint_tokens(sentence)).unwrap();
+            assert_eq!(
+                &sentence[generated.model.start..generated.model.end],
+                "항목"
+            );
+            assert_eq!(&sentence[generated.left.start..generated.left.end], "값");
+            let GeneratedConstraintRight::Literal(LiteralAst::Integer(value)) = generated.right
+            else {
+                panic!("ordered comparison should capture an integer literal");
+            };
+            assert_eq!(value, expected);
+        }
     }
 }

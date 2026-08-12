@@ -10,6 +10,7 @@ pub enum CompileErrorKind {
     UndefinedRule,
     UnknownMatcher,
     NullableRepetition,
+    NullableCapture,
     LeftRecursion,
     NoPublicRule,
 }
@@ -92,7 +93,11 @@ impl CompiledGrammar {
             .expect("writing to String cannot fail");
         }
         writeln!(output, "        ],").expect("writing to String cannot fail");
-        writeln!(output, "    )").expect("writing to String cannot fail");
+        writeln!(
+            output,
+            "    ).expect(\"generated grammar was validated by the compiler\")"
+        )
+        .expect("writing to String cannot fail");
         writeln!(output, "}}").expect("writing to String cannot fail");
         Ok(output)
     }
@@ -120,7 +125,8 @@ impl GrammarCompiler {
             .map(|rule| rule.rule.name.clone())
             .collect::<Vec<_>>();
         let rules = parsed.into_iter().map(|rule| rule.rule).collect::<Vec<_>>();
-        let grammar = Grammar::from_generated_parts(public_rules.clone(), rules.clone());
+        let grammar = Grammar::from_generated_parts(public_rules.clone(), rules.clone())
+            .expect("compiler validation guarantees a valid runtime grammar");
         Ok(CompiledGrammar {
             grammar,
             public_rules,
@@ -181,6 +187,66 @@ fn is_rust_identifier(value: &str) -> bool {
         .next()
         .is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
         && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+        && !is_rust_keyword(value)
+}
+
+fn is_rust_keyword(value: &str) -> bool {
+    matches!(
+        value,
+        "abstract"
+            | "as"
+            | "async"
+            | "await"
+            | "become"
+            | "box"
+            | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "do"
+            | "dyn"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "final"
+            | "fn"
+            | "for"
+            | "gen"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "macro"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "override"
+            | "priv"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "Self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "try"
+            | "type"
+            | "typeof"
+            | "union"
+            | "unsafe"
+            | "unsized"
+            | "use"
+            | "virtual"
+            | "where"
+            | "while"
+            | "yield"
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -222,9 +288,36 @@ fn validate(rules: &[ParsedRule], matchers: &BTreeSet<String>) -> Result<(), Com
     let nullable = nullable_rules(rules);
     for rule in rules {
         validate_repetition(&rule.rule.expression, rule.offset, &nullable)?;
+        validate_capture(&rule.rule.expression, rule.offset, &nullable)?;
     }
     validate_left_recursion(rules, &nullable)?;
     Ok(())
+}
+
+fn validate_capture(
+    expression: &Expr,
+    offset: usize,
+    nullable: &BTreeMap<String, bool>,
+) -> Result<(), CompileError> {
+    match expression {
+        Expr::Capture { expression, .. } if is_nullable(expression, nullable) => {
+            Err(CompileError::new(
+                CompileErrorKind::NullableCapture,
+                offset,
+                "a captured expression must consume at least one token",
+            ))
+        }
+        Expr::Sequence(expressions) | Expr::Choice(expressions) => {
+            for expression in expressions {
+                validate_capture(expression, offset, nullable)?;
+            }
+            Ok(())
+        }
+        Expr::Optional(expression)
+        | Expr::Repeat { expression, .. }
+        | Expr::Capture { expression, .. } => validate_capture(expression, offset, nullable),
+        Expr::Literal(_) | Expr::RuleRef(_) | Expr::Matcher { .. } => Ok(()),
+    }
 }
 
 fn validate_references_and_matchers(
@@ -337,7 +430,14 @@ fn validate_left_recursion(
         .collect::<BTreeMap<_, _>>();
     for rule in rules {
         let mut visiting = BTreeSet::new();
-        if reaches_rule(&rule.rule.name, &rule.rule.name, &graph, &mut visiting) {
+        let mut failed = BTreeSet::new();
+        if reaches_rule(
+            &rule.rule.name,
+            &rule.rule.name,
+            &graph,
+            &mut visiting,
+            &mut failed,
+        ) {
             return Err(CompileError::new(
                 CompileErrorKind::LeftRecursion,
                 rule.offset,
@@ -384,7 +484,11 @@ fn reaches_rule(
     target: &str,
     graph: &BTreeMap<String, BTreeSet<String>>,
     visiting: &mut BTreeSet<String>,
+    failed: &mut BTreeSet<String>,
 ) -> bool {
+    if failed.contains(current) {
+        return false;
+    }
     if !visiting.insert(current.to_owned()) {
         return false;
     }
@@ -392,9 +496,12 @@ fn reaches_rule(
         next.contains(target)
             || next
                 .iter()
-                .any(|name| reaches_rule(name, target, graph, visiting))
+                .any(|name| reaches_rule(name, target, graph, visiting, failed))
     });
     visiting.remove(current);
+    if !reaches {
+        failed.insert(current.to_owned());
+    }
     reaches
 }
 
@@ -644,12 +751,13 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, CompileError> {
-        if let TokenKind::Identifier(name) = &self.current().kind
-            && matches!(
-                self.tokens.get(self.position + 1).map(|token| &token.kind),
-                Some(TokenKind::Colon)
-            )
-        {
+        if matches!(
+            self.tokens.get(self.position + 1).map(|token| &token.kind),
+            Some(TokenKind::Colon)
+        ) {
+            let TokenKind::Identifier(name) = &self.current().kind else {
+                return Err(self.error("expected a capture name before :"));
+            };
             let name = name.clone();
             self.position += 2;
             return Ok(Expr::capture(name, self.parse_postfix()?));
@@ -850,6 +958,30 @@ mod tests {
     }
 
     #[test]
+    fn rejects_invalid_generated_function_names_and_string_boundaries() {
+        let compiled = GrammarCompiler::default()
+            .compile("pub entry = \"a\";")
+            .unwrap();
+        for name in ["match", "fn", "type", "not-valid"] {
+            let error = compiled.emit_rust(name).unwrap_err();
+            assert_eq!(error.kind, CompileErrorKind::Syntax, "{name}");
+            assert_eq!(error.offset, 0, "{name}");
+        }
+
+        let unterminated = GrammarCompiler::default()
+            .compile("pub entry = \"abc")
+            .unwrap_err();
+        assert_eq!(unterminated.kind, CompileErrorKind::Syntax);
+        assert_eq!(unterminated.offset, 12);
+
+        let unsupported_escape = GrammarCompiler::default()
+            .compile(r#"pub entry = "\q";"#)
+            .unwrap_err();
+        assert_eq!(unsupported_escape.kind, CompileErrorKind::Syntax);
+        assert_eq!(unsupported_escape.offset, 14);
+    }
+
+    #[test]
     fn rejects_undefined_rules_and_unknown_matchers() {
         assert_eq!(
             GrammarCompiler::default()
@@ -869,6 +1001,13 @@ mod tests {
 
     #[test]
     fn rejects_nullable_repetition_and_left_recursion() {
+        assert_eq!(
+            GrammarCompiler::default()
+                .compile("pub entry = value: [\"a\"] \"b\";")
+                .unwrap_err()
+                .kind,
+            CompileErrorKind::NullableCapture
+        );
         assert_eq!(
             GrammarCompiler::default()
                 .compile("pub entry = [\"a\"]*;")
