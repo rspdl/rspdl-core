@@ -24,6 +24,7 @@ cargo test --workspace
 ## 저장소 구조
 
 - `crates/rspdl-domain`: Locale에 독립적인 타입, 논리 모델과 의미 규칙
+- `crates/rspdl-grammar-compiler`: 실행 가능한 제한 EBNF compiler와 generated parser runtime
 - `crates/rspdl-ko`: 한국어 scanner, parser, AST, lowering과 formatter
 - `crates/rspdl-compiler`: frontend와 backend를 연결하는 공개 compiler facade
 - `crates/rspdl-solver-z3`: Z3 기반 constraint solver

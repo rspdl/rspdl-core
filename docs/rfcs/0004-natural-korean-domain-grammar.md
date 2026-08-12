@@ -3,7 +3,7 @@ id: natural-korean-domain-grammar
 title: Korean Domain Frontend Language Specification
 type: rfc
 status: implemented
-version: "0.6"
+version: "0.7"
 summary: Defines Korean record, relation, constraint and policy grammar and its deterministic lowering to the locale-neutral Unlinked IR contract.
 topics:
   - ko-KR
@@ -19,9 +19,11 @@ related:
   - typed-domains-and-logic-core
   - rspdl-compiler-architecture
   - frontend-semantic-analysis-contract
+  - executable-frontend-grammar-compiler
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
+  - frontend-grammar-implementation-drift
 last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers

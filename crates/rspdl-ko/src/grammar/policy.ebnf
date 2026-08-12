@@ -1,0 +1,11 @@
+# This is the first shadow-migration production. A build validates and compiles it,
+# while differential tests keep the handwritten parser as the behavior oracle.
+pub policy_statement =
+    role: @marked_ref("은", "는")
+    model: @marked_ref("의")
+    field: @marked_ref("을", "를")
+    action: @marked_ref("할")
+    "수"
+    effect: ("있다" | "없다")
+    "."
+    ;

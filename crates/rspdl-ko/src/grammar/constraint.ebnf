@@ -1,0 +1,29 @@
+# Field-constraint shadow migration. The handwritten parser remains the behavior
+# oracle until this grammar owns the production.
+pub constraint_statement =
+    model: @marked_ref("의")
+    (
+        field_left: @marked_ref("와", "과")
+        field_right: @marked_ref("은", "는")
+        field_operator: ("같아야" | "달라야")
+        "한다"
+      |
+        left: @marked_ref("은", "는")
+        (
+            greater_attached: @integer_before("보다") "커야" "한다"
+          | less_attached: @integer_before("보다") "작아야" "한다"
+          | greater: @integer() "보다" "커야" "한다"
+          | less: @integer() "보다" "작아야" "한다"
+          | greater_or_equal: @integer() "이상이어야" "한다"
+          | less_or_equal: @integer() "이하여야" "한다"
+          | integer_equal: @integer() "이어야" "한다"
+          | string_equal: @string_equal() "한다"
+          | quoted_equal: @quoted_equal() "한다"
+          | word_equal: @word_equal() "한다"
+          | string_not_equal: @string_not_equal() "한다"
+          | quoted_not_equal: @quoted_not_equal() "한다"
+          | word_not_equal: @word_not_equal() "한다"
+        )
+    )
+    "."
+    ;

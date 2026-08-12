@@ -1,0 +1,15 @@
+mod adapter;
+mod constraint;
+mod declarations;
+mod policy;
+mod provenance;
+mod relation;
+
+use rspdl_grammar_compiler::{Capture, ParseMatch};
+
+fn required_capture(parsed: &ParseMatch, name: &str) -> Capture {
+    parsed
+        .capture(name)
+        .unwrap_or_else(|| panic!("validated grammar always captures {name}"))
+        .clone()
+}
