@@ -1,5 +1,8 @@
 mod adapter;
+mod constraint;
+mod declarations;
 mod policy;
+mod provenance;
 
 use rspdl_grammar_compiler::{Capture, ParseMatch};
 
