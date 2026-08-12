@@ -37,4 +37,4 @@ Grammar compiler는 duplicate/undefined rule, 등록되지 않은 matcher, nulla
 5. generated capture 또는 Locale AST와 기존 parser 결과를 differential test로 비교한다.
 6. 동등성 gate가 안정된 production만 production parse path로 전환한다.
 
-현재 `rspdl-ko`의 policy statement가 첫 shadow production이다. Lexer 생성, formatter/lowering 생성, general left-recursive expression grammar와 자동 오류 복구는 아직 지원하지 않는다.
+현재 `rspdl-ko`의 policy, constraint/literal, declaration/block item, screen/provenance, relation/meta-rule 문형이 shadow production으로 이관되어 있다. 이 단계에서는 generated parser가 기존 handwritten parser와 differential test로 비교되며 production parse 결과를 바꾸지 않는다. Lexer 생성, formatter/lowering 생성, general left-recursive expression grammar와 자동 오류 복구는 아직 지원하지 않는다.

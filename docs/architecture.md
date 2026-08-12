@@ -3,7 +3,7 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "0.8"
+version: "0.9"
 summary: Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded relational model-finding path, dependency direction, and tests.
 topics:
   - rust
@@ -28,7 +28,7 @@ problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - frontend-grammar-implementation-drift
-last_updated: "2026-08-12"
+last_updated: "2026-08-13"
 owners:
   - rspdl-maintainers
 target_spec: "0.3.0"
@@ -135,7 +135,7 @@ flowchart LR
     SRC["UTF-8 Source"] --> SCAN["ko-KR Scanner"]
     SCAN --> TOK["Raw Tokens + Trivia"]
     GRAMMAR["Executable EBNF"] --> GEN["rspdl-grammar-compiler"]
-    GEN --> SHADOW["Generated Policy Parser (shadow)"]
+    GEN --> SHADOW["Generated Grammar Parsers (shadow)"]
     TOK -. "differential test" .-> SHADOW
     TOK --> PARSE["Handwritten ko-KR Parser (production)"]
     PARSE <-. "capture and acceptance equivalence" .-> SHADOW

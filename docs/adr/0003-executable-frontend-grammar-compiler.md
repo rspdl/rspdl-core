@@ -3,7 +3,7 @@ id: executable-frontend-grammar-compiler
 title: 실행 가능한 Frontend Grammar Compiler
 type: adr
 status: accepted
-version: "1"
+version: "2"
 summary: Selects a small RSPDL-specific EBNF compiler and production-by-production differential migration instead of duplicating normative grammar in handwritten parsers.
 topics:
   - executable-grammar
@@ -17,7 +17,7 @@ related:
   - natural-korean-domain-grammar
 problem_refs:
   - frontend-grammar-implementation-drift
-last_updated: "2026-08-12"
+last_updated: "2026-08-13"
 owners:
   - rspdl-maintainers
 ---
@@ -69,7 +69,21 @@ handwritten parser를 한 번에 제거하지 않는다.
 4. 동등성 gate를 만족한 production만 production path로 전환한다.
 5. 모든 production이 전환된 뒤 중복 handwritten code를 제거한다.
 
-첫 vertical slice는 policy statement다. 이 단계의 generated parser는 shadow test에서만 실행하고 사용자-visible parse 결과를 변경하지 않는다.
+첫 vertical slice는 policy statement다. 이어서 제약·literal, 선언·block item, 화면·provenance, 관계·meta-rule 문형도 같은 방식으로 이관한다. generated parser는 shadow test에서만 실행하고 사용자-visible parse 결과를 변경하지 않는다.
+
+### 현재 migration 상태
+
+`rspdl-ko`의 공개 문형은 다음 executable grammar 묶음으로 shadow migration되었다.
+
+- policy statement
+- field constraint와 literal
+- module, enum, model, role, action 선언과 block item
+- screen, sum derivation, recalculation, field intent
+- unary/binary relation과 relation meta-rule
+
+각 묶음은 기존 handwritten parser를 oracle로 삼아 정상 AST, 실패 shape, marker 경계와 false positive 방지를 비교한다. build script는 grammar 파일을 자동 발견하고 안정된 순서로 생성하므로 새 문형은 compiler wiring을 복사하지 않고 grammar와 adapter만 추가할 수 있다.
+
+아직 production parser 전환과 handwritten code 제거는 수행하지 않았다. 그 전에 structured diagnostic과 recovery parity를 grammar/runtime 계약에 추가하고, 문형별 동등성 gate를 production path에서도 유지해야 한다.
 
 ## 테스트 계약
 
