@@ -114,6 +114,7 @@ flowchart TD
     COMPILER --> DOMAIN["rspdl-domain"]
     COMPILER --> Z3["rspdl-solver-z3"]
     KO --> GRAMMAR["rspdl-grammar-compiler runtime"]
+    KO -. "build: compile EBNF" .-> GRAMMAR
     KO --> DOMAIN
     Z3 --> DOMAIN
     EN["future rspdl-en"] --> DOMAIN
@@ -138,7 +139,7 @@ flowchart LR
     GEN --> SHADOW["Generated Grammar Parsers (shadow)"]
     TOK -. "differential test" .-> SHADOW
     TOK --> PARSE["Handwritten ko-KR Parser (production)"]
-    PARSE <-. "capture and acceptance equivalence" .-> SHADOW
+    PARSE <-. "acceptance, AST, source-range, diagnostic/recovery equivalence" .-> SHADOW
     PARSE --> CST["ko-KR CST"]
     CST --> AST["ko-KR AST"]
     AST --> LINT["Surface Lint"]
@@ -154,6 +155,8 @@ flowchart LR
 ```
 
 Surface lint 진단은 lowering을 차단하지 않는다. Scanner 또는 parser의 오류가 있더라도 안전한 복구가 가능한 범위에서 CST와 복수 진단을 반환한다.
+
+Generated parser를 production path로 전환하려면 capture뿐 아니라 정상 AST shape, 거부 경계, UTF-8 byte source range, recovery metadata와 structured diagnostic span이 handwritten parser와 동등해야 한다.
 
 Frontend lowering 결과인 `UnlinkedModule`은 stable-ID reference와 source provenance를 보존한다. Locale frontend는 표시 이름을 자기 선언 ID로 바꾸며, 현재 공통 `analyze` 함수는 ID를 검증·qualification·linking하고 타입 검사와 data usage semantic rule을 실행해 module별 `SemanticModule`을 만든다.
 

@@ -4,7 +4,7 @@ title: Frontend Grammar Implementation Drift
 type: problem
 status: active
 created: 2026-08-12
-version: "1"
+version: "2"
 summary: Normative grammar and executable parsers are maintained separately, causing repeated implementation work and undetected drift as surface languages grow.
 topics:
   - frontend-development
@@ -17,7 +17,7 @@ related:
   - controlled-korean-surface-grammar
   - natural-korean-domain-grammar
   - rust-korean-first-frontend
-last_updated: "2026-08-12"
+last_updated: "2026-08-13"
 owners:
   - rspdl-maintainers
 ---
@@ -38,10 +38,10 @@ owners:
 
 ## How
 
-- 문법 production을 기계가 검증하고 parser 입력으로 사용할 수 있는 실행 가능한 형식으로 보존해야 한다.
-- Locale별 contextual token 처리, source span, 구조화 진단과 복구 지점은 문법과 함께 결정적으로 연결되어야 한다.
-- 기존 parser와 새 parser를 같은 corpus에 실행해 성공 여부와 capture 결과를 비교한 뒤 production 단위로 전환할 수 있어야 한다.
-- 정상 production, 잘못된 문법 정의, marker 경계와 비슷하지만 허용하지 않는 문형을 각각 가까운 owning layer에서 검증해야 한다.
+- 규범 production과 executable parser의 허용 입력 집합이 독립적으로 수정되면 같은 문형에 서로 다른 token boundary와 분기 우선순위가 축적된다.
+- drift는 RFC에 있는 정상·실패 문형이 parser에서는 다르게 수용되거나, source span·진단·복구 결과가 문서의 경계와 맞지 않을 때 관찰된다.
+- 새 문형마다 이미 문서화한 token 순서와 marker 조건을 parser 코드에 다시 옮기고 별도 회귀 fixture를 작성하는 시간이 반복 비용으로 나타난다.
+- Locale 수와 문형 수가 늘수록 중복된 판별 로직과 검증 조합이 함께 증가하므로, 변경 범위가 작아도 회귀 확인 비용은 지속적으로 커진다.
 
 ## Constraints
 
