@@ -19,6 +19,10 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             "최상위 선언이 아닌 위치에 들여쓴 항목이 있습니다.".into()
         }
         "ko.syntax.unknown_top_level_declaration" => "알 수 없는 최상위 선언입니다.".into(),
+        "ko.syntax.domain_annotation_forbidden" => format!(
+            "{} annotation은 사용할 수 없습니다. @는 문서 metadata인 @모듈에만 허용됩니다.",
+            argument(diagnostic, "annotation")
+        ),
         "ko.syntax.item_period_forbidden" => "선언 항목에는 마침표를 사용하지 않습니다.".into(),
         "ko.syntax.enum_value_required" => "열거형 값이 필요합니다.".into(),
         "ko.syntax.field_colon_required" => "필드 표시 이름 뒤에 :이 필요합니다.".into(),
@@ -87,6 +91,19 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         }
         "ko.syntax.field_type_required" => "필드 타입이 필요합니다.".into(),
         "ko.syntax.field_type_invalid" => "필드 타입 형식이 올바르지 않습니다.".into(),
+        "ko.syntax.relation_stable_id_required" => "관계 선언에 stable ID가 필요합니다.".into(),
+        "ko.syntax.relation_direction_marker_required" => {
+            "관계 이름 뒤에는 로 또는 으로가 필요합니다.".into()
+        }
+        "ko.syntax.relational_constraint_group_references" => {
+            "그룹 관계 규칙에는 서로 다른 관계 참조가 둘 이상 필요합니다.".into()
+        }
+        "ko.syntax.reference_list_required" => "하나 이상의 참조가 필요합니다.".into(),
+        "ko.syntax.reference_list_empty_name" => "참조 목록에 빈 이름이 있습니다.".into(),
+        "ko.syntax.reference_list_invalid" => "참조 목록 형식이 올바르지 않습니다.".into(),
+        "ko.syntax.reference_list_final_marker_required" => {
+            "관계 목록의 마지막 이름 뒤에는 은 또는 는이 필요합니다.".into()
+        }
         "ko.syntax.reference_and_marker_required" => {
             "문장에 필요한 이름과 조사가 누락되었습니다.".into()
         }
@@ -181,6 +198,38 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "semantic.constraint.order_requires_integer" => {
             "대소 비교는 정수 필드에만 사용할 수 있습니다.".into()
         }
+        "semantic.relation.arity_unsupported" => format!(
+            "관계 parameter는 {}개만 지원하지만 {}개가 선언되었습니다.",
+            argument(diagnostic, "supported"),
+            argument(diagnostic, "actual")
+        ),
+        "semantic.relation.not_found" => format!(
+            "관계 {}을 찾을 수 없습니다.",
+            argument(diagnostic, "reference")
+        ),
+        "semantic.relation.cardinality_requires_binary" => format!(
+            "필수/유일 cardinality는 이항 관계에만 사용할 수 있습니다: {}.",
+            argument(diagnostic, "relation_id")
+        ),
+        "semantic.relation.cardinality_anchor_mismatch" => format!(
+            "관계 {}의 기준 개체는 {}이지만 규칙에는 {}이 사용되었습니다.",
+            argument(diagnostic, "relation_id"),
+            argument(diagnostic, "expected_model_id"),
+            argument(diagnostic, "actual_model_id")
+        ),
+        "semantic.model.field_required" => {
+            "데이터 모델은 하나 이상의 필드를 선언해야 합니다.".into()
+        }
+        "semantic.relation.group_requires_distinct_members" => {
+            "관계 그룹에는 서로 다른 관계가 둘 이상 필요합니다.".into()
+        }
+        "semantic.relation.group_signature_mismatch" => {
+            "같은 그룹의 관계는 parameter 모델과 순서가 같아야 합니다.".into()
+        }
+        "semantic.relation.compatibility_conflict" => format!(
+            "같은 관계 그룹 {}을 배타적이면서 공존 가능하다고 선언할 수 없습니다.",
+            argument(diagnostic, "relation_ids")
+        ),
         "semantic.screen.id_name_conflict" => format!(
             "화면 ID {}가 {}와 {} 두 이름으로 사용되었습니다.",
             argument(diagnostic, "screen_id"),
@@ -318,6 +367,9 @@ fn syntax_kind(kind: &str) -> &str {
         "sum_derivation" => "계산",
         "recalculation" => "재계산",
         "field_intent" => "필드 사용 의도",
+        "relation" => "관계 선언",
+        "entity" => "개체 선언",
+        "relational_constraint" => "관계 메타 규칙",
         _ => kind,
     }
 }
@@ -331,6 +383,7 @@ fn symbol_kind(kind: &str) -> &str {
         "data_model" => "데이터 모델",
         "field_id" => "필드 ID",
         "field" => "필드",
+        "relation" => "관계",
         _ => kind,
     }
 }

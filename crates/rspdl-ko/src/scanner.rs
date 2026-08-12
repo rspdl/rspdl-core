@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn emits_indent_and_dedent_while_ignoring_blank_comments() {
         let output = scan(
-            "신청(request)은 다음 필드들로 구성되어 있다.\n  # comment\n  금액(amount): 필수 정수\n@역할 관리자(admin)\n",
+            "신청(request)은 다음 필드들로 구성되어 있다.\n  # comment\n  금액(amount): 필수 정수\n관리자(admin)는 역할이다.\n",
         );
         assert!(output.diagnostics.is_empty());
         assert_eq!(

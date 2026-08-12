@@ -71,6 +71,13 @@ pub fn parse(source: &str) -> ParseOutput {
             Some(DeclarationKind::DataModel) => {
                 parse_model(line, body, &mut diagnostics).map(DeclarationAst::DataModel)
             }
+            Some(DeclarationKind::Relation) => {
+                parse_relation(line, body, &mut diagnostics).map(DeclarationAst::Relation)
+            }
+            Some(DeclarationKind::RelationalConstraint(kind)) => {
+                parse_relational_constraint(line, body, kind)
+                    .map(DeclarationAst::RelationalConstraint)
+            }
             Some(DeclarationKind::Screen) => {
                 parse_screen(line, body, &mut diagnostics).map(DeclarationAst::Screen)
             }
@@ -86,12 +93,20 @@ pub fn parse(source: &str) -> ParseOutput {
             Some(DeclarationKind::Constraint) => {
                 parse_constraint(line, body, &mut diagnostics).map(DeclarationAst::Constraint)
             }
-            Some(DeclarationKind::Role) => parse_role(line, &mut diagnostics)
+            Some(DeclarationKind::Role) => parse_role(line, body, &mut diagnostics)
                 .map(|declaration| DeclarationAst::Role(RoleAst { declaration })),
-            Some(DeclarationKind::Action) => parse_action(line, &mut diagnostics)
+            Some(DeclarationKind::Action) => parse_action(line, body, &mut diagnostics)
                 .map(|declaration| DeclarationAst::Action(ActionAst { declaration })),
             Some(DeclarationKind::Policy) => {
                 parse_policy(line, body, &mut diagnostics).map(DeclarationAst::Policy)
+            }
+            _ if word_at(line, 0).is_some_and(|word| word.starts_with('@')) => {
+                Err(Diagnostic::error(
+                    "RSPDL-KO-SYN-003",
+                    "ko.syntax.domain_annotation_forbidden",
+                    line.span,
+                )
+                .with_argument("annotation", word_at(line, 0).unwrap_or("@")))
             }
             _ => Err(Diagnostic::error(
                 "RSPDL-KO-SYN-003",
@@ -151,6 +166,8 @@ fn logical_lines(tokens: &[Token]) -> Vec<Line> {
 enum DeclarationKind {
     Enum,
     DataModel,
+    Relation,
+    RelationalConstraint(RelationalConstraintDeclarationKind),
     Screen,
     SumDerivation,
     Recalculation,
@@ -161,12 +178,41 @@ enum DeclarationKind {
     Policy,
 }
 
+#[derive(Clone, Copy)]
+enum RelationalConstraintDeclarationKind {
+    NonEmpty,
+    Required,
+    Unique,
+    Exclusive,
+    Exhaustive,
+    Coexistent,
+}
+
 fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
     match word_at(line, 0) {
-        Some("@열거형") => Some(DeclarationKind::Enum),
-        Some("@역할") => Some(DeclarationKind::Role),
-        Some("@행동") => Some(DeclarationKind::Action),
+        _ if is_enum_header(line) => Some(DeclarationKind::Enum),
         _ if is_data_model_header(line) => Some(DeclarationKind::DataModel),
+        _ if is_role_sentence(line) => Some(DeclarationKind::Role),
+        _ if is_action_sentence(line) => Some(DeclarationKind::Action),
+        _ if is_relation_sentence(line) => Some(DeclarationKind::Relation),
+        _ if is_nonempty_sentence(line) => Some(DeclarationKind::RelationalConstraint(
+            RelationalConstraintDeclarationKind::NonEmpty,
+        )),
+        _ if is_required_relation_sentence(line) => Some(DeclarationKind::RelationalConstraint(
+            RelationalConstraintDeclarationKind::Required,
+        )),
+        _ if is_unique_relation_sentence(line) => Some(DeclarationKind::RelationalConstraint(
+            RelationalConstraintDeclarationKind::Unique,
+        )),
+        _ if is_exclusive_relation_sentence(line) => Some(DeclarationKind::RelationalConstraint(
+            RelationalConstraintDeclarationKind::Exclusive,
+        )),
+        _ if is_exhaustive_relation_sentence(line) => Some(DeclarationKind::RelationalConstraint(
+            RelationalConstraintDeclarationKind::Exhaustive,
+        )),
+        _ if is_coexistent_relation_sentence(line) => Some(DeclarationKind::RelationalConstraint(
+            RelationalConstraintDeclarationKind::Coexistent,
+        )),
         _ if is_screen_sentence(line) => Some(DeclarationKind::Screen),
         _ if is_recalculation_sentence(line) => Some(DeclarationKind::Recalculation),
         _ if is_sum_derivation_sentence(line) => Some(DeclarationKind::SumDerivation),
@@ -182,6 +228,282 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
     }
 }
 
+fn parse_relation(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<RelationAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "relation")?;
+    let tokens = sentence_tokens(line)?;
+    let mut cursor = BodyCursor::new(tokens, line.span);
+    let (source_model, source_marker) = cursor.marked_ref(&["은", "는"])?;
+    let unary = is_unary_relation_sentence(line);
+    let (target_model, target_marker) = if unary {
+        (None, None)
+    } else {
+        let (model, marker) = cursor.marked_ref(&["을", "를"])?;
+        (Some(model), Some(marker))
+    };
+    let id_index = tokens
+        .iter()
+        .enumerate()
+        .skip(cursor.index)
+        .find_map(|(index, token)| matches!(token.kind, TokenKind::CanonicalId(_)).then_some(index))
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-070",
+                "ko.syntax.relation_stable_id_required",
+                line.span,
+            )
+        })?;
+    let declaration = parse_name_with_id_tokens(tokens, cursor.index, id_index, line.span)?;
+    cursor.index = id_index + 1;
+    let mut parameter_models = vec![source_model.clone()];
+    if unary {
+        cursor.expect_word("에")?;
+        cursor.expect_word("해당할")?;
+    } else {
+        match cursor.next_word() {
+            Some("로" | "으로") => {}
+            _ => return Err(cursor.error("ko.syntax.relation_direction_marker_required")),
+        }
+        cursor.expect_word("가질")?;
+        parameter_models.push(
+            target_model
+                .clone()
+                .expect("binary relation has a target model"),
+        );
+    }
+    cursor.expect_word("수")?;
+    cursor.expect_word("있다")?;
+    cursor.expect_end()?;
+    lint_marker(
+        &source_model,
+        &source_marker,
+        "은",
+        "는",
+        line.span,
+        diagnostics,
+    );
+    if let (Some(model), Some(marker)) = (&target_model, &target_marker) {
+        lint_marker(model, marker, "을", "를", line.span, diagnostics);
+    }
+    Ok(RelationAst {
+        declaration,
+        parameter_models,
+        span: line.span,
+    })
+}
+
+fn parse_relational_constraint(
+    line: &Line,
+    body: &[Line],
+    kind: RelationalConstraintDeclarationKind,
+) -> Result<RelationalConstraintAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "relational_constraint")?;
+    let tokens = sentence_tokens(line)?;
+    let mut cursor = BodyCursor::new(tokens, line.span);
+    let constraint = match kind {
+        RelationalConstraintDeclarationKind::NonEmpty => {
+            let (model, _) = cursor.marked_ref(&["은", "는"])?;
+            cursor.expect_word("하나")?;
+            cursor.expect_word("이상")?;
+            cursor.expect_word("존재해야")?;
+            cursor.expect_word("한다")?;
+            cursor.expect_end()?;
+            RelationalConstraintKindAst::NonEmpty { model }
+        }
+        RelationalConstraintDeclarationKind::Required => {
+            cursor.expect_word("모든")?;
+            let (model, _) = cursor.marked_ref(&["은", "는"])?;
+            let (relation, _) = cursor.marked_ref(&["을", "를"])?;
+            cursor.expect_word("하나")?;
+            cursor.expect_word("이상")?;
+            cursor.expect_word("가져야")?;
+            cursor.expect_word("한다")?;
+            cursor.expect_end()?;
+            RelationalConstraintKindAst::Required { model, relation }
+        }
+        RelationalConstraintDeclarationKind::Unique => {
+            cursor.expect_word("각")?;
+            let (model, _) = cursor.marked_ref(&["은", "는"])?;
+            let (relation, _) = cursor.marked_ref(&["을", "를"])?;
+            cursor.expect_word("최대")?;
+            cursor.expect_word("하나만")?;
+            cursor.expect_word("가질")?;
+            cursor.expect_word("수")?;
+            cursor.expect_word("있다")?;
+            cursor.expect_end()?;
+            RelationalConstraintKindAst::Unique { model, relation }
+        }
+        RelationalConstraintDeclarationKind::Exclusive => {
+            let separator = word_position(tokens, "중").ok_or_else(|| {
+                Diagnostic::error(
+                    "RSPDL-KO-SYN-071",
+                    "ko.syntax.relational_constraint_group_references",
+                    line.span,
+                )
+            })?;
+            let relations = relation_group(&tokens[..separator], line.span)?;
+            cursor.index = separator + 1;
+            cursor.expect_word("둘")?;
+            cursor.expect_word("이상은")?;
+            cursor.expect_word("동시에")?;
+            cursor.expect_word("성립할")?;
+            cursor.expect_word("수")?;
+            cursor.expect_word("없다")?;
+            cursor.expect_end()?;
+            RelationalConstraintKindAst::Exclusive { relations }
+        }
+        RelationalConstraintDeclarationKind::Exhaustive => {
+            let separator = word_position(tokens, "중").ok_or_else(|| {
+                Diagnostic::error(
+                    "RSPDL-KO-SYN-071",
+                    "ko.syntax.relational_constraint_group_references",
+                    line.span,
+                )
+            })?;
+            let relations = relation_group(&tokens[..separator], line.span)?;
+            cursor.index = separator + 1;
+            cursor.expect_word("하나")?;
+            cursor.expect_word("이상은")?;
+            cursor.expect_word("항상")?;
+            cursor.expect_word("성립해야")?;
+            cursor.expect_word("한다")?;
+            cursor.expect_end()?;
+            RelationalConstraintKindAst::Exhaustive { relations }
+        }
+        RelationalConstraintDeclarationKind::Coexistent => {
+            let suffix_len = 4;
+            let prefix_end = tokens.len().checked_sub(suffix_len).ok_or_else(|| {
+                Diagnostic::error(
+                    "RSPDL-KO-SYN-071",
+                    "ko.syntax.relational_constraint_group_references",
+                    line.span,
+                )
+            })?;
+            let (references, _) =
+                strip_final_marker(&tokens[..prefix_end], &["은", "는"], line.span)?;
+            let relations = relation_group(&references, line.span)?;
+            cursor.index = prefix_end;
+            cursor.expect_word("동시에")?;
+            cursor.expect_word("성립할")?;
+            cursor.expect_word("수")?;
+            cursor.expect_word("있다")?;
+            cursor.expect_end()?;
+            RelationalConstraintKindAst::Coexistent { relations }
+        }
+    };
+    Ok(RelationalConstraintAst {
+        constraint,
+        span: line.span,
+    })
+}
+
+fn relation_group(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnostic> {
+    let references = parse_reference_list(tokens, span)?;
+    if references.len() >= 2 {
+        Ok(references)
+    } else {
+        Err(Diagnostic::error(
+            "RSPDL-KO-SYN-071",
+            "ko.syntax.relational_constraint_group_references",
+            span,
+        ))
+    }
+}
+
+fn strip_final_marker(
+    tokens: &[Token],
+    markers: &[&str],
+    span: Span,
+) -> Result<(Vec<Token>, String), Diagnostic> {
+    let mut values = tokens.to_vec();
+    if values.is_empty() {
+        return Err(Diagnostic::error(
+            "RSPDL-KO-SYN-071",
+            "ko.syntax.reference_list_required",
+            span,
+        ));
+    }
+    let separate_marker = match values.as_slice() {
+        [
+            ..,
+            Token {
+                kind: TokenKind::QuotedIdentifier(_),
+                ..
+            },
+            Token {
+                kind: TokenKind::Word(word),
+                ..
+            },
+        ] if markers.contains(&word.as_str()) => Some(word.clone()),
+        _ => None,
+    };
+    if let Some(marker) = separate_marker {
+        values.pop();
+        return Ok((values, marker));
+    }
+    let last = values.last_mut().expect("values is not empty");
+    if let TokenKind::Word(word) = &mut last.kind {
+        if let Some((base, marker)) = markers.iter().find_map(|marker| {
+            word.strip_suffix(marker)
+                .filter(|base| !base.is_empty())
+                .map(|base| (base.to_owned(), (*marker).to_owned()))
+        }) {
+            *word = base;
+            return Ok((values, marker));
+        }
+    }
+    Err(Diagnostic::error(
+        "RSPDL-KO-SYN-071",
+        "ko.syntax.reference_list_final_marker_required",
+        span,
+    ))
+}
+
+fn parse_reference_list(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnostic> {
+    if tokens.is_empty() {
+        return Err(Diagnostic::error(
+            "RSPDL-KO-SYN-071",
+            "ko.syntax.reference_list_required",
+            span,
+        ));
+    }
+    let mut values = Vec::new();
+    let mut start = 0;
+    for end in 0..=tokens.len() {
+        if end != tokens.len() && !matches!(tokens[end].kind, TokenKind::Comma) {
+            continue;
+        }
+        if start == end {
+            return Err(Diagnostic::error(
+                "RSPDL-KO-SYN-071",
+                "ko.syntax.reference_list_empty_name",
+                span,
+            ));
+        }
+        let mut parts = Vec::new();
+        for token in &tokens[start..end] {
+            match &token.kind {
+                TokenKind::Word(value) | TokenKind::QuotedIdentifier(value) => {
+                    parts.push(value.clone());
+                }
+                _ => {
+                    return Err(Diagnostic::error(
+                        "RSPDL-KO-SYN-071",
+                        "ko.syntax.reference_list_invalid",
+                        token.span,
+                    ));
+                }
+            }
+        }
+        values.push(parts.join(" "));
+        start = end + 1;
+    }
+    Ok(values)
+}
+
 fn is_screen_sentence(line: &Line) -> bool {
     line.tokens
         .iter()
@@ -190,6 +512,88 @@ fn is_screen_sentence(line: &Line) -> bool {
         == Some("에서는")
         && last_sentence_word(line, 0) == Some("있다")
         && last_sentence_word(line, 1) == Some("수")
+}
+
+fn is_enum_header(line: &Line) -> bool {
+    sentence_words_end_with(line, &["다음", "값", "중", "하나다"])
+}
+
+fn is_role_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["역할이다"])
+}
+
+fn is_action_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["행동이다"])
+}
+
+fn is_relation_sentence(line: &Line) -> bool {
+    is_binary_relation_sentence(line) || is_unary_relation_sentence(line)
+}
+
+fn is_binary_relation_sentence(line: &Line) -> bool {
+    let Some(id_index) = line
+        .tokens
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
+    else {
+        return false;
+    };
+    matches!(word_at(line, id_index + 1), Some("로" | "으로"))
+        && sentence_words_end_with(line, &["가질", "수", "있다"])
+}
+
+fn is_unary_relation_sentence(line: &Line) -> bool {
+    let Some(id_index) = line
+        .tokens
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
+    else {
+        return false;
+    };
+    word_at(line, id_index + 1) == Some("에")
+        && sentence_words_end_with(line, &["해당할", "수", "있다"])
+}
+
+fn is_nonempty_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["하나", "이상", "존재해야", "한다"])
+}
+
+fn is_required_relation_sentence(line: &Line) -> bool {
+    word_at(line, 0) == Some("모든")
+        && sentence_words_end_with(line, &["하나", "이상", "가져야", "한다"])
+}
+
+fn is_unique_relation_sentence(line: &Line) -> bool {
+    word_at(line, 0) == Some("각")
+        && sentence_words_end_with(line, &["최대", "하나만", "가질", "수", "있다"])
+}
+
+fn is_exclusive_relation_sentence(line: &Line) -> bool {
+    sentence_words_end_with(
+        line,
+        &["중", "둘", "이상은", "동시에", "성립할", "수", "없다"],
+    )
+}
+
+fn is_exhaustive_relation_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["중", "하나", "이상은", "항상", "성립해야", "한다"])
+}
+
+fn is_coexistent_relation_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["동시에", "성립할", "수", "있다"])
+        && !is_binary_relation_sentence(line)
+}
+
+fn sentence_words_end_with(line: &Line, suffix: &[&str]) -> bool {
+    let words = line
+        .tokens
+        .iter()
+        .filter_map(|token| match &token.kind {
+            TokenKind::Word(word) => Some(word.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    words.ends_with(suffix)
 }
 
 fn is_sum_derivation_sentence(line: &Line) -> bool {
@@ -258,12 +662,7 @@ fn parse_enum(
     body: &[Line],
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<EnumAst, Diagnostic> {
-    let declaration = parse_natural_block_header(
-        line,
-        Some("@열거형"),
-        &["다음", "값", "중", "하나다"],
-        diagnostics,
-    )?;
+    let declaration = parse_natural_header(line, &["다음", "값", "중", "하나다"], diagnostics)?;
     ensure_body(body, line.span)?;
     let mut values = Vec::new();
     for item in body {
@@ -302,12 +701,8 @@ fn parse_model(
     body: &[Line],
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<DataModelAst, Diagnostic> {
-    let declaration = parse_natural_block_header(
-        line,
-        None,
-        &["다음", "필드들로", "구성되어", "있다"],
-        diagnostics,
-    )?;
+    let declaration =
+        parse_natural_header(line, &["다음", "필드들로", "구성되어", "있다"], diagnostics)?;
     ensure_body(body, line.span)?;
     let mut fields = Vec::new();
     for item in body {
@@ -714,12 +1109,22 @@ fn sentence_tokens(line: &Line) -> Result<&[Token], Diagnostic> {
     Ok(&line.tokens[..line.tokens.len() - 1])
 }
 
-fn parse_role(line: &Line, _diagnostics: &mut Vec<Diagnostic>) -> Result<NamedIdAst, Diagnostic> {
-    parse_annotated_name(line, "@역할")
+fn parse_role(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<NamedIdAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "role")?;
+    parse_natural_header(line, &["역할이다"], diagnostics)
 }
 
-fn parse_action(line: &Line, _diagnostics: &mut Vec<Diagnostic>) -> Result<NamedIdAst, Diagnostic> {
-    parse_annotated_name(line, "@행동")
+fn parse_action(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<NamedIdAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "action")?;
+    parse_natural_header(line, &["행동이다"], diagnostics)
 }
 
 fn parse_annotated_name(line: &Line, keyword: &str) -> Result<NamedIdAst, Diagnostic> {
@@ -753,26 +1158,11 @@ fn parse_annotated_name(line: &Line, keyword: &str) -> Result<NamedIdAst, Diagno
     parse_name_with_id(line, 1, id_index)
 }
 
-fn parse_natural_block_header(
+fn parse_natural_header(
     line: &Line,
-    keyword: Option<&str>,
     predicate: &[&str],
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<NamedIdAst, Diagnostic> {
-    let name_start = if let Some(keyword) = keyword {
-        if word_at(line, 0) != Some(keyword) {
-            return Err(Diagnostic::error(
-                "RSPDL-KO-SYN-004",
-                "ko.syntax.annotated_declaration_required",
-                line.span,
-            )
-            .with_argument("keyword", keyword)
-            .with_argument("id_kind", "local_id"));
-        }
-        1
-    } else {
-        0
-    };
     if !matches!(
         line.tokens.last().map(|token| &token.kind),
         Some(TokenKind::Period)
@@ -794,7 +1184,7 @@ fn parse_natural_block_header(
                 line.span,
             )
         })?;
-    let declaration = parse_name_with_id(line, name_start, id_index)?;
+    let declaration = parse_name_with_id(line, 0, id_index)?;
     let sentence = &line.tokens[id_index + 1..line.tokens.len() - 1];
     let mut cursor = BodyCursor::new(sentence, line.span);
     let marker = cursor
@@ -832,6 +1222,20 @@ fn parse_name_with_id(
         id,
         span: name_span.join(line.tokens[id_index].span),
     })
+}
+
+fn parse_name_with_id_tokens(
+    tokens: &[Token],
+    name_start: usize,
+    id_index: usize,
+    span: Span,
+) -> Result<NamedIdAst, Diagnostic> {
+    let line = Line {
+        indent: 0,
+        tokens: tokens.to_vec(),
+        span,
+    };
+    parse_name_with_id(&line, name_start, id_index)
 }
 
 fn canonical_id_at(line: &Line, index: usize) -> Result<String, Diagnostic> {
@@ -907,6 +1311,12 @@ fn last_sentence_word(line: &Line, offset: usize) -> Option<&str> {
     ));
     let index = line.tokens.len().checked_sub(1 + period + offset)?;
     word_at(line, index)
+}
+
+fn word_position(tokens: &[Token], expected: &str) -> Option<usize> {
+    tokens
+        .iter()
+        .position(|token| matches!(&token.kind, TokenKind::Word(word) if word == expected))
 }
 
 fn parse_type_reference(line: &Line, start: usize) -> Result<TypeReferenceAst, Diagnostic> {
@@ -1202,7 +1612,7 @@ mod tests {
 
     const SOURCE: &str = r#"@모듈 비용 승인(expense)
 
-@열거형 비용 상태(status)는 다음 값 중 하나다.
+비용 상태(status)는 다음 값 중 하나다.
     작성 중(draft)
     승인됨(approved)
 
@@ -1213,8 +1623,8 @@ mod tests {
 
 비용 신청의 금액은 0보다 커야 한다.
 
-@역할 회계 관리자(accounting_manager)
-@행동 변경(change)
+회계 관리자(accounting_manager)는 역할이다.
+변경(change)은 행동이다.
 
 회계 관리자는 비용 신청의 상태를 변경할 수 있다.
 "#;
@@ -1402,5 +1812,72 @@ mod tests {
             let result = std::panic::catch_unwind(|| parse(source));
             assert!(result.is_ok(), "{source:?}");
         }
+    }
+
+    #[test]
+    fn parses_relations_and_relational_meta_rules() {
+        let source = r#"@모듈 관계(relations)
+프로젝트(project)는 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열
+사용자(user)는 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열
+프로젝트는 사용자를 소유자(owner)로 가질 수 있다.
+사용자는 내부(internal)에 해당할 수 있다.
+사용자는 외부(external)에 해당할 수 있다.
+프로젝트는 하나 이상 존재해야 한다.
+모든 프로젝트는 소유자를 하나 이상 가져야 한다.
+각 프로젝트는 소유자를 최대 하나만 가질 수 있다.
+내부, 외부 중 둘 이상은 동시에 성립할 수 없다.
+내부, 외부 중 하나 이상은 항상 성립해야 한다.
+소유자, 소유자 후보는 동시에 성립할 수 있다.
+"#;
+        let output = parse(source);
+
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let declarations = output.document.unwrap().declarations;
+        assert_eq!(
+            declarations
+                .iter()
+                .filter(|declaration| matches!(
+                    declaration,
+                    DeclarationAst::DataModel(DataModelAst { fields, .. }) if !fields.is_empty()
+                ))
+                .count(),
+            2
+        );
+        assert_eq!(
+            declarations
+                .iter()
+                .filter(|declaration| matches!(declaration, DeclarationAst::Relation(_)))
+                .count(),
+            3
+        );
+        assert_eq!(
+            declarations
+                .iter()
+                .filter(|declaration| {
+                    matches!(declaration, DeclarationAst::RelationalConstraint(_))
+                })
+                .count(),
+            6
+        );
+    }
+
+    #[test]
+    fn domain_annotations_are_rejected() {
+        let source = "@모듈 관계(relations)\n@열거형 상태(status)\n@개체 프로젝트(project)\n@관계 소유자(owner)\n@비어있지않음 프로젝트\n@필수 소유자\n@유일 소유자\n@배타 소유자, 검토자\n@전체 소유자, 검토자\n@공존 소유자, 검토자\n@역할 관리자(manager)\n@행동 변경(change)\n";
+        let output = parse(source);
+
+        assert_eq!(
+            output
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.rule_id == "RSPDL-KO-SYN-003")
+                .count(),
+            11
+        );
+        assert!(output.diagnostics.iter().all(|diagnostic| {
+            diagnostic.message_key == "ko.syntax.domain_annotation_forbidden"
+        }));
     }
 }

@@ -28,17 +28,12 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
         surface(&document.module.declaration.name),
         document.module.declaration.id
     ));
-    for (index, declaration) in document.declarations.iter().enumerate() {
-        let previous = index
-            .checked_sub(1)
-            .and_then(|previous| document.declarations.get(previous));
-        if !is_symbol_declaration(declaration) || !previous.is_some_and(is_symbol_declaration) {
-            output.push('\n');
-        }
+    for declaration in &document.declarations {
+        output.push('\n');
         match declaration {
             DeclarationAst::Enum(value) => {
                 output.push_str(&format!(
-                    "@열거형 {}({}){} 다음 값 중 하나다.\n",
+                    "{}({}){} 다음 값 중 하나다.\n",
                     surface(&value.declaration.name),
                     value.declaration.id,
                     if has_final_consonant(&value.declaration.name) {
@@ -56,26 +51,91 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                 }
             }
             DeclarationAst::DataModel(value) => {
-                output.push_str(&format!(
-                    "{}({}){} 다음 필드들로 구성되어 있다.\n",
-                    surface(&value.declaration.name),
-                    value.declaration.id,
-                    if has_final_consonant(&value.declaration.name) {
-                        "은"
-                    } else {
-                        "는"
-                    }
-                ));
-                for field in &value.fields {
-                    output.push_str(&format!(
-                        "    {}({}): {} {}\n",
-                        surface(&field.declaration.name),
-                        field.declaration.id,
-                        if field.required { "필수" } else { "선택" },
-                        type_reference(&field.value_type)
+                if value.fields.is_empty() {
+                    return Err(FormatError::unsupported_constraint(
+                        "필드가 없는 데이터 모델은 Korean 문법으로 표현할 수 없습니다.",
                     ));
+                } else {
+                    output.push_str(&format!(
+                        "{}({}){} 다음 필드들로 구성되어 있다.\n",
+                        surface(&value.declaration.name),
+                        value.declaration.id,
+                        if has_final_consonant(&value.declaration.name) {
+                            "은"
+                        } else {
+                            "는"
+                        }
+                    ));
+                    for field in &value.fields {
+                        output.push_str(&format!(
+                            "    {}({}): {} {}\n",
+                            surface(&field.declaration.name),
+                            field.declaration.id,
+                            if field.required { "필수" } else { "선택" },
+                            type_reference(&field.value_type)
+                        ));
+                    }
                 }
             }
+            DeclarationAst::Relation(value) => match value.parameter_models.as_slice() {
+                [model] => output.push_str(&format!(
+                    "{} {}({})에 해당할 수 있다.\n",
+                    marked(model, "은", "는"),
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                )),
+                [source, target] => output.push_str(&format!(
+                    "{} {} {}({}){} 가질 수 있다.\n",
+                    marked(source, "은", "는"),
+                    marked(target, "을", "를"),
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    directional_marker(&value.declaration.name),
+                )),
+                _ => {
+                    return Err(FormatError::unsupported_constraint(
+                        "Korean 문법은 단항 관계와 이항 관계만 표현할 수 있습니다.",
+                    ));
+                }
+            },
+            DeclarationAst::RelationalConstraint(value) => match &value.constraint {
+                RelationalConstraintKindAst::NonEmpty { model } => output.push_str(&format!(
+                    "{} 하나 이상 존재해야 한다.\n",
+                    marked(model, "은", "는")
+                )),
+                RelationalConstraintKindAst::Required { model, relation } => {
+                    output.push_str(&format!(
+                        "모든 {} {} 하나 이상 가져야 한다.\n",
+                        marked(model, "은", "는"),
+                        marked(relation, "을", "를")
+                    ));
+                }
+                RelationalConstraintKindAst::Unique { model, relation } => {
+                    output.push_str(&format!(
+                        "각 {} {} 최대 하나만 가질 수 있다.\n",
+                        marked(model, "은", "는"),
+                        marked(relation, "을", "를")
+                    ));
+                }
+                RelationalConstraintKindAst::Exclusive { relations } => {
+                    output.push_str(&format!(
+                        "{} 중 둘 이상은 동시에 성립할 수 없다.\n",
+                        reference_list(relations)
+                    ));
+                }
+                RelationalConstraintKindAst::Exhaustive { relations } => {
+                    output.push_str(&format!(
+                        "{} 중 하나 이상은 항상 성립해야 한다.\n",
+                        reference_list(relations)
+                    ));
+                }
+                RelationalConstraintKindAst::Coexistent { relations } => {
+                    output.push_str(&format!(
+                        "{} 동시에 성립할 수 있다.\n",
+                        topic_list(relations)
+                    ));
+                }
+            },
             DeclarationAst::Screen(value) => {
                 let screen = format!(
                     "{}({})에서는",
@@ -129,14 +189,24 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                 output.push_str(&format!("{}\n", constraint(&value.expression)?));
             }
             DeclarationAst::Role(value) => output.push_str(&format!(
-                "@역할 {}({})\n",
+                "{}({}){} 역할이다.\n",
                 surface(&value.declaration.name),
-                value.declaration.id
+                value.declaration.id,
+                if has_final_consonant(&value.declaration.name) {
+                    "은"
+                } else {
+                    "는"
+                }
             )),
             DeclarationAst::Action(value) => output.push_str(&format!(
-                "@행동 {}({})\n",
+                "{}({}){} 행동이다.\n",
                 surface(&value.declaration.name),
-                value.declaration.id
+                value.declaration.id,
+                if has_final_consonant(&value.declaration.name) {
+                    "은"
+                } else {
+                    "는"
+                }
             )),
             DeclarationAst::Policy(value) => {
                 let role = marked(&value.role, "은", "는");
@@ -158,6 +228,25 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
     Ok(output)
 }
 
+fn reference_list(references: &[String]) -> String {
+    references
+        .iter()
+        .map(|reference| surface(reference))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn topic_list(references: &[String]) -> String {
+    let Some((last, rest)) = references.split_last() else {
+        return String::new();
+    };
+    rest.iter()
+        .map(|reference| surface(reference))
+        .chain([marked(last, "은", "는")])
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn object_list(fields: &[String]) -> String {
     let Some((last, rest)) = fields.split_last() else {
         return String::new();
@@ -167,13 +256,6 @@ fn object_list(fields: &[String]) -> String {
         .chain([marked(last, "을", "를")])
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-fn is_symbol_declaration(declaration: &DeclarationAst) -> bool {
-    matches!(
-        declaration,
-        DeclarationAst::Role(_) | DeclarationAst::Action(_)
-    )
 }
 
 fn constraint(expression: &ConstraintExpressionAst) -> Result<String, FormatError> {
@@ -266,6 +348,22 @@ fn marked(value: &str, consonant: &str, vowel: &str) -> String {
     )
 }
 
+fn directional_marker(value: &str) -> &'static str {
+    let Some(last) = value
+        .chars()
+        .last()
+        .filter(|character| ('가'..='힣').contains(character))
+    else {
+        return "로";
+    };
+    let final_consonant = (last as u32 - '가' as u32) % 28;
+    if matches!(final_consonant, 0 | 8) {
+        "로"
+    } else {
+        "으로"
+    }
+}
+
 fn has_final_consonant(value: &str) -> bool {
     value
         .chars()
@@ -290,12 +388,22 @@ mod tests {
             .unwrap_or_else(|| panic!("{:?}", analyzed.diagnostics))
     }
 
+    fn assert_only_module_uses_annotation(source: &str) {
+        let annotations = source
+            .lines()
+            .filter(|line| line.trim_start().starts_with('@'))
+            .collect::<Vec<_>>();
+        assert_eq!(annotations.len(), 1, "{source}");
+        assert!(annotations[0].starts_with("@모듈 "), "{source}");
+    }
+
     #[test]
     fn formatting_is_idempotent() {
-        let source = "@모듈 승인(approval)\n신청(request)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n신청의 금액은 0보다 커야 한다.\n@역할 관리자(manager)\n@행동 변경(change)\n관리자는 신청의 금액을 변경할 수 있다.\n";
+        let source = "@모듈 승인(approval)\n상태(state)는 다음 값 중 하나다.\n  작성 중(draft)\n신청(request)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n신청의 금액은 0보다 커야 한다.\n관리자(manager)는 역할이다.\n변경(change)은 행동이다.\n관리자는 신청의 금액을 변경할 수 있다.\n";
         let original = parse(source).document.unwrap();
         let original_module = semantic_module(&original);
         let first = format_document(&original).unwrap();
+        assert_only_module_uses_annotation(&first);
         let formatted = parse(&first).document.unwrap();
         let second = format_document(&formatted).unwrap();
         assert_eq!(first, second);
@@ -332,5 +440,18 @@ mod tests {
         assert_eq!(original_module, semantic_module(&reparsed_document));
         let second = format_document(&reparsed_document).unwrap();
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn relations_and_meta_rules_round_trip() {
+        let source = "@모듈 관계(relations)\n프로젝트(project)는 다음 필드들로 구성되어 있다.\n  이름(name): 필수 문자열\n사용자(user)는 다음 필드들로 구성되어 있다.\n  이름(name): 필수 문자열\n프로젝트는 사용자를 소유자(owner)로 가질 수 있다.\n프로젝트는 하나 이상 존재해야 한다.\n모든 프로젝트는 소유자를 하나 이상 가져야 한다.\n각 프로젝트는 소유자를 최대 하나만 가질 수 있다.\n";
+        let original = parse(source).document.unwrap();
+        let original_module = semantic_module(&original);
+        let first = format_document(&original).unwrap();
+        assert_only_module_uses_annotation(&first);
+        let reparsed = parse(&first).document.unwrap();
+
+        assert_eq!(original_module, semantic_module(&reparsed));
+        assert_eq!(first, format_document(&reparsed).unwrap());
     }
 }

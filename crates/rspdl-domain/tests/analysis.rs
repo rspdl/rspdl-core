@@ -2,7 +2,8 @@ use rspdl_domain::{
     FieldIntentKind, PolicyEffect, RelationOperator, ScreenOperationKind, SurfaceRef, TextRange,
     UnlinkedAction, UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedField,
     UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedRole, UnlinkedScreen, UnlinkedTypeReference, analyze,
+    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
+    UnlinkedScreen, UnlinkedTypeReference, analyze,
 };
 
 fn span() -> TextRange {
@@ -26,6 +27,8 @@ fn empty_module(name: &str) -> UnlinkedModule {
         declaration: declaration(name, Some("expense")),
         enums: Vec::new(),
         models: Vec::new(),
+        relations: Vec::new(),
+        relational_constraints: Vec::new(),
         screens: Vec::new(),
         derivations: Vec::new(),
         recalculations: Vec::new(),
@@ -202,6 +205,63 @@ fn unresolved_symbols_are_rejected_by_the_shared_analyzer() {
         diagnostic.rule_id == "RSPDL-LINK-003"
             && diagnostic.message_key == "semantic.symbol.not_found"
             && diagnostic.argument("reference") == Some("missing_role")
+    }));
+}
+
+#[test]
+fn fieldless_data_models_are_rejected_by_the_shared_analyzer() {
+    let mut module = empty_module("Fieldless model");
+    module.models.push(UnlinkedDataModel {
+        declaration: declaration("Project", Some("project")),
+        fields: Vec::new(),
+    });
+
+    let output = analyze(module);
+
+    assert!(output.module.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-DATA-007"
+            && diagnostic.message_key == "semantic.model.field_required"
+    }));
+}
+
+#[test]
+fn relation_cardinality_sentence_must_name_the_anchor_model() {
+    let mut module = empty_module("Relations");
+    for (name, id) in [("Project", "project"), ("User", "user")] {
+        module.models.push(UnlinkedDataModel {
+            declaration: declaration(name, Some(id)),
+            fields: vec![UnlinkedField {
+                declaration: declaration("Name", Some("name")),
+                required: true,
+                value_type: UnlinkedTypeReference::String,
+            }],
+        });
+    }
+    module.relations.push(UnlinkedRelation {
+        declaration: declaration("Owner", Some("owner")),
+        parameter_models: vec![reference("project"), reference("user")],
+        span: span(),
+    });
+    module
+        .relational_constraints
+        .push(UnlinkedRelationalConstraint {
+            declaration: declaration("", None),
+            constraint: UnlinkedRelationalConstraintKind::Required {
+                model: reference("user"),
+                relation: reference("owner"),
+            },
+            span: span(),
+        });
+
+    let output = analyze(module);
+
+    assert!(output.module.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-REL-002"
+            && diagnostic.message_key == "semantic.relation.cardinality_anchor_mismatch"
+            && diagnostic.argument("expected_model_id") == Some("expense.project")
+            && diagnostic.argument("actual_model_id") == Some("expense.user")
     }));
 }
 

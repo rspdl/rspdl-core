@@ -13,6 +13,7 @@ pub mod error;
 pub mod frontend;
 pub mod logic;
 pub mod policy_analysis;
+pub mod relational_analysis;
 pub mod semantic;
 pub mod set;
 pub mod solver;
@@ -31,7 +32,8 @@ pub use frontend::{
     Frontend, FrontendOutput, SurfaceRef, UnlinkedAction, UnlinkedConstraint, UnlinkedDataModel,
     UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent,
     UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
-    UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
+    UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 pub use logic::{
     Atom, AtomView, BooleanExpression, BooleanExpressionView, ComparisonOperator,
@@ -42,12 +44,18 @@ pub use policy_analysis::{
     PolicyAnalysisQuery, PolicyBranch, PolicyConflict, TotalDecisionAnalysis, TotalDecisionPoint,
     analyze_total_decision_point,
 };
+pub use relational_analysis::{
+    BoundedModelConfigurationError, BoundedModelOptions, BoundedModelResult,
+    MAX_BOUNDED_SCOPE_PER_MODEL, RelationalAnalysisError, RelationalWitness, VirtualEntity,
+    VirtualFieldValue, VirtualRelationTuple, find_bounded_relational_model,
+};
 pub use semantic::{
     ActionDefinition, ConstraintDefinition, ConstraintOperand, DataModelDefinition,
     DerivationDefinition, DerivationExpression, EnumDefinition, EnumVariantDefinition,
     FieldDefinition, FieldIntentDefinition, FieldIntentKind, PolicyDefinition, PolicyEffect,
-    RelationOperator, RoleDefinition, ScreenDefinition, ScreenOperationDefinition,
-    ScreenOperationKind, SemanticModule,
+    RelationDefinition, RelationOperator, RelationalConstraintDefinition, RelationalConstraintKind,
+    RoleDefinition, ScreenDefinition, ScreenOperationDefinition, ScreenOperationKind,
+    SemanticModule,
 };
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;

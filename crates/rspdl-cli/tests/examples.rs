@@ -73,3 +73,28 @@ fn checks_the_expense_approval_example_with_runtime_fixture_data() {
             .is_empty()
     );
 }
+
+#[test]
+fn finds_a_virtual_model_without_runtime_data() {
+    let source = workspace_root().join("examples/project-ownership.rspdl");
+    let output = Command::new(env!("CARGO_BIN_EXE_rspdl"))
+        .args([
+            "model",
+            source.to_str().expect("example path should be valid UTF-8"),
+            "--scope",
+            "2",
+            "--json",
+        ])
+        .output()
+        .expect("rspdl command should run");
+
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["result"]["status"], "sat");
+    assert!(
+        !report["result"]["witness"]["relation_tuples"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}

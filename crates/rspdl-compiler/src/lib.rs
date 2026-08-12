@@ -6,10 +6,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use rspdl_domain::{
-    Atom, BooleanExpression, CanonicalId, CanonicalType, CanonicalValue, ConstraintOperand,
-    ConstraintProblem, ConstraintSolver, Diagnostic, Frontend, FrontendOutput, PolicyEffect,
-    RelationOperator, SemanticModule, Severity, SolveOptions, SolveResult, Term, TextRange,
-    analyze,
+    Atom, BooleanExpression, BoundedModelOptions, BoundedModelResult, CanonicalId, CanonicalType,
+    CanonicalValue, ConstraintOperand, ConstraintProblem, ConstraintSolver, Diagnostic, Frontend,
+    FrontendOutput, PolicyEffect, RelationOperator, SemanticModule, Severity, SolveOptions,
+    SolveResult, Term, TextRange, analyze, find_bounded_relational_model,
 };
 use rspdl_ko::KoreanFrontend;
 use rspdl_solver_z3::Z3Solver;
@@ -20,6 +20,58 @@ use serde_json::{Map, Value};
 pub struct Compilation {
     pub module: Option<SemanticModule>,
     pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModelFindingOptions {
+    pub scope_per_model: usize,
+    pub solver_timeout: Duration,
+}
+
+impl Default for ModelFindingOptions {
+    fn default() -> Self {
+        Self {
+            scope_per_model: 3,
+            solver_timeout: Duration::from_secs(5),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ModelFindingFailure {
+    pub rule_id: String,
+    pub message_key: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ModelFindingReport {
+    pub compilation: Compilation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<BoundedModelResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure: Option<ModelFindingFailure>,
+}
+
+impl ModelFindingReport {
+    pub fn has_errors(&self) -> bool {
+        self.compilation
+            .diagnostics
+            .iter()
+            .any(Diagnostic::is_error)
+            || self.failure.is_some()
+            || matches!(
+                self.result,
+                Some(BoundedModelResult::Unknown { .. } | BoundedModelResult::Unsupported { .. })
+            )
+    }
+
+    pub fn has_findings(&self) -> bool {
+        matches!(
+            self.result,
+            Some(BoundedModelResult::UnsatWithinBound { .. })
+        )
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,6 +127,78 @@ impl WorkspaceCompilation {
 
 pub fn compile_ko(source: &str) -> Compilation {
     compile_with_frontend(&KoreanFrontend, source)
+}
+
+/// Compiles a Korean source and asks the Solver for a virtual finite data
+/// world. The command consumes declarations only; no runtime records are used.
+pub fn find_ko_model(source: &str, options: ModelFindingOptions) -> ModelFindingReport {
+    let compilation = compile_ko(source);
+    if compilation.diagnostics.iter().any(Diagnostic::is_error) {
+        return ModelFindingReport {
+            compilation,
+            result: None,
+            failure: None,
+        };
+    }
+    let Some(module) = compilation.module.as_ref() else {
+        return ModelFindingReport {
+            compilation,
+            result: None,
+            failure: None,
+        };
+    };
+    let solve_options = match SolveOptions::with_timeout(options.solver_timeout) {
+        Ok(options) => options,
+        Err(error) => {
+            return model_finding_failure(
+                compilation,
+                "RSPDL-MODEL-001",
+                "model_finding.configuration_error",
+                error,
+            );
+        }
+    };
+    let bounded_options = match BoundedModelOptions::new(options.scope_per_model, solve_options) {
+        Ok(options) => options,
+        Err(error) => {
+            return model_finding_failure(
+                compilation,
+                "RSPDL-MODEL-001",
+                "model_finding.configuration_error",
+                error,
+            );
+        }
+    };
+    match find_bounded_relational_model(module, &Z3Solver::new(), bounded_options) {
+        Ok(result) => ModelFindingReport {
+            compilation,
+            result: Some(result),
+            failure: None,
+        },
+        Err(error) => model_finding_failure(
+            compilation,
+            "RSPDL-MODEL-002",
+            "model_finding.backend_error",
+            error,
+        ),
+    }
+}
+
+fn model_finding_failure(
+    compilation: Compilation,
+    rule_id: &str,
+    message_key: &str,
+    error: impl ToString,
+) -> ModelFindingReport {
+    ModelFindingReport {
+        compilation,
+        result: None,
+        failure: Some(ModelFindingFailure {
+            rule_id: rule_id.into(),
+            message_key: message_key.into(),
+            reason: error.to_string(),
+        }),
+    }
 }
 
 /// Compiles any surface language that implements the shared frontend contract.
@@ -191,6 +315,8 @@ pub fn compile_files_with_frontend(
             .iter()
             .map(|value| &value.id)
             .chain(module.models.iter().map(|value| &value.id))
+            .chain(module.relations.iter().map(|value| &value.id))
+            .chain(module.relational_constraints.iter().map(|value| &value.id))
             .chain(module.screens.iter().map(|value| &value.id))
             .chain(module.constraints.iter().map(|value| &value.id))
             .chain(module.roles.iter().map(|value| &value.id))
@@ -974,7 +1100,7 @@ mod tests {
 
     const SOURCE: &str = r#"@모듈 비용 승인(expense)
 
-@열거형 비용 상태(status)는 다음 값 중 하나다.
+비용 상태(status)는 다음 값 중 하나다.
     제출됨(submitted)
     승인됨(approved)
 
@@ -989,9 +1115,9 @@ mod tests {
 
 비용 신청의 신청자와 승인자는 달라야 한다.
 
-@역할 회계 관리자(accounting_manager)
-@역할 사용자(user)
-@행동 변경(change)
+회계 관리자(accounting_manager)는 역할이다.
+사용자(user)는 역할이다.
+변경(change)은 행동이다.
 
 회계 관리자는 비용 신청의 승인 상태를 변경할 수 있다.
 
@@ -1156,7 +1282,7 @@ mod tests {
     #[test]
     fn executes_every_v01_literal_comparison() {
         let source = r#"@모듈 비교(comparison)
-@열거형 상태(state)는 다음 값 중 하나다.
+상태(state)는 다음 값 중 하나다.
     작성 중(draft)
     완료(done)
 항목(item)은 다음 필드들로 구성되어 있다.
@@ -1252,8 +1378,14 @@ mod tests {
     #[test]
     fn duplicate_qualified_symbols_across_modules_are_link_errors() {
         let compilation = compile_ko_files(vec![
-            KoSource::new("one.rspdl", "@모듈 하나(one)\n@역할 관리자(shared.admin)\n"),
-            KoSource::new("two.rspdl", "@모듈 둘(two)\n@역할 운영자(shared.admin)\n"),
+            KoSource::new(
+                "one.rspdl",
+                "@모듈 하나(one)\n관리자(shared.admin)는 역할이다.\n",
+            ),
+            KoSource::new(
+                "two.rspdl",
+                "@모듈 둘(two)\n운영자(shared.admin)는 역할이다.\n",
+            ),
         ]);
 
         assert!(compilation.has_errors());
@@ -1317,5 +1449,242 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["alpha.item", "beta.item"]
         );
+    }
+
+    const RELATIONAL_SOURCE: &str = r#"@모듈 관계 테스트(relational)
+프로젝트(project)는 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열
+사용자(user)는 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열
+프로젝트는 사용자를 소유자(owner)로 가질 수 있다.
+프로젝트는 사용자를 검토자(reviewer)로 가질 수 있다.
+프로젝트는 하나 이상 존재해야 한다.
+모든 프로젝트는 소유자를 하나 이상 가져야 한다.
+각 프로젝트는 소유자를 최대 하나만 가질 수 있다.
+모든 프로젝트는 검토자를 하나 이상 가져야 한다.
+"#;
+
+    #[test]
+    fn finds_virtual_entities_for_required_unique_relation() {
+        let report = find_ko_model(
+            RELATIONAL_SOURCE,
+            ModelFindingOptions {
+                scope_per_model: 1,
+                ..ModelFindingOptions::default()
+            },
+        );
+
+        assert!(!report.has_errors(), "{:?}", report.failure);
+        let Some(BoundedModelResult::Sat { witness, .. }) = report.result else {
+            panic!("expected SAT model: {:?}", report.result);
+        };
+        assert!(
+            witness
+                .entities
+                .iter()
+                .any(|entity| { entity.model_id.as_str() == "relational.project" })
+        );
+        assert_eq!(
+            witness
+                .relation_tuples
+                .iter()
+                .filter(|tuple| tuple.relation_id.as_str() == "relational.owner")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn reports_unsat_only_within_the_requested_bound() {
+        let source =
+            format!("{RELATIONAL_SOURCE}소유자, 검토자 중 둘 이상은 동시에 성립할 수 없다.\n");
+        let scope_one = find_ko_model(
+            &source,
+            ModelFindingOptions {
+                scope_per_model: 1,
+                ..ModelFindingOptions::default()
+            },
+        );
+        let scope_two = find_ko_model(
+            &source,
+            ModelFindingOptions {
+                scope_per_model: 2,
+                ..ModelFindingOptions::default()
+            },
+        );
+
+        let Some(BoundedModelResult::UnsatWithinBound {
+            scope_per_model,
+            core_rule_ids,
+        }) = scope_one.result
+        else {
+            panic!("expected bound-1 UNSAT: {:?}", scope_one.result);
+        };
+        assert_eq!(scope_per_model, 1);
+        assert!(core_rule_ids.len() >= 4);
+        assert!(matches!(
+            scope_two.result,
+            Some(BoundedModelResult::Sat { .. })
+        ));
+    }
+
+    #[test]
+    fn compatible_coexistence_does_not_create_a_false_conflict() {
+        let source = format!("{RELATIONAL_SOURCE}소유자, 검토자는 동시에 성립할 수 있다.\n");
+        let report = find_ko_model(
+            &source,
+            ModelFindingOptions {
+                scope_per_model: 1,
+                ..ModelFindingOptions::default()
+            },
+        );
+
+        assert!(matches!(
+            report.result,
+            Some(BoundedModelResult::Sat { .. })
+        ));
+    }
+
+    #[test]
+    fn exclusive_exhaustive_unary_relations_classify_each_existing_entity_once() {
+        let source = r#"@모듈 사용자 분류(classification)
+사용자(user)는 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열
+사용자는 내부 사용자(internal)에 해당할 수 있다.
+사용자는 외부 사용자(external)에 해당할 수 있다.
+사용자는 하나 이상 존재해야 한다.
+내부 사용자, 외부 사용자 중 둘 이상은 동시에 성립할 수 없다.
+내부 사용자, 외부 사용자 중 하나 이상은 항상 성립해야 한다.
+"#;
+        let report = find_ko_model(
+            source,
+            ModelFindingOptions {
+                scope_per_model: 1,
+                ..ModelFindingOptions::default()
+            },
+        );
+        let Some(BoundedModelResult::Sat { witness, .. }) = report.result else {
+            panic!("expected SAT classification: {:?}", report.result);
+        };
+
+        assert_eq!(witness.entities.len(), 1);
+        assert_eq!(witness.relation_tuples.len(), 1);
+    }
+
+    #[test]
+    fn contradictory_compatibility_metadata_is_a_structured_error() {
+        let source = format!(
+            "{RELATIONAL_SOURCE}소유자, 검토자 중 둘 이상은 동시에 성립할 수 없다.\n검토자, 소유자는 동시에 성립할 수 있다.\n"
+        );
+        let compilation = compile_ko(&source);
+
+        assert!(compilation.module.is_none());
+        assert!(compilation.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-REL-004"
+                && diagnostic.message_key == "semantic.relation.compatibility_conflict"
+                && diagnostic.argument("relation_ids")
+                    == Some("relational.owner,relational.reviewer")
+        }));
+    }
+
+    #[test]
+    fn compatibility_conflict_is_detected_inside_larger_relation_groups() {
+        let source = r#"@모듈 분류(classification)
+사용자(user)는 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열
+사용자는 내부(internal)에 해당할 수 있다.
+사용자는 외부(external)에 해당할 수 있다.
+사용자는 파트너(partner)에 해당할 수 있다.
+내부, 외부, 파트너 중 둘 이상은 동시에 성립할 수 없다.
+외부, 파트너는 동시에 성립할 수 있다.
+"#;
+        let compilation = compile_ko(source);
+
+        assert!(compilation.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-REL-004"
+                && diagnostic.argument("relation_ids")
+                    == Some("classification.external,classification.partner")
+        }));
+    }
+
+    #[test]
+    fn relation_group_input_order_does_not_change_canonical_semantics() {
+        let prefix = r#"@모듈 분류(classification)
+사용자(user)는 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열
+사용자는 내부(internal)에 해당할 수 있다.
+사용자는 외부(external)에 해당할 수 있다.
+"#;
+        let forward = compile_ko(&format!(
+            "{prefix}내부, 외부 중 둘 이상은 동시에 성립할 수 없다.\n"
+        ));
+        let reverse = compile_ko(&format!(
+            "{prefix}외부, 내부 중 둘 이상은 동시에 성립할 수 없다.\n"
+        ));
+
+        assert_eq!(forward.module, reverse.module);
+        assert!(forward.diagnostics.is_empty());
+        assert!(reverse.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn required_attribute_constraints_participate_in_the_virtual_theory() {
+        let source = r#"@모듈 속성(attribute)
+항목(item)은 다음 필드들로 구성되어 있다.
+    값(value): 필수 정수
+항목의 값은 0보다 커야 한다.
+항목의 값은 0보다 작아야 한다.
+항목은 하나 이상 존재해야 한다.
+"#;
+        let report = find_ko_model(
+            source,
+            ModelFindingOptions {
+                scope_per_model: 1,
+                ..ModelFindingOptions::default()
+            },
+        );
+
+        let Some(BoundedModelResult::UnsatWithinBound { core_rule_ids, .. }) = report.result else {
+            panic!("expected attribute contradiction: {:?}", report.result);
+        };
+        assert_eq!(core_rule_ids.len(), 3);
+    }
+
+    #[test]
+    fn absent_optional_attribute_prevents_a_false_contradiction() {
+        let source = r#"@모듈 선택 속성(optional_attribute)
+항목(item)은 다음 필드들로 구성되어 있다.
+    값(value): 선택 정수
+항목의 값은 0보다 커야 한다.
+항목의 값은 0보다 작아야 한다.
+항목은 하나 이상 존재해야 한다.
+"#;
+        let report = find_ko_model(
+            source,
+            ModelFindingOptions {
+                scope_per_model: 1,
+                ..ModelFindingOptions::default()
+            },
+        );
+
+        let Some(BoundedModelResult::Sat { witness, .. }) = report.result else {
+            panic!("optional field may be absent: {:?}", report.result);
+        };
+        assert!(witness.field_values.is_empty());
+    }
+
+    #[test]
+    fn unsupported_derivation_is_not_approximated_as_sat() {
+        let report = find_ko_model(
+            include_str!("../../../examples/field-provenance.rspdl"),
+            ModelFindingOptions::default(),
+        );
+
+        assert!(matches!(
+            report.result,
+            Some(BoundedModelResult::Unsupported { ref constructs, .. })
+                if constructs == &["derivation"]
+        ));
+        assert!(report.has_errors());
     }
 }
