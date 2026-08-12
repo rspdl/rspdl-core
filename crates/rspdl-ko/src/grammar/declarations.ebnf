@@ -1,0 +1,51 @@
+# The declaration migration keeps document/block slicing in the handwritten
+# parser shell.  These public rules describe the token shape of one header or
+# one indented item, and are exercised as a shadow oracle while that shell
+# remains authoritative.
+
+pub module_header =
+    "@모듈"
+    name: @surface_name()
+    id: @canonical_id()
+    ;
+
+pub enum_header =
+    name: @surface_name()
+    id: @canonical_id()
+    ("은" | "는")
+    "다음" "값" "중" "하나다" "."
+    ;
+
+pub enum_value =
+    name: @surface_name()
+    id: @canonical_id()
+    ;
+
+pub data_model_header =
+    name: @surface_name()
+    id: @canonical_id()
+    ("은" | "는")
+    "다음" "필드들로" "구성되어" "있다" "."
+    ;
+
+pub field_item =
+    name: @surface_name()
+    id: @canonical_id()
+    ":"
+    required: ("필수" | "선택")
+    value_type: @surface_name()
+    ;
+
+pub role_header =
+    name: @surface_name()
+    id: @canonical_id()
+    ("은" | "는")
+    "역할이다" "."
+    ;
+
+pub action_header =
+    name: @surface_name()
+    id: @canonical_id()
+    ("은" | "는")
+    "행동이다" "."
+    ;
