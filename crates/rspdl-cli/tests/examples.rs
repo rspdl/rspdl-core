@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+use rspdl_domain::MAX_BOUNDED_SCOPE_PER_MODEL;
+
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -145,4 +147,28 @@ fn distinguishes_bound_specific_unsat_from_a_larger_sat_scope() {
             .len()
             >= 2
     );
+}
+
+#[test]
+fn out_of_range_model_scope_is_a_structured_error() {
+    let source = workspace_root().join("examples/project-ownership.rspdl");
+    let invalid_scope = (MAX_BOUNDED_SCOPE_PER_MODEL + 1).to_string();
+    let output = Command::new(env!("CARGO_BIN_EXE_rspdl"))
+        .arg("model")
+        .arg(source)
+        .arg("--scope")
+        .arg(invalid_scope)
+        .arg("--json")
+        .output()
+        .expect("rspdl command should run");
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["failure"]["rule_id"], "RSPDL-MODEL-001");
+    assert_eq!(
+        report["failure"]["message_key"],
+        "model_finding.configuration_error"
+    );
+    assert!(report.get("result").is_none());
 }

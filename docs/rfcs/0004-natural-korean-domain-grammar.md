@@ -368,7 +368,9 @@ allow와 deny 사이의 우선순위는 0.1에서 정의하지 않는다. 결과
 
 ### 7.4 관계 bounded model finder
 
-`rspdl model <file> --scope <n>`은 실제 JSON record 없이 model별 최대 `n`개의 가상 entity slot과 relation tuple을 가정한다. `SAT`은 가상 witness, `UNSAT_WITHIN_BOUND`는 해당 scope에 한정된 최소 규칙 증거, `UNKNOWN`은 이유를 반환한다. Scope 한정 UNSAT을 전역 모순으로 표현하지 않는다.
+`rspdl model <file> --scope <n>`은 실제 JSON record 없이 model별 최대 `n`개의 가상 entity slot과 relation tuple을 가정한다. `SAT`은 가상 witness, `UNSAT_WITHIN_BOUND`는 해당 scope에 한정된 최소 규칙 증거, `UNKNOWN`은 이유를 반환한다. 의미 손실 없이 lowering할 수 없는 construct는 solver 실행 전에 `UNSUPPORTED`로 반환한다. Scope 한정 UNSAT을 전역 모순으로 표현하지 않는다.
+
+`--scope`는 eager grounding 안전 한계 안의 `1..=32`만 허용한다. `0`, `33` 이상 또는 정수가 아닌 값은 solver 실행 전에 configuration error가 된다. 이 상한은 제품 데이터 세계의 의미적 최대 크기가 아니라 구현 안전 한계다.
 
 ## 8. 진단과 적합성
 
@@ -384,7 +386,7 @@ rspdl check <file>... --data <file> --json
 rspdl format <file>...
 ```
 
-정상 통과와 `SAT`은 종료 코드 `0`, constraint/policy finding 또는 `UNSAT_WITHIN_BOUND`는 `2`, 문법·입력·backend 오류와 `UNKNOWN`은 `1`이다.
+정상 통과와 `SAT`은 종료 코드 `0`, constraint/policy finding 또는 `UNSAT_WITHIN_BOUND`는 `2`, 문법·입력·backend 오류와 `UNKNOWN`, `UNSUPPORTED`는 `1`이다.
 
 복수 source는 파일 경로의 정렬 순서로 처리하며 각 파일은 독립된 `@모듈` 선언을 가진다. 같은 module ID가 여러 파일에 선언되면 linker 오류다. 단일 파일의 JSON 출력 계약은 유지하고, 복수 파일의 parse·compile·check 결과에는 진단 위치를 구분할 수 있도록 source 경로가 포함된다.
 

@@ -146,6 +146,7 @@ unary 분류에서 `exclusive`와 `exhaustive`를 함께 쓰면 각 entity가 �
     이름(name): 필수 문자열
 
 프로젝트는 사용자를 소유자(owner)로 가질 수 있다.
+프로젝트는 사용자를 검토자(reviewer)로 가질 수 있다.
 사용자는 내부 사용자(internal)에 해당할 수 있다.
 사용자는 외부 사용자(external)에 해당할 수 있다.
 

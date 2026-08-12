@@ -32,13 +32,16 @@ reviews:
     - path: "crates/rspdl-domain/**"
       instructions: |
         Review against docs/architecture.md and
-        docs/rfcs/0002-typed-domains-and-logic-core.md. Preserve the
-        locale-independent semantic boundary and canonical ordering contracts.
+        docs/rfcs/0002-typed-domains-and-logic-core.md and
+        docs/rfcs/0007-finite-relational-model-finding.md. Preserve the
+        locale-independent semantic boundary, exact bounded-model outcomes,
+        and canonical ordering contracts.
     - path: "crates/rspdl-compiler/**"
       instructions: |
         Review against docs/architecture.md,
         docs/rfcs/0004-natural-korean-domain-grammar.md, and
-        docs/rfcs/0006-total-policy-condition-space-analysis.md. Focus on name
+        docs/rfcs/0006-total-policy-condition-space-analysis.md, and
+        docs/rfcs/0007-finite-relational-model-finding.md. Focus on name
         resolution, type checking, JSON binding, optional-field semantics,
         deterministic findings, and the direct-matching/Z3 execution contract.
     - path: "crates/rspdl-cli/**"
