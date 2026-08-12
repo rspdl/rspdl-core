@@ -45,6 +45,7 @@ fn compile_grammar(grammar_path: &std::path::Path, output_dir: &std::path::Path)
         "natural_decl",
         "quoted_equal",
         "quoted_not_equal",
+        "screen_model_ref",
         "string_equal",
         "string_not_equal",
         "surface_name",

@@ -1,0 +1,52 @@
+# Sentence-shaped data provenance declarations. These entries are shadowed
+# against the handwritten parser until their cutover is explicitly approved.
+
+pub screen_statement =
+    screen_name: @surface_name()
+    screen_id: @canonical_id()
+    "에서는"
+    (
+        model: @marked_ref("의")
+        { field: @comma_ref() }
+        field: @marked_ref("을", "를")
+        operation: ("입력할" | "조회할" | "수정할")
+      |
+        model: @screen_model_ref("을", "를")
+        operation: ("생성할" | "조회할" | "수정할" | "삭제할")
+    )
+    "수"
+    "있다"
+    "."
+    ;
+
+pub sum_derivation_statement =
+    target_model: @marked_ref("의")
+    target_field: @marked_ref("은", "는")
+    source_model: @marked_ref("의")
+    source_field: @marked_ref("의")
+    "합계로"
+    "계산한다"
+    "."
+    ;
+
+pub recalculation_statement =
+    source_model: @marked_ref("의")
+    source_field: @marked_ref("이", "가")
+    "바뀔"
+    "때"
+    target_model: @marked_ref("의")
+    target_field: @marked_ref("을", "를")
+    "다시"
+    "계산한다"
+    "."
+    ;
+
+pub field_intent_statement =
+    model: @marked_ref("의")
+    field: @marked_ref("은", "는")
+    intent: (
+        "내부" "관리에만" "사용한다"
+      | "사용자" "화면에서" "조회하지" "않는다"
+    )
+    "."
+    ;
