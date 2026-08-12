@@ -44,10 +44,11 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 - Locale과 분리된 stable ID linking, type checking 및 data usage analyzer
 - message key와 정렬된 argument를 사용하는 Locale 중립 structured diagnostic
 - Z3 기반 record constraint 검사
+- 단일 닫힌 enum decision point의 정적 gap, compatible overlap 및 allow/deny conflict 분석 API
 - 결정적 직접 runtime policy match와 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - JSON compilation 및 diagnostic 출력
 
-화면 간 순서와 분기, 삭제 이후 접근, 교차 모델 relation/join 실행, 일반 계산식과 조건부 정책 분석은 목표 범위이지만 아직 구현되지 않았습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
+화면 간 순서와 분기, 삭제 이후 접근, 교차 모델 relation/join 실행, 일반 계산식, 조건부 정책의 한국어 문법·compiler 진단 연결, default·override와 unreachable 분석은 목표 범위이지만 아직 구현되지 않았습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
 
 ## 짧은 예시
 

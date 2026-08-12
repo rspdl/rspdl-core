@@ -1,7 +1,8 @@
 use crate::{BooleanExpression, CanonicalId, CanonicalValue, Domain};
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::time::Duration;
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct VariableDomain {
     id: CanonicalId,
     domain: Domain,
@@ -77,7 +78,7 @@ impl SolveOptions {
         self.timeout
     }
 }
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CanonicalModel(pub BTreeMap<CanonicalId, CanonicalValue>);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SolveResult {

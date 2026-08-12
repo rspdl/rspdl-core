@@ -3,7 +3,7 @@ id: total-policy-condition-space-analysis
 title: Total Policy Condition Spaces and SMT-First Consistency Analysis
 type: rfc
 status: proposed
-version: "0.2"
+version: "0.3"
 summary: Defines closed policy vocabulary, exhaustive condition-space coverage, explicit override semantics, and SMT-first consistency analysis.
 topics:
   - policy-analysis
@@ -38,6 +38,19 @@ RSPDL은 구체적인 runtime record가 없어도 선언된 유효 입력 공간
 - 전제조건 또는 상위 분기 때문에 절대 적용되지 않는 `unreachable`
 
 정적 조건 공간 분석은 typed SMT solving을 우선 사용한다. 현재 runtime policy match는 선언된 무조건 allow/deny 정책을 직접 결정적으로 대조한다. Datalog evaluator는 제거했으며, 유한 관계의 재귀적 폐쇄가 필요한 구체적인 제품 시나리오가 생길 때에만 별도 RFC로 재검토한다.
+
+### 구현된 기반 slice
+
+`rspdl-domain`은 solver 구현에 의존하지 않는 `TotalDecisionPoint` 분석 API를 제공한다. 현재 slice는 의도적으로 다음 범위만 지원한다.
+
+- 선언된 variant 전체를 포함하는 단일 닫힌 enum 변수
+- stable ID, typed Boolean condition과 `allow` 또는 `deny` effect를 가진 독립 branch
+- variant별 gap query와 canonical witness
+- 같은 effect의 compatible overlap과 allow/deny conflict를 구분하는 branch pair query
+- branch stable ID 순서에 따른 결정적 결과
+- solver `UNKNOWN`과 backend error를 성공으로 근사하지 않는 결과 계약
+
+`rspdl-solver-z3` 통합 테스트가 실제 SMT lowering과 witness를 검증한다. 이 기반 API는 아직 Controlled Korean 조건식, `UnlinkedModule`/`SemanticModule`, compiler diagnostic 또는 CLI에 연결되지 않았다. 또한 default, override, 순서 있는 `else-if`, effective condition, unreachable, 다중 변수와 일반 effect compatibility를 구현하지 않는다. 특히 독립 branch 조건만으로 임의의 우선순위를 만들어 unreachable을 보고하지 않는다.
 
 ## 제품 문제와 실패 시나리오
 

@@ -91,13 +91,15 @@ target_spec: "0.2.0"
   - 화면 입력과 합계 계산을 생산자로 연결한 field provenance 검증
   - 단일 정수 필드 합계, 원본 변경 시 재계산과 내부/비표시 의도
   - parser, formatter, Canonical domain model, Z3 constraint check와 결정적 직접 runtime policy match
+  - 단일 닫힌 enum decision point의 backend-neutral 정적 gap, compatible overlap 및 allow/deny conflict 분석 API와 Z3 witness
   - 공통 `Frontend` trait, stable-ID Unlinked IR과 Locale 독립 linking, type checking 및 data usage analyzer
   - runtime request별 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - 아직 구현하지 않은 요구사항은 다음과 같다.
   - 화면 간 순서·분기, 삭제 이후 접근과 path별 데이터 availability
   - relation/join 기반 교차 모델 집계 실행과 일반 계산식
-  - 조건부 정책과 전체 조건 공간의 정적 gap, overlap 및 unreachable 분석
-  - 조건부 field requiredness, effect compatibility, explicit default와 override
+  - 조건부 정책의 한국어 표면 문법, Canonical IR lowering과 compiler structured diagnostic 연결
+  - 다중 입력 domain과 일반 effect compatibility, 조건부 field requiredness, explicit default와 override
+  - effective condition에 기반한 unreachable 분석
   - 유저 플로우, 관계, 컬렉션, module import와 다국어 의미 동등성
   - semantic dependency 기반 영향 분석과 downstream code generation
 - 성공 기준은 다음과 같다.

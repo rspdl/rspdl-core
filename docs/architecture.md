@@ -167,12 +167,13 @@ Locale에 독립적인 compiler domain을 소유한다.
 - stable ID symbol table과 linking
 - Semantic Graph
 - 타입, 데이터, 플로우와 정책 의미 규칙
+- 단일 닫힌 enum decision point의 backend-neutral 조건 공간 분석
 - 화면 field producer/consumer graph와 합계 derivation dependency
 - Canonical IR과 진단의 안정적인 serialization
 
 사람에게 표시할 번역 문장은 domain diagnostic에 저장하지 않는다. Domain은 message key와 구조화된 argument를 반환한다.
 
-초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md)와 [Total Policy Condition Spaces and SMT-First Consistency Analysis RFC](rfcs/0006-total-policy-condition-space-analysis.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. `rspdl-solver-z3`는 backend-neutral constraint API를 typed SMT solving으로 연결하며 정적 policy condition-space 분석의 우선 backend다. 현재 runtime은 선언된 무조건 allow/deny 정책을 action request와 role assignment에 직접 대조한다.
+초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md)와 [Total Policy Condition Spaces and SMT-First Consistency Analysis RFC](rfcs/0006-total-policy-condition-space-analysis.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. `rspdl-domain`의 첫 정적 분석 API는 단일 닫힌 enum decision point를 대상으로 gap, compatible overlap과 allow/deny conflict query를 만든다. `rspdl-solver-z3`가 이 backend-neutral query를 풀고 canonical witness를 반환한다. 이 API는 아직 frontend·compiler diagnostic pipeline과 연결되지 않았다. 현재 runtime은 선언된 무조건 allow/deny 정책을 action request와 role assignment에 직접 대조한다.
 
 ### `rspdl-ko`
 
@@ -367,4 +368,11 @@ Golden file은 명세 계약이므로 단순 snapshot 갱신으로 승인하지 
 - 생산자 없는 소비, 재계산 누락과 미조회 입력 진단
 - 교차 모델 합계 dependency와 관계 범위 `unknown` 보존
 
-관계·컬렉션·유저 플로우·조건부 정책과 일반 논리식은 후속 vertical slice에서 다룬다.
+정적 정책 분석의 기반 slice는 단일 닫힌 enum 변수와 독립 allow/deny branch를 입력으로 받아 다음을 구현한다.
+
+- 모든 uncovered enum variant와 각각의 canonical witness
+- 같은 effect branch의 compatible overlap과 allow/deny conflict 분리
+- solver `UNKNOWN`과 backend error의 비성공 보존
+- branch 입력 순서와 무관한 canonical finding 순서
+
+관계·컬렉션·유저 플로우·조건부 정책 표면 문법과 compiler 연결, default·override·unreachable 및 일반 논리식은 후속 vertical slice에서 다룬다.

@@ -12,6 +12,7 @@ pub mod domain;
 pub mod error;
 pub mod frontend;
 pub mod logic;
+pub mod policy_analysis;
 pub mod semantic;
 pub mod set;
 pub mod solver;
@@ -35,6 +36,11 @@ pub use frontend::{
 pub use logic::{
     Atom, AtomView, BooleanExpression, BooleanExpressionView, ComparisonOperator,
     PredicateSignature, Term, Variable,
+};
+pub use policy_analysis::{
+    AnalysisUnknown, CompatibleOverlap, DecisionPointError, EnumGap, PolicyAnalysisError,
+    PolicyAnalysisQuery, PolicyBranch, PolicyConflict, TotalDecisionAnalysis, TotalDecisionPoint,
+    analyze_total_decision_point,
 };
 pub use semantic::{
     ActionDefinition, ConstraintDefinition, ConstraintOperand, DataModelDefinition,
