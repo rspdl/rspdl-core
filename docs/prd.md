@@ -4,7 +4,7 @@ title: RSPDL Product Requirements
 type: prd
 status: draft
 created: 2026-07-26
-version: "0.8"
+version: "0.9"
 summary: Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context.
 topics:
   - language-design
@@ -90,7 +90,7 @@ target_spec: "0.2.0"
   - 문장형 화면 create/read/update/delete와 field input/read/update 선언
   - 화면 입력과 합계 계산을 생산자로 연결한 field provenance 검증
   - 단일 정수 필드 합계, 원본 변경 시 재계산과 내부/비표시 의도
-  - parser, formatter, Canonical domain model, Z3 constraint check와 Datalog policy match
+  - parser, formatter, Canonical domain model, Z3 constraint check와 결정적 직접 runtime policy match
   - 공통 `Frontend` trait, stable-ID Unlinked IR과 Locale 독립 linking, type checking 및 data usage analyzer
   - runtime request별 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - 아직 구현하지 않은 요구사항은 다음과 같다.
@@ -110,7 +110,7 @@ target_spec: "0.2.0"
 
 - AI 출력도 사람의 출력과 같은 parser, semantic analysis와 conformance gate를 통과한다.
 - compiler는 문서에 없는 사실, 정책 우선순위 또는 lifecycle 동작을 추측하지 않는다.
-- 정적 조건 공간 분석은 typed SMT query를 기준 경로로 삼고, Datalog 의미 확장은 유한 관계의 재귀적 폐쇄가 필요한 제품 시나리오가 명확해질 때까지 보류한다.
+- 정적 조건 공간 분석은 typed SMT query를 기준 경로로 삼는다. 현재 runtime policy match는 선언된 무조건 allow/deny 정책을 직접 결정적으로 대조한다. Datalog evaluator는 제거했으며, 재귀적 관계 폐쇄가 필요해질 때에만 별도 RFC로 다시 검토한다.
 - `push/pop`과 assumption switch 같은 증분 solver 전략은 관찰 가능한 의미, witness와 진단 순서를 바꿀 수 없다.
 - RSPDL core는 Canonical IR, semantic analysis와 diagnostics를 소유한다.
 - 정책표, IA, UI projection, 검색, 집계와 code generation은 공개 IR을 소비하는 application 책임이다.

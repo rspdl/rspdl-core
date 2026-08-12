@@ -1,7 +1,0 @@
-[package]
-name = "rspdl-datalog"
-version = "0.1.0"
-edition.workspace = true
-[dependencies]
-rspdl-domain = { path = "../rspdl-domain" }
-thiserror.workspace = true

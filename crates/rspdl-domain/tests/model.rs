@@ -90,10 +90,6 @@ fn infinite_domains_expose_exact_ground_semantics_and_backend_limits() {
             .unwrap()
     );
     assert_eq!(
-        integers.symbolic_support(Backend::Datalog),
-        SymbolicSupport::RequiresFiniteGrounding
-    );
-    assert_eq!(
         integers.symbolic_support(Backend::Smt),
         SymbolicSupport::Exact
     );

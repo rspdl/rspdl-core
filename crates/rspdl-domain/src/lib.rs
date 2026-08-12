@@ -1,7 +1,7 @@
 //! Locale-independent semantic building blocks for RSPDL.
 //!
 //! This crate deliberately contains no surface-language concepts. Every value,
-//! set, and logical term has an explicit canonical type so later Datalog and
+//! set, and logical term has an explicit canonical type so runtime matching and
 //! SMT backends can reject unsupported models instead of approximating them.
 
 #![forbid(unsafe_code)]
@@ -12,7 +12,6 @@ pub mod domain;
 pub mod error;
 pub mod frontend;
 pub mod logic;
-pub mod rule;
 pub mod semantic;
 pub mod set;
 pub mod solver;
@@ -37,7 +36,6 @@ pub use logic::{
     Atom, AtomView, BooleanExpression, BooleanExpressionView, ComparisonOperator,
     PredicateSignature, Term, Variable,
 };
-pub use rule::{DerivationRule, Fact, LogicProgram, PredicateApplication, RuleLiteral};
 pub use semantic::{
     ActionDefinition, ConstraintDefinition, ConstraintOperand, DataModelDefinition,
     DerivationDefinition, DerivationExpression, EnumDefinition, EnumVariantDefinition,

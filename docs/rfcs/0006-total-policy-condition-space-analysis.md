@@ -3,7 +3,7 @@ id: total-policy-condition-space-analysis
 title: Total Policy Condition Spaces and SMT-First Consistency Analysis
 type: rfc
 status: proposed
-version: "0.1"
+version: "0.2"
 summary: Defines closed policy vocabulary, exhaustive condition-space coverage, explicit override semantics, and SMT-first consistency analysis.
 topics:
   - policy-analysis
@@ -15,7 +15,6 @@ topics:
 related:
   - rspdl-language-prd
   - typed-domains-and-logic-core
-  - stratified-datalog-and-typed-solver
 problem_refs:
   - policy-consistency-blind-spots
   - data-lifecycle-modeling-gap
@@ -38,7 +37,7 @@ RSPDL은 구체적인 runtime record가 없어도 선언된 유효 입력 공간
 - 함께 적용된 결과가 양립할 수 없는 `conflict`
 - 전제조건 또는 상위 분기 때문에 절대 적용되지 않는 `unreachable`
 
-정적 조건 공간 분석은 typed SMT solving을 우선 사용한다. 현재 runtime policy match에 사용하는 Datalog 구현은 제거하지 않지만, 유한 관계의 재귀적 폐쇄가 필요한 구체적인 제품 시나리오가 생기기 전까지 Datalog 의미와 기능의 확장은 보류한다.
+정적 조건 공간 분석은 typed SMT solving을 우선 사용한다. 현재 runtime policy match는 선언된 무조건 allow/deny 정책을 직접 결정적으로 대조한다. Datalog evaluator는 제거했으며, 유한 관계의 재귀적 폐쇄가 필요한 구체적인 제품 시나리오가 생길 때에만 별도 RFC로 재검토한다.
 
 ## 제품 문제와 실패 시나리오
 
@@ -297,15 +296,21 @@ Solver가 우연히 선택한 모델 값은 default나 유일한 해결책으로
 
 Incremental 실행과 매 query마다 새 solver를 만드는 실행은 관찰 가능한 의미 결과가 같아야 한다. 성능 최적화가 Canonical IR, finding 분류, witness 유효성과 정렬 순서를 바꿀 수 없다.
 
-## Datalog 보류 경계
+## 제거된 Datalog 경계
 
-정적 policy consistency 분석의 기준 경로는 typed Boolean IR에서 SMT query를 생성하는 것이다. Datalog는 다음 요구가 구체화될 때 별도로 재검토한다.
+정적 policy consistency 분석의 기준 경로는 typed Boolean IR에서 SMT query를 생성하는 것이다. Datalog evaluator는 제거했다. 다음 요구가 구체화될 때에만 별도 RFC에서 도입 여부를 재검토한다.
 
 - 선언된 유한 조직·역할 관계의 재귀적 상속
 - 데이터 또는 모듈 의존성의 transitive closure
 - active-domain 사실에서 파생 사실 전체를 materialize해야 하는 기능
 
-현재 runtime request별 policy match 결과는 전체 조건 공간의 totality를 증명하지 않는다. Datalog 결과가 없다는 사실을 SMT의 logical negation으로 자동 변환하지 않는다.
+현재 runtime request별 직접 policy match 결과는 전체 조건 공간의 totality를 증명하지 않는다. 매칭 결과가 없다는 사실을 SMT의 logical negation으로 자동 변환하지 않는다.
+
+### 호환성 기록
+
+SMT-first 분석으로 범위를 좁히면서 `rspdl-datalog` crate와 Datalog 전용 public rule IR(`LogicProgram`, `DerivationRule`, `RuleLiteral`, `Fact`, `PredicateApplication`) 및 `Backend::Datalog`를 제거했다. 이는 `0.x` public API 변경이다.
+
+Compiler와 CLI의 runtime 입력 및 `allowed`, `denied`, `conflict`, `unmatched` 결과 JSON은 유지한다. 현재 무조건 정책의 매칭 결과와 canonical policy ID 정렬은 제거 전과 의미상 동일해야 한다.
 
 ## 적합성 사례
 
@@ -352,4 +357,3 @@ Incremental 실행과 매 query마다 새 solver를 만드는 실행은 관찰 �
 - [Policy Consistency Blind Spots](../problems/0002-policy-consistency-blind-spots.md)
 - [Data Lifecycle Modeling Gap](../problems/0001-data-lifecycle-modeling-gap.md)
 - [Typed Domains and Logic Core](0002-typed-domains-and-logic-core.md)
-- [Stratified Datalog and Typed Solver](0003-stratified-datalog-and-typed-solver.md)

@@ -5,13 +5,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use rspdl_datalog::DatalogEvaluator;
 use rspdl_domain::{
     Atom, BooleanExpression, CanonicalId, CanonicalType, CanonicalValue, ConstraintOperand,
-    ConstraintProblem, ConstraintSolver, DerivationRule, Diagnostic, Fact, Frontend,
-    FrontendOutput, LogicProgram, PolicyEffect, PredicateApplication, PredicateSignature,
-    RelationOperator, RuleLiteral, SemanticModule, Severity, SolveOptions, SolveResult, Term,
-    TextRange, Variable, analyze,
+    ConstraintProblem, ConstraintSolver, Diagnostic, Frontend, FrontendOutput, PolicyEffect,
+    RelationOperator, SemanticModule, Severity, SolveOptions, SolveResult, Term, TextRange,
+    analyze,
 };
 use rspdl_ko::KoreanFrontend;
 use rspdl_solver_z3::Z3Solver;
@@ -399,17 +397,7 @@ pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> Chec
         &mut report.constraint_violations,
         &mut report.runtime_diagnostics,
     );
-    match execute_policies(&[module], &runtime) {
-        Ok(results) => report.policy_results = results,
-        Err(message) => report.runtime_diagnostics.push(
-            runtime_error(
-                "RSPDL-BACKEND-DATALOG-001",
-                "$.action_requests",
-                "runtime.backend.datalog_error",
-            )
-            .with_argument("reason", message),
-        ),
-    }
+    report.policy_results = execute_policies(&[module], &runtime);
     report.constraint_violations.sort_by(|left, right| {
         (&left.model_id, &left.record_id, &left.constraint_id).cmp(&(
             &right.model_id,
@@ -465,17 +453,7 @@ pub fn check_ko_files(
         &mut report.constraint_violations,
         &mut report.runtime_diagnostics,
     );
-    match execute_policies(&modules, &runtime) {
-        Ok(results) => report.policy_results = results,
-        Err(message) => report.runtime_diagnostics.push(
-            runtime_error(
-                "RSPDL-BACKEND-DATALOG-001",
-                "$.action_requests",
-                "runtime.backend.datalog_error",
-            )
-            .with_argument("reason", message),
-        ),
-    }
+    report.policy_results = execute_policies(&modules, &runtime);
     report.constraint_violations.sort_by(|left, right| {
         (&left.model_id, &left.record_id, &left.constraint_id).cmp(&(
             &right.model_id,
@@ -530,7 +508,6 @@ struct BoundAction {
     id: String,
     actor: String,
     model_id: CanonicalId,
-    record_id: String,
     field_id: CanonicalId,
     action_id: CanonicalId,
 }
@@ -737,7 +714,6 @@ fn bind_runtime(
             id: action.id,
             actor: action.actor,
             model_id: model.id.clone(),
-            record_id: action.record,
             field_id: field.id.clone(),
             action_id,
         });
@@ -930,142 +906,36 @@ fn integer_relation(
         .map_err(|error| error.to_string())
 }
 
-fn execute_policies(
-    modules: &[&SemanticModule],
-    runtime: &BoundRuntime,
-) -> Result<Vec<PolicyResult>, String> {
-    let string = CanonicalType::String;
-    let role = PredicateSignature::new(
-        canonical_id("runtime.role")?,
-        vec![string.clone(), string.clone()],
-    );
-    let request = PredicateSignature::new(
-        canonical_id("runtime.action_request")?,
-        vec![
-            string.clone(),
-            string.clone(),
-            string.clone(),
-            string.clone(),
-            string.clone(),
-            string.clone(),
-        ],
-    );
-    let allow = PredicateSignature::new(
-        canonical_id("runtime.allow_match")?,
-        vec![string.clone(), string.clone()],
-    );
-    let deny = PredicateSignature::new(
-        canonical_id("runtime.deny_match")?,
-        vec![string.clone(), string.clone()],
-    );
-    let application = |signature: &PredicateSignature, arguments: Vec<Term>| {
-        PredicateApplication::new(signature.clone(), arguments).map_err(|error| error.to_string())
-    };
-    let constant = |value: &str| Term::Constant(CanonicalValue::string(value));
-
-    let mut facts = Vec::new();
-    for (actor, role_id) in &runtime.roles {
-        facts.push(
-            Fact::new(application(
-                &role,
-                vec![constant(actor), constant(role_id.as_str())],
-            )?)
-            .map_err(|error| error.to_string())?,
-        );
-    }
-    for action in &runtime.actions {
-        facts.push(
-            Fact::new(application(
-                &request,
-                vec![
-                    constant(&action.id),
-                    constant(&action.actor),
-                    constant(action.model_id.as_str()),
-                    constant(&action.record_id),
-                    constant(action.field_id.as_str()),
-                    constant(action.action_id.as_str()),
-                ],
-            )?)
-            .map_err(|error| error.to_string())?,
-        );
-    }
-
-    let variable = |name: &str| -> Result<Term, String> {
-        Ok(Term::Variable(Variable::new(
-            canonical_id(name)?,
-            string.clone(),
-        )))
-    };
-    let request_id = variable("request_id")?;
-    let actor = variable("actor")?;
-    let model_id = variable("model_id")?;
-    let record_id = variable("record_id")?;
-    let field_id = variable("field_id")?;
-    let action_id = variable("action_id")?;
-    let mut rules = Vec::new();
-    for (index, policy) in modules
+fn execute_policies(modules: &[&SemanticModule], runtime: &BoundRuntime) -> Vec<PolicyResult> {
+    let policies = modules
         .iter()
         .flat_map(|module| module.policies.iter())
-        .enumerate()
-    {
-        let head_signature = match policy.effect {
-            PolicyEffect::Allow => &allow,
-            PolicyEffect::Deny => &deny,
-        };
-        let head = application(
-            head_signature,
-            vec![request_id.clone(), constant(policy.id.as_str())],
-        )?;
-        let body = vec![
-            RuleLiteral::Positive(application(
-                &request,
-                vec![
-                    request_id.clone(),
-                    actor.clone(),
-                    model_id.clone(),
-                    record_id.clone(),
-                    field_id.clone(),
-                    action_id.clone(),
-                ],
-            )?),
-            RuleLiteral::Positive(application(
-                &role,
-                vec![actor.clone(), constant(policy.role_id.as_str())],
-            )?),
-            RuleLiteral::Constraint(
-                Atom::equal(model_id.clone(), constant(policy.model_id.as_str()))
-                    .map_err(|error| error.to_string())?,
-            ),
-            RuleLiteral::Constraint(
-                Atom::equal(field_id.clone(), constant(policy.field_id.as_str()))
-                    .map_err(|error| error.to_string())?,
-            ),
-            RuleLiteral::Constraint(
-                Atom::equal(action_id.clone(), constant(policy.action_id.as_str()))
-                    .map_err(|error| error.to_string())?,
-            ),
-        ];
-        rules.push(DerivationRule::new(
-            canonical_id(&format!("policy.rule.p{index}"))?,
-            head,
-            body,
-        ));
-    }
-    let program = LogicProgram::new(
-        vec![role, request, allow.clone(), deny.clone()],
-        facts,
-        rules,
-    )
-    .map_err(|error| error.to_string())?;
-    let database = DatalogEvaluator::evaluate(&program).map_err(|error| error.to_string())?;
-    let allow_matches = match_map(&database, &allow);
-    let deny_matches = match_map(&database, &deny);
+        .collect::<Vec<_>>();
     let mut results = runtime
         .actions
         .iter()
         .map(|action| {
-            let allows = allow_matches.get(&action.id).cloned().unwrap_or_default();
-            let denies = deny_matches.get(&action.id).cloned().unwrap_or_default();
+            let mut allows = Vec::new();
+            let mut denies = Vec::new();
+            for policy in &policies {
+                if action.model_id != policy.model_id
+                    || action.field_id != policy.field_id
+                    || action.action_id != policy.action_id
+                    || !runtime
+                        .roles
+                        .contains(&(action.actor.clone(), policy.role_id.clone()))
+                {
+                    continue;
+                }
+                match policy.effect {
+                    PolicyEffect::Allow => allows.push(policy.id.clone()),
+                    PolicyEffect::Deny => denies.push(policy.id.clone()),
+                }
+            }
+            allows.sort();
+            allows.dedup();
+            denies.sort();
+            denies.dedup();
             let status = match (allows.is_empty(), denies.is_empty()) {
                 (false, true) => PolicyStatus::Allowed,
                 (true, false) => PolicyStatus::Denied,
@@ -1081,34 +951,7 @@ fn execute_policies(
         })
         .collect::<Vec<_>>();
     results.sort_by(|left, right| left.request_id.cmp(&right.request_id));
-    Ok(results)
-}
-
-fn match_map(
-    database: &rspdl_datalog::MaterializedDatabase,
-    signature: &PredicateSignature,
-) -> BTreeMap<String, Vec<CanonicalId>> {
-    let mut matches = BTreeMap::<String, Vec<CanonicalId>>::new();
-    for tuple in database.tuples(signature.id()).into_iter().flatten() {
-        let [request, policy] = tuple.as_slice() else {
-            continue;
-        };
-        let (Some(request), Some(policy)) = (request.as_string(), policy.as_string()) else {
-            continue;
-        };
-        if let Ok(policy) = CanonicalId::new(policy) {
-            matches.entry(request.to_owned()).or_default().push(policy);
-        }
-    }
-    for policies in matches.values_mut() {
-        policies.sort();
-        policies.dedup();
-    }
-    matches
-}
-
-fn canonical_id(value: &str) -> Result<CanonicalId, String> {
-    CanonicalId::new(value).map_err(|error| error.to_string())
+    results
 }
 
 fn runtime_error(
@@ -1191,6 +1034,90 @@ mod tests {
         assert_eq!(report.policy_results[0].status, PolicyStatus::Conflict);
         assert_eq!(report.policy_results[0].allow_policies.len(), 1);
         assert_eq!(report.policy_results[0].deny_policies.len(), 1);
+    }
+
+    #[test]
+    fn direct_policy_matching_preserves_every_runtime_status_and_order() {
+        let data = r#"{
+          "records": {
+            "expense.request": [
+              {
+                "$id": "request-1",
+                "id": "request-1",
+                "applicant": "alice",
+                "approver": "bob",
+                "amount": 1,
+                "status": "submitted"
+              }
+            ]
+          },
+          "role_assignments": [
+            {"actor": "alice", "role": "expense.accounting_manager"},
+            {"actor": "bob", "role": "expense.user"},
+            {"actor": "carol", "role": "expense.accounting_manager"},
+            {"actor": "carol", "role": "expense.user"}
+          ],
+          "action_requests": [
+            {
+              "$id": "request-unmatched",
+              "actor": "dana",
+              "model": "expense.request",
+              "record": "request-1",
+              "field": "status",
+              "action": "expense.change"
+            },
+            {
+              "$id": "request-denied",
+              "actor": "bob",
+              "model": "expense.request",
+              "record": "request-1",
+              "field": "status",
+              "action": "expense.change"
+            },
+            {
+              "$id": "request-conflict",
+              "actor": "carol",
+              "model": "expense.request",
+              "record": "request-1",
+              "field": "status",
+              "action": "expense.change"
+            },
+            {
+              "$id": "request-allowed",
+              "actor": "alice",
+              "model": "expense.request",
+              "record": "request-1",
+              "field": "status",
+              "action": "expense.change"
+            }
+          ]
+        }"#;
+
+        let report = check_ko(SOURCE, data, CheckOptions::default());
+
+        assert!(!report.has_errors(), "{:?}", report.runtime_diagnostics);
+        assert!(report.constraint_violations.is_empty());
+        assert_eq!(
+            report
+                .policy_results
+                .iter()
+                .map(|result| (result.request_id.as_str(), result.status))
+                .collect::<Vec<_>>(),
+            vec![
+                ("request-allowed", PolicyStatus::Allowed),
+                ("request-conflict", PolicyStatus::Conflict),
+                ("request-denied", PolicyStatus::Denied),
+                ("request-unmatched", PolicyStatus::Unmatched),
+            ]
+        );
+        assert_eq!(report.policy_results[0].allow_policies.len(), 1);
+        assert!(report.policy_results[0].deny_policies.is_empty());
+        assert_eq!(report.policy_results[1].allow_policies.len(), 1);
+        assert_eq!(report.policy_results[1].deny_policies.len(), 1);
+        assert!(report.policy_results[2].allow_policies.is_empty());
+        assert_eq!(report.policy_results[2].deny_policies.len(), 1);
+        assert!(report.policy_results[3].allow_policies.is_empty());
+        assert!(report.policy_results[3].deny_policies.is_empty());
     }
 
     #[test]

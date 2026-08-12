@@ -4,7 +4,7 @@ title: Policy Consistency Blind Spots
 type: problem
 status: active
 created: 2026-08-02
-version: "1"
+version: "1.1"
 summary: Prose planning hides contradictory, uncovered, overlapping, and unreachable policy branches that become visible only during implementation.
 topics:
   - policy-conflict
@@ -15,7 +15,7 @@ related:
   - rspdl-product-vision
   - rspdl-language-prd
   - problem-driven-development
-last_updated: "2026-08-02"
+last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
 ---
@@ -64,6 +64,5 @@ owners:
 
 - [RSPDL Product Vision](../product/vision.md)
 - [RSPDL Product Requirements](../prd.md)
-- [Stratified Datalog and Typed Solver](../rfcs/0003-stratified-datalog-and-typed-solver.md)
 - [Korean Domain Frontend Language Specification](../rfcs/0004-natural-korean-domain-grammar.md)
 - [Problem-driven Development](../guides/problem-driven-development.md)

@@ -3,7 +3,7 @@ id: frontend-semantic-analysis-contract
 title: Frontend and Semantic Analysis Contract
 type: spec
 status: implemented
-version: "3"
+version: "4"
 summary: Defines the stable-ID Unlinked IR and structured diagnostic boundary that lets independent surface-language frontends use one semantic analyzer.
 topics:
   - compiler-frontend
@@ -18,7 +18,7 @@ related:
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-08"
+last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -142,7 +142,7 @@ Constraint와 policy의 anonymous ID는 Locale display text나 source 위치를 
 - analyzer test는 Locale source 없이 hand-authored `UnlinkedModule`만 사용한다.
 - 동일한 stable ID와 의미를 가진 Locale별 fixture는 Canonical ID, semantic result와 `rule_id`, `message_key`, `arguments`가 같아야 한다.
 - 정상, 실패, 경계와 오탐 방지 fixture는 공통 analyzer를 통해 실행한다.
-- `rspdl-domain`, Datalog와 solver backend는 Locale crate를 의존할 수 없다.
+- `rspdl-domain`과 solver backend는 Locale crate를 의존할 수 없다. Compiler의 runtime matcher는 Locale AST나 표시 이름이 아니라 해석된 `SemanticModule`만 검사해야 한다.
 
 ## 초기 버전 호환 정책
 

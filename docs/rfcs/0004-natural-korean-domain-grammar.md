@@ -3,7 +3,7 @@ id: natural-korean-domain-grammar
 title: Korean Domain Frontend Language Specification
 type: rfc
 status: implemented
-version: "0.3"
+version: "0.4"
 summary: Defines Korean surface grammar and its deterministic lowering to the shared locale-neutral Unlinked IR contract.
 topics:
   - ko-KR
@@ -20,7 +20,7 @@ related:
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-08"
+last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -300,7 +300,7 @@ policy-statement =
 
 ### 7.3 정책 backend
 
-role assignment와 action request를 fact로, policy를 allow 또는 deny Datalog rule로 변환한다. 각 action request는 다음 중 하나로 분류한다.
+role assignment, action request와 선언된 무조건 policy를 직접 대조한다. 각 action request는 다음 중 하나로 분류한다.
 
 | 상태 | 의미 |
 | --- | --- |

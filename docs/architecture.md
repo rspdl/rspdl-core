@@ -3,7 +3,7 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "0.5"
+version: "0.6"
 summary: Defines the implemented stable-ID Unlinked IR boundary, locale-neutral diagnostics, analyzer pipeline, dependency direction, and test architecture.
 topics:
   - rust
@@ -81,7 +81,6 @@ rspdl-domain/
 │   │   │   ├── pipeline.rs
 │   │   │   └── session.rs
 │   │   └── tests/
-│   ├── rspdl-datalog/
 │   ├── rspdl-solver-z3/
 │   └── rspdl-cli/
 │       └── src/
@@ -96,7 +95,7 @@ rspdl-domain/
 └── docs/
 ```
 
-초기부터 compiler phase마다 crate를 만들지 않는다. 다만 독립 backend 또는 실행 경계가 필요한 `rspdl-datalog`, `rspdl-solver-z3`는 별도 crate로 둔다.
+초기부터 compiler phase마다 crate를 만들지 않는다. typed SMT solving 경계를 가진 `rspdl-solver-z3`만 별도 crate로 둔다. 현재 무조건 allow/deny runtime 정책 매칭은 compiler의 직접 결정적 대조로 충분하다.
 
 미래 `rspdl-en`은 `rspdl-ko`를 의존하지 않고 동일한 frontend output 계약을 구현한다.
 
@@ -107,10 +106,8 @@ flowchart TD
     CLI["rspdl-cli"] --> COMPILER["rspdl-compiler"]
     COMPILER --> KO["rspdl-ko"]
     COMPILER --> DOMAIN["rspdl-domain"]
-    COMPILER --> DATALOG["rspdl-datalog"]
     COMPILER --> Z3["rspdl-solver-z3"]
     KO --> DOMAIN
-    DATALOG --> DOMAIN
     Z3 --> DOMAIN
     EN["future rspdl-en"] --> DOMAIN
     COMPILER -. "future" .-> EN
@@ -175,7 +172,7 @@ Locale에 독립적인 compiler domain을 소유한다.
 
 사람에게 표시할 번역 문장은 domain diagnostic에 저장하지 않는다. Domain은 message key와 구조화된 argument를 반환한다.
 
-초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md), [Stratified Datalog and Typed Solver RFC](rfcs/0003-stratified-datalog-and-typed-solver.md)와 [Total Policy Condition Spaces and SMT-First Consistency Analysis RFC](rfcs/0006-total-policy-condition-space-analysis.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. `rspdl-solver-z3`는 backend-neutral constraint API를 typed SMT solving으로 연결하며 정적 policy condition-space 분석의 우선 backend다. `rspdl-datalog`는 현재 runtime active-domain match를 결정적으로 materialize하지만, 유한 관계의 재귀적 폐쇄가 필요한 구체적인 제품 시나리오가 생기기 전까지 의미 확장을 보류한다.
+초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md)와 [Total Policy Condition Spaces and SMT-First Consistency Analysis RFC](rfcs/0006-total-policy-condition-space-analysis.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. `rspdl-solver-z3`는 backend-neutral constraint API를 typed SMT solving으로 연결하며 정적 policy condition-space 분석의 우선 backend다. 현재 runtime은 선언된 무조건 allow/deny 정책을 action request와 role assignment에 직접 대조한다.
 
 ### `rspdl-ko`
 
@@ -360,7 +357,7 @@ Golden file은 명세 계약이므로 단순 snapshot 갱신으로 승인하지 
 - 정확한 표시 이름 참조와 stable machine ID lowering
 - 이름·source ID 없이 인식되는 자연 문장형 제약·정책과 core가 생성하는 Locale 독립 내부 Rule ID
 - 공통 `Frontend` trait, `UnlinkedModule`과 Locale 독립 linker/analyzer
-- Z3 제약 반례와 Datalog 정책 match 실행
+- Z3 제약 반례와 직접 runtime 정책 match 실행
 - `parse`, `compile`, `check`, `format` CLI와 안정적인 JSON artifact
 
 [Field Provenance, Screen Usage, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)은 다음 후속 vertical slice를 구현한다.

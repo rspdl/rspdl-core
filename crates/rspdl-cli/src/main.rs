@@ -414,9 +414,6 @@ fn render_runtime_diagnostic(diagnostic: &RuntimeDiagnostic) -> String {
             argument("field_id"),
             argument("expected_type")
         ),
-        "runtime.backend.datalog_error" => {
-            format!("Datalog 실행에 실패했습니다: {}", argument("reason"))
-        }
         "runtime.backend.z3_configuration_error" => {
             format!("solver 설정이 올바르지 않습니다: {}", argument("reason"))
         }

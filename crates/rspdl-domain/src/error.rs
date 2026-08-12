@@ -69,15 +69,4 @@ pub enum ModelError {
 
     #[error("`{value}` is not a canonical base-10 integer")]
     InvalidInteger { value: String },
-
-    #[error("predicate `{predicate}` is not declared")]
-    UnknownPredicate { predicate: CanonicalId },
-    #[error("predicate `{predicate}` has conflicting signatures")]
-    ConflictingPredicateSignature { predicate: CanonicalId },
-
-    #[error("fact for predicate `{predicate}` contains variable `{variable}`")]
-    NonGroundFact {
-        predicate: CanonicalId,
-        variable: CanonicalId,
-    },
 }

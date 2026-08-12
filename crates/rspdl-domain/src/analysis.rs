@@ -1300,19 +1300,5 @@ fn model_error(rule_id: &str, error: ModelError, span: TextRange) -> Diagnostic 
         ModelError::InvalidInteger { value } => {
             Diagnostic::error(rule_id, "model.invalid_integer", span).with_argument("value", value)
         }
-        ModelError::UnknownPredicate { predicate } => {
-            Diagnostic::error(rule_id, "model.unknown_predicate", span)
-                .with_argument("predicate", predicate)
-        }
-        ModelError::ConflictingPredicateSignature { predicate } => {
-            Diagnostic::error(rule_id, "model.conflicting_predicate_signature", span)
-                .with_argument("predicate", predicate)
-        }
-        ModelError::NonGroundFact {
-            predicate,
-            variable,
-        } => Diagnostic::error(rule_id, "model.non_ground_fact", span)
-            .with_argument("predicate", predicate)
-            .with_argument("variable", variable),
     }
 }

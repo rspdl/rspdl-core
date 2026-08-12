@@ -269,20 +269,11 @@ dependencies = [
 name = "rspdl-compiler"
 version = "0.1.0"
 dependencies = [
- "rspdl-datalog",
  "rspdl-domain",
  "rspdl-ko",
  "rspdl-solver-z3",
  "serde",
  "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "rspdl-datalog"
-version = "0.1.0"
-dependencies = [
- "rspdl-domain",
  "thiserror",
 ]
 
@@ -312,7 +303,6 @@ name = "rspdl-solver-z3"
 version = "0.1.0"
 dependencies = [
  "num-bigint",
- "rspdl-datalog",
  "rspdl-domain",
  "thiserror",
  "z3",

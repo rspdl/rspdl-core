@@ -9,7 +9,6 @@ rust-version.workspace = true
 [dependencies]
 rspdl-domain = { path = "../rspdl-domain" }
 rspdl-ko = { path = "../rspdl-ko" }
-rspdl-datalog = { path = "../rspdl-datalog" }
 rspdl-solver-z3 = { path = "../rspdl-solver-z3" }
 serde.workspace = true
 serde_json.workspace = true

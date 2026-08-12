@@ -10,7 +10,6 @@ use crate::value::CanonicalValue;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Backend {
-    Datalog,
     Smt,
 }
 
@@ -174,7 +173,6 @@ impl Domain {
             (DomainKind::Infinite(InfiniteDomain::Primes), Backend::Smt) => {
                 SymbolicSupport::Unsupported
             }
-            (DomainKind::Infinite(_), Backend::Datalog) => SymbolicSupport::RequiresFiniteGrounding,
         }
     }
 }
