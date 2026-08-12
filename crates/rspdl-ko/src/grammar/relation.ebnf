@@ -1,0 +1,46 @@
+pub relation_declaration =
+    source_model: @marked_ref("은", "는")
+    (
+        target_model: @marked_ref("을", "를")
+        relation_name: @surface_name()
+        relation_id: @canonical_id()
+        ("로" | "으로")
+        "가질" "수" "있다"
+      |
+        relation_name: @surface_name()
+        relation_id: @canonical_id()
+        "에" "해당할" "수" "있다"
+    )
+    "."
+    ;
+
+pub relational_constraint =
+      model: @marked_ref("은", "는")
+      kind: ("하나" "이상" "존재해야" "한다")
+      "."
+    |
+      kind: "모든"
+      model: @marked_ref("은", "는")
+      relation: @marked_ref("을", "를")
+      "하나" "이상" "가져야" "한다" "."
+    |
+      kind: "각"
+      model: @marked_ref("은", "는")
+      relation: @marked_ref("을", "를")
+      "최대" "하나만" "가질" "수" "있다" "."
+    |
+      (relations: @comma_ref())+
+      relations: @surface_name()
+      kind: ("중" "둘" "이상은" "동시에" "성립할" "수" "없다")
+      "."
+    |
+      (relations: @comma_ref())+
+      relations: @surface_name()
+      kind: ("중" "하나" "이상은" "항상" "성립해야" "한다")
+      "."
+    |
+      (relations: @comma_ref())+
+      relations: @marked_ref("은", "는")
+      kind: ("동시에" "성립할" "수" "있다")
+      "."
+    ;

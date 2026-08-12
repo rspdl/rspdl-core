@@ -3,6 +3,7 @@ mod constraint;
 mod declarations;
 mod policy;
 mod provenance;
+mod relation;
 
 use rspdl_grammar_compiler::{Capture, ParseMatch};
 
