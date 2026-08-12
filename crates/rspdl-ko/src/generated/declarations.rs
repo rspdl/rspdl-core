@@ -191,6 +191,8 @@ mod tests {
 
     use super::*;
 
+    type NamedParser = fn(&[Token]) -> Result<GeneratedNamedId, ParseError>;
+
     fn tokens(source: &str) -> Vec<Token> {
         let scanned = scan(source);
         assert!(
@@ -324,7 +326,7 @@ mod tests {
 
     #[test]
     fn generated_declarations_reject_oracle_invalid_shapes() {
-        let cases: &[(&str, fn(&[Token]) -> Result<GeneratedNamedId, ParseError>)] = &[
+        let cases: &[(&str, NamedParser)] = &[
             ("@모듈 비용 승인(expense).", parse_module_header),
             ("비용 상태(status)는 다음 값 중 하나다", parse_enum_header),
             (

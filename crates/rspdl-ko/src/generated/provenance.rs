@@ -225,6 +225,8 @@ mod tests {
 
     use super::*;
 
+    type RejectParser = fn(&[Token]) -> Result<(), ParseError>;
+
     fn sentence_tokens(sentence: &str) -> Vec<Token> {
         let scanned = scan(sentence);
         assert!(
@@ -404,7 +406,7 @@ mod tests {
 
     #[test]
     fn generated_entries_reject_handwritten_failures_and_cross_productions() {
-        let cases: &[(&str, fn(&[Token]) -> Result<(), ParseError>, bool)] = &[
+        let cases: &[(&str, RejectParser, bool)] = &[
             (
                 "항목 작성 화면에서는 항목을 생성할 수 있다.",
                 reject_screen,
