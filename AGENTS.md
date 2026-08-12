@@ -33,6 +33,10 @@
 ## Implementation rules
 
 - Locale-specific grammar와 token은 `rspdl-ko` 밖으로 누출하지 않는다.
+- 한국어 표면 문법에서 `@`는 문서 metadata인 `@모듈`에만 허용한다. 새 annotation은 문장이나 블록으로 의미를 결정적이고 읽기 쉽게 보존할 수 없다는 RFC 근거 없이는 추가하지 않는다.
+- Domain 선언과 규칙은 해당 문장만 읽어도 대상, 관계 방향과 cardinality 또는 compatibility 의도를 알 수 있어야 한다. Parser 편의나 입력 길이를 readability보다 우선하지 않는다.
+- Record model은 하나 이상의 명시적 field를 가져야 한다. 추상 sort가 필요하면 빈 record나 `@개체`로 우회하지 않고 별도 제품 시나리오와 RFC에서 독립 construct로 설계한다.
+- 관계 문법을 변경할 때는 `docs/rfcs/0004-natural-korean-domain-grammar.md`와 `docs/rfcs/0007-finite-relational-model-finding.md`를 함께 확인한다.
 - Canonical IR과 diagnostics는 입력 순서, 실행 시각, OS locale과 hash iteration에 의존하지 않는다.
 - 지원하지 않는 의미나 solver timeout을 성공으로 근사하지 않고 structured error 또는 `unknown`으로 남긴다.
 - 공개 의미 변경은 정상, 실패, 경계와 오탐 방지 사례를 요구한다.
