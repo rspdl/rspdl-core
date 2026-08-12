@@ -153,6 +153,15 @@ pub fn find_bounded_relational_model<S: ConstraintSolver>(
     if !module.derivations.is_empty() {
         unsupported.push("derivation".to_owned());
     }
+    unsupported.extend(module.models.iter().flat_map(|model| {
+        model
+            .fields
+            .iter()
+            .filter(|field| matches!(field.value_type, CanonicalType::Refinement(_)))
+            .map(|field| format!("refinement_field:{}", field.id))
+    }));
+    unsupported.sort();
+    unsupported.dedup();
     if !unsupported.is_empty() {
         return Ok(BoundedModelResult::Unsupported {
             scope_per_model: options.scope_per_model,
@@ -164,10 +173,18 @@ pub fn find_bounded_relational_model<S: ConstraintSolver>(
     let grounding = Grounding::new(module, options.scope_per_model);
     let mut active = vec![true; grounding.rules.len()];
     match solve_grounding(&grounding, &active, solver, options.solve_options)? {
-        SolveResult::Sat(model) => Ok(BoundedModelResult::Sat {
-            scope_per_model: options.scope_per_model,
-            witness: grounding.witness(&model),
-        }),
+        SolveResult::Sat(model) => match grounding.witness(&model) {
+            Ok(witness) => Ok(BoundedModelResult::Sat {
+                scope_per_model: options.scope_per_model,
+                witness,
+            }),
+            Err(reason) => Ok(BoundedModelResult::Unknown {
+                scope_per_model: options.scope_per_model,
+                rule_id: "RSPDL-MODEL-004".into(),
+                message_key: "model_finding.unknown".into(),
+                reason,
+            }),
+        },
         SolveResult::Unknown { reason } => Ok(BoundedModelResult::Unknown {
             scope_per_model: options.scope_per_model,
             rule_id: "RSPDL-MODEL-004".into(),
@@ -313,7 +330,8 @@ impl Grounding {
         for ((field_id, _), variable_id) in &field_variables {
             variable_domains.insert(
                 variable_id.clone(),
-                domain_for_type(&fields[field_id].value_type),
+                domain_for_type(&fields[field_id].value_type)
+                    .expect("refinement fields are rejected before grounding"),
             );
         }
         let variables = variable_domains
@@ -391,7 +409,7 @@ impl Grounding {
         }
     }
 
-    fn witness(&self, model: &crate::CanonicalModel) -> RelationalWitness {
+    fn witness(&self, model: &crate::CanonicalModel) -> Result<RelationalWitness, String> {
         let entities = self
             .existence_variables
             .iter()
@@ -401,32 +419,32 @@ impl Grounding {
                 entity_id: virtual_entity_id(model_id, *index),
             })
             .collect();
-        let field_values = self
-            .field_variables
-            .iter()
-            .filter_map(|((field_id, index), variable)| {
-                let (model_id, required) = &self.field_owners[field_id];
-                if !is_true(
+        let mut field_values = Vec::new();
+        for ((field_id, index), variable) in &self.field_variables {
+            let (model_id, required) = &self.field_owners[field_id];
+            if !is_true(
+                model,
+                &self.existence_variables[&(model_id.clone(), *index)],
+            ) {
+                continue;
+            }
+            if !required
+                && !is_true(
                     model,
-                    &self.existence_variables[&(model_id.clone(), *index)],
-                ) {
-                    return None;
-                }
-                if !required
-                    && !is_true(
-                        model,
-                        &self.field_presence_variables[&(field_id.clone(), *index)],
-                    )
-                {
-                    return None;
-                }
-                Some(VirtualFieldValue {
-                    entity_id: virtual_entity_id(model_id, *index),
-                    field_id: field_id.clone(),
-                    value: model.0.get(variable)?.clone(),
-                })
-            })
-            .collect();
+                    &self.field_presence_variables[&(field_id.clone(), *index)],
+                )
+            {
+                continue;
+            }
+            let value = model.0.get(variable).ok_or_else(|| {
+                format!("solver model omitted assignment for present field `{field_id}`")
+            })?;
+            field_values.push(VirtualFieldValue {
+                entity_id: virtual_entity_id(model_id, *index),
+                field_id: field_id.clone(),
+                value: value.clone(),
+            });
+        }
         let relation_tuples = self
             .tuple_variables
             .iter()
@@ -443,11 +461,11 @@ impl Grounding {
                 }
             })
             .collect();
-        RelationalWitness {
+        Ok(RelationalWitness {
             entities,
             field_values,
             relation_tuples,
-        }
+        })
     }
 }
 
@@ -553,8 +571,8 @@ fn integer_comparison(operator: ComparisonOperator, left: Term, right: Term) -> 
     )
 }
 
-fn domain_for_type(value_type: &CanonicalType) -> Domain {
-    match value_type {
+fn domain_for_type(value_type: &CanonicalType) -> Option<Domain> {
+    Some(match value_type {
         CanonicalType::Boolean => Domain::finite(
             CanonicalType::Boolean,
             [
@@ -573,11 +591,8 @@ fn domain_for_type(value_type: &CanonicalType) -> Domain {
             }),
         )
         .expect("enum values are well typed"),
-        CanonicalType::Refinement(_) => {
-            // Frontend fields cannot currently declare refinement types.
-            Domain::primes()
-        }
-    }
+        CanonicalType::Refinement(_) => return None,
+    })
 }
 
 fn endpoint_integrity(
