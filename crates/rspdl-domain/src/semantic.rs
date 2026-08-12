@@ -35,6 +35,45 @@ pub struct DataModelDefinition {
     pub fields: Vec<FieldDefinition>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RelationDefinition {
+    pub id: CanonicalId,
+    pub name: String,
+    /// Ordered entity sorts. The first parameter is the anchor used by
+    /// relation cardinality constraints.
+    pub parameter_model_ids: Vec<CanonicalId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RelationalConstraintKind {
+    NonEmpty {
+        model_id: CanonicalId,
+    },
+    Required {
+        relation_id: CanonicalId,
+    },
+    Unique {
+        relation_id: CanonicalId,
+    },
+    Exclusive {
+        relation_ids: Vec<CanonicalId>,
+    },
+    Exhaustive {
+        relation_ids: Vec<CanonicalId>,
+    },
+    /// Declares compatible overlap without asserting that overlap exists.
+    Coexistent {
+        relation_ids: Vec<CanonicalId>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RelationalConstraintDefinition {
+    pub id: CanonicalId,
+    pub constraint: RelationalConstraintKind,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScreenOperationKind {
@@ -152,6 +191,10 @@ pub struct SemanticModule {
     pub name: String,
     pub enums: Vec<EnumDefinition>,
     pub models: Vec<DataModelDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<RelationDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relational_constraints: Vec<RelationalConstraintDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub screens: Vec<ScreenDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

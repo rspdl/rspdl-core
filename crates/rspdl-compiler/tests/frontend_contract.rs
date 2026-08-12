@@ -30,6 +30,8 @@ impl Frontend for TestFrontend {
                         value_type: UnlinkedTypeReference::Integer,
                     }],
                 }],
+                relations: Vec::new(),
+                relational_constraints: Vec::new(),
                 screens: Vec::new(),
                 derivations: Vec::new(),
                 recalculations: Vec::new(),

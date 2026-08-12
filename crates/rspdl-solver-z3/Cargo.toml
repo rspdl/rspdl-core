@@ -7,5 +7,4 @@ rspdl-domain = { path = "../rspdl-domain" }
 thiserror.workspace = true
 z3.workspace = true
 [dev-dependencies]
-rspdl-datalog = { path = "../rspdl-datalog" }
 num-bigint.workspace = true

@@ -26,7 +26,6 @@ cargo test --workspace
 - `crates/rspdl-domain`: Locale에 독립적인 타입, 논리 모델과 의미 규칙
 - `crates/rspdl-ko`: 한국어 scanner, parser, AST, lowering과 formatter
 - `crates/rspdl-compiler`: frontend와 backend를 연결하는 공개 compiler facade
-- `crates/rspdl-datalog`: Datalog evaluator
 - `crates/rspdl-solver-z3`: Z3 기반 constraint solver
 - `crates/rspdl-cli`: 파일 입출력, 출력 형식과 exit code
 - `examples`: 사람이 읽고 직접 실행할 수 있는 RSPDL 예제

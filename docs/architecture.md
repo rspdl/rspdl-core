@@ -3,8 +3,8 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "0.4"
-summary: Defines the implemented stable-ID Unlinked IR boundary, locale-neutral diagnostics, analyzer pipeline, dependency direction, and test architecture.
+version: "0.7"
+summary: Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded relational model-finding path, dependency direction, and tests.
 topics:
   - rust
   - compiler-architecture
@@ -21,13 +21,15 @@ related:
   - typed-domains-and-logic-core
   - field-provenance-and-sum-derivation
   - frontend-semantic-analysis-contract
+  - total-policy-condition-space-analysis
+  - finite-relational-model-finding
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-08"
+last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
-target_spec: "0.2.0"
+target_spec: "0.3.0"
 ---
 
 # RSPDL Compiler Architecture
@@ -80,7 +82,6 @@ rspdl-domain/
 │   │   │   ├── pipeline.rs
 │   │   │   └── session.rs
 │   │   └── tests/
-│   ├── rspdl-datalog/
 │   ├── rspdl-solver-z3/
 │   └── rspdl-cli/
 │       └── src/
@@ -95,7 +96,7 @@ rspdl-domain/
 └── docs/
 ```
 
-초기부터 compiler phase마다 crate를 만들지 않는다. 다만 독립 backend 또는 실행 경계가 필요한 `rspdl-datalog`, `rspdl-solver-z3`는 별도 crate로 둔다.
+초기부터 compiler phase마다 crate를 만들지 않는다. typed SMT solving 경계를 가진 `rspdl-solver-z3`만 별도 crate로 둔다. 현재 무조건 allow/deny runtime 정책 매칭은 compiler의 직접 결정적 대조로 충분하다.
 
 미래 `rspdl-en`은 `rspdl-ko`를 의존하지 않고 동일한 frontend output 계약을 구현한다.
 
@@ -106,10 +107,8 @@ flowchart TD
     CLI["rspdl-cli"] --> COMPILER["rspdl-compiler"]
     COMPILER --> KO["rspdl-ko"]
     COMPILER --> DOMAIN["rspdl-domain"]
-    COMPILER --> DATALOG["rspdl-datalog"]
     COMPILER --> Z3["rspdl-solver-z3"]
     KO --> DOMAIN
-    DATALOG --> DOMAIN
     Z3 --> DOMAIN
     EN["future rspdl-en"] --> DOMAIN
     COMPILER -. "future" .-> EN
@@ -137,6 +136,9 @@ flowchart LR
     UIR --> ANALYZE["rspdl-domain::analyze"]
     ANALYZE --> SM["SemanticModule"]
     ANALYZE --> DIAG["Structured Diagnostics"]
+    SM --> GROUND["Finite Relation Grounding"]
+    GROUND --> Z3["Z3"]
+    Z3 --> MODEL["Virtual Witness / Bound-limited UNSAT / UNKNOWN"]
     CST --> FORMAT["ko-KR Formatter"]
 ```
 
@@ -169,12 +171,14 @@ Locale에 독립적인 compiler domain을 소유한다.
 - stable ID symbol table과 linking
 - Semantic Graph
 - 타입, 데이터, 플로우와 정책 의미 규칙
+- 단일 닫힌 enum decision point의 backend-neutral 조건 공간 분석
+- unary/binary relation, 관계 meta-rule과 finite-scope grounding
 - 화면 field producer/consumer graph와 합계 derivation dependency
 - Canonical IR과 진단의 안정적인 serialization
 
 사람에게 표시할 번역 문장은 domain diagnostic에 저장하지 않는다. Domain은 message key와 구조화된 argument를 반환한다.
 
-초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md)와 [Stratified Datalog and Typed Solver RFC](rfcs/0003-stratified-datalog-and-typed-solver.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. `rspdl-datalog`는 안전한 active-domain rules를 결정적으로 materialize하고, `rspdl-solver-z3`는 backend-neutral constraint API를 typed SMT solving으로 연결한다.
+초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md), [Total Policy Condition Spaces and SMT-First Consistency Analysis RFC](rfcs/0006-total-policy-condition-space-analysis.md)와 [Finite Relational Rules and Bounded Model Finding RFC](rfcs/0007-finite-relational-model-finding.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. 단일 닫힌 enum decision point 분석 API는 아직 frontend/compiler diagnostic pipeline에 연결되지 않았다. 반면 relation meta-rule은 frontend에서 Canonical IR까지 연결되며, bounded grounding이 기존 typed Boolean Solver 계약을 통해 가상 witness와 bound 한정 UNSAT evidence를 반환한다. 현재 runtime은 선언된 무조건 allow/deny 정책을 action request와 role assignment에 직접 대조한다.
 
 ### `rspdl-ko`
 
@@ -189,6 +193,8 @@ Controlled Korean surface language 전체를 소유한다.
 - 조사와 공백을 정규화하는 formatter
 - Locale 표시 이름을 stable-ID `SurfaceRef`로 연결하는 Unlinked IR lowering
 - 화면 동작, 합계 계산, 재계산과 필드 사용 의도 문장의 parsing과 formatting
+- field가 하나 이상인 record model, 문장형 unary/binary relation과 `nonempty`, `required`, `unique`, `exclusive`, `exhaustive`, compatible `coexistent` 규칙의 parsing과 formatting
+- 문서 metadata인 `@모듈` 외 domain annotation을 거부하는 whitelist
 - 한국어 syntax diagnostic의 message key와 argument
 - core structured diagnostic의 한국어 rendering
 
@@ -204,6 +210,7 @@ Controlled Korean surface language 전체를 소유한다.
 - core linker와 analyzer 실행
 - phase별 진단 병합과 안정적인 정렬
 - partial result와 failure policy
+- `find_ko_model`의 finite scope, timeout과 result contract
 
 제안하는 외부 경계는 다음과 같다.
 
@@ -245,6 +252,8 @@ pub struct FrontendOutput {
 ### `rspdl-cli`
 
 CLI는 파일 I/O, argument parsing, 출력 format과 exit code만 담당한다. 문법 또는 의미 규칙을 포함하지 않는다.
+
+`rspdl model <file> --scope <n>`은 실제 runtime JSON 없이 bounded model finder를 호출한다. `SAT`은 `0`, `UNSAT_WITHIN_BOUND`는 finding인 `2`, `UNKNOWN`과 backend/configuration error는 `1`이다.
 
 Canonical IR을 정책표나 사용자·리소스별 조회 모델로 투영하는 기능은 compiler와 CLI의 책임이 아니다. application은 `rspdl-domain`이 직렬화한 IR과 진단을 입력으로 사용해 표시, 필터, 집계와 조회 계약을 소유한다. 자세한 경계는 [Core와 Application Projection 경계 ADR](adr/0002-core-application-boundary.md)을 따른다.
 
@@ -356,10 +365,11 @@ Golden file은 명세 계약이므로 단순 snapshot 갱신으로 승인하지 
 
 - `.rspdl` source와 `@모듈 표시 이름(stable_id)` header
 - 자연어 enum·데이터 header와 들여쓰기 기반 무표식 항목
+- 방향과 적용 대상을 문장에 명시하는 unary/binary relation 및 관계 규칙
 - 정확한 표시 이름 참조와 stable machine ID lowering
 - 이름·source ID 없이 인식되는 자연 문장형 제약·정책과 core가 생성하는 Locale 독립 내부 Rule ID
 - 공통 `Frontend` trait, `UnlinkedModule`과 Locale 독립 linker/analyzer
-- Z3 제약 반례와 Datalog 정책 match 실행
+- Z3 제약 반례와 직접 runtime 정책 match 실행
 - `parse`, `compile`, `check`, `format` CLI와 안정적인 JSON artifact
 
 [Field Provenance, Screen Usage, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)은 다음 후속 vertical slice를 구현한다.
@@ -369,4 +379,11 @@ Golden file은 명세 계약이므로 단순 snapshot 갱신으로 승인하지 
 - 생산자 없는 소비, 재계산 누락과 미조회 입력 진단
 - 교차 모델 합계 dependency와 관계 범위 `unknown` 보존
 
-관계·컬렉션·유저 플로우·조건부 정책과 일반 논리식은 후속 vertical slice에서 다룬다.
+정적 정책 분석의 기반 slice는 단일 닫힌 enum 변수와 독립 allow/deny branch를 입력으로 받아 다음을 구현한다.
+
+- 모든 uncovered enum variant와 각각의 canonical witness
+- 같은 effect branch의 compatible overlap과 allow/deny conflict 분리
+- solver `UNKNOWN`과 backend error의 비성공 보존
+- branch 입력 순서와 무관한 canonical finding 순서
+
+컬렉션·유저 플로우·조건부 정책 표면 문법과 compiler 연결, default·override·unreachable 및 일반 논리식은 후속 vertical slice에서 다룬다. Unary/binary relation과 제한된 관계 규칙은 현재 구현되어 있다.

@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+use rspdl_domain::MAX_BOUNDED_SCOPE_PER_MODEL;
+
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -72,4 +74,101 @@ fn checks_the_expense_approval_example_with_runtime_fixture_data() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn finds_a_virtual_model_without_runtime_data() {
+    let source = workspace_root().join("examples/project-ownership.rspdl");
+    let output = Command::new(env!("CARGO_BIN_EXE_rspdl"))
+        .args([
+            "model",
+            source.to_str().expect("example path should be valid UTF-8"),
+            "--scope",
+            "2",
+            "--json",
+        ])
+        .output()
+        .expect("rspdl command should run");
+
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["result"]["status"], "sat");
+    assert!(
+        !report["result"]["witness"]["relation_tuples"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn distinguishes_bound_specific_unsat_from_a_larger_sat_scope() {
+    let source = workspace_root().join("examples/project-assignment-bound.rspdl");
+
+    let scope_one = Command::new(env!("CARGO_BIN_EXE_rspdl"))
+        .args([
+            "model",
+            source.to_str().expect("example path should be valid UTF-8"),
+            "--scope",
+            "1",
+            "--json",
+        ])
+        .output()
+        .expect("rspdl command should run");
+    assert_eq!(scope_one.status.code(), Some(2), "{scope_one:?}");
+    let scope_one_report: serde_json::Value =
+        serde_json::from_slice(&scope_one.stdout).expect("scope-1 report should be JSON");
+    assert_eq!(scope_one_report["result"]["status"], "unsat_within_bound");
+    assert!(
+        !scope_one_report["result"]["core_rule_ids"]
+            .as_array()
+            .expect("UNSAT report should contain core rule IDs")
+            .is_empty()
+    );
+
+    let scope_two = Command::new(env!("CARGO_BIN_EXE_rspdl"))
+        .args([
+            "model",
+            source.to_str().expect("example path should be valid UTF-8"),
+            "--scope",
+            "2",
+            "--json",
+        ])
+        .output()
+        .expect("rspdl command should run");
+    assert_eq!(scope_two.status.code(), Some(0), "{scope_two:?}");
+    let scope_two_report: serde_json::Value =
+        serde_json::from_slice(&scope_two.stdout).expect("scope-2 report should be JSON");
+    assert_eq!(scope_two_report["result"]["status"], "sat");
+    assert!(
+        scope_two_report["result"]["witness"]["relation_tuples"]
+            .as_array()
+            .expect("SAT report should contain relation tuples")
+            .len()
+            >= 2
+    );
+}
+
+#[test]
+fn out_of_range_model_scope_is_a_structured_error() {
+    let source = workspace_root().join("examples/project-ownership.rspdl");
+    let invalid_scope = (MAX_BOUNDED_SCOPE_PER_MODEL + 1).to_string();
+    let output = Command::new(env!("CARGO_BIN_EXE_rspdl"))
+        .arg("model")
+        .arg(source)
+        .arg("--scope")
+        .arg(invalid_scope)
+        .arg("--json")
+        .output()
+        .expect("rspdl command should run");
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["failure"]["rule_id"], "RSPDL-MODEL-001");
+    assert_eq!(
+        report["failure"]["message_key"],
+        "model_finding.configuration_error"
+    );
+    assert!(report.get("result").is_none());
 }

@@ -8,10 +8,12 @@ use crate::{
     ActionDefinition, CanonicalId, CanonicalType, CanonicalValue, ConstraintDefinition,
     ConstraintOperand, DataModelDefinition, DerivationDefinition, DerivationExpression, Diagnostic,
     EnumDefinition, EnumType, EnumVariantDefinition, FieldDefinition, FieldIntentDefinition,
-    ModelError, PolicyDefinition, PolicyEffect, RelationOperator, RoleDefinition, ScreenDefinition,
+    ModelError, PolicyDefinition, PolicyEffect, RelationDefinition, RelationOperator,
+    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
     ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SurfaceRef,
     TextRange, UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedFieldIntent,
     UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
+    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind,
     UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
@@ -172,6 +174,40 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
         .map(|model| (model.name.clone(), model.clone()))
         .collect::<BTreeMap<_, _>>();
 
+    let mut relations = Vec::new();
+    let mut relation_names = BTreeSet::new();
+    for value in module.relations {
+        link_relation(
+            value,
+            &module_id,
+            &models_by_name,
+            &mut top_level_ids,
+            &mut relation_names,
+            &mut relations,
+            &mut diagnostics,
+        );
+    }
+
+    let mut relational_constraints_with_spans = Vec::new();
+    for value in module.relational_constraints {
+        let span = value.span;
+        if let Some(definition) = link_relational_constraint(
+            value,
+            &module_id,
+            &models_by_name,
+            &relations,
+            &mut top_level_ids,
+            &mut diagnostics,
+        ) {
+            relational_constraints_with_spans.push((definition, span));
+        }
+    }
+    validate_relation_compatibility(&relational_constraints_with_spans, &mut diagnostics);
+    let relational_constraints = relational_constraints_with_spans
+        .into_iter()
+        .map(|(definition, _)| definition)
+        .collect();
+
     let (screens, derivations, field_intents) = analyze_data_usage(
         module.screens,
         module.derivations,
@@ -226,6 +262,8 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
             name: module.declaration.name,
             enums,
             models,
+            relations,
+            relational_constraints,
             screens,
             derivations,
             field_intents,
@@ -235,6 +273,241 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
             policies,
         }),
         diagnostics,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn link_relation(
+    value: UnlinkedRelation,
+    module_id: &CanonicalId,
+    models: &BTreeMap<String, DataModelDefinition>,
+    top_level_ids: &mut BTreeSet<CanonicalId>,
+    relation_names: &mut BTreeSet<String>,
+    relations: &mut Vec<RelationDefinition>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(id) = canonical_member(&value.declaration, module_id, diagnostics) else {
+        return;
+    };
+    duplicate_id(&id, value.declaration.span, top_level_ids, diagnostics);
+    if !relation_names.insert(value.declaration.name.clone()) {
+        duplicate_name("relation", &value.declaration, diagnostics);
+    }
+    if !(1..=2).contains(&value.parameter_models.len()) {
+        diagnostics.push(
+            Diagnostic::error(
+                "RSPDL-REL-001",
+                "semantic.relation.arity_unsupported",
+                value.span,
+            )
+            .with_argument("actual", value.parameter_models.len())
+            .with_argument("supported", "1..2"),
+        );
+        return;
+    }
+    let parameter_model_ids = value
+        .parameter_models
+        .iter()
+        .filter_map(|reference| resolve_model(models, reference, diagnostics))
+        .map(|model| model.id.clone())
+        .collect::<Vec<_>>();
+    if parameter_model_ids.len() != value.parameter_models.len() {
+        return;
+    }
+    relations.push(RelationDefinition {
+        id,
+        name: value.declaration.name,
+        parameter_model_ids,
+    });
+}
+
+fn link_relational_constraint(
+    value: UnlinkedRelationalConstraint,
+    module_id: &CanonicalId,
+    models: &BTreeMap<String, DataModelDefinition>,
+    relations: &[RelationDefinition],
+    top_level_ids: &mut BTreeSet<CanonicalId>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<RelationalConstraintDefinition> {
+    let constraint = match value.constraint {
+        UnlinkedRelationalConstraintKind::NonEmpty { model } => {
+            let model = resolve_model(models, &model, diagnostics)?;
+            RelationalConstraintKind::NonEmpty {
+                model_id: model.id.clone(),
+            }
+        }
+        UnlinkedRelationalConstraintKind::Required { model, relation } => {
+            let model = resolve_model(models, &model, diagnostics)?;
+            let relation = resolve_relation(relations, &relation, diagnostics)?;
+            require_binary_cardinality(relation, value.span, diagnostics)?;
+            require_cardinality_anchor(model, relation, value.span, diagnostics)?;
+            RelationalConstraintKind::Required {
+                relation_id: relation.id.clone(),
+            }
+        }
+        UnlinkedRelationalConstraintKind::Unique { model, relation } => {
+            let model = resolve_model(models, &model, diagnostics)?;
+            let relation = resolve_relation(relations, &relation, diagnostics)?;
+            require_binary_cardinality(relation, value.span, diagnostics)?;
+            require_cardinality_anchor(model, relation, value.span, diagnostics)?;
+            RelationalConstraintKind::Unique {
+                relation_id: relation.id.clone(),
+            }
+        }
+        UnlinkedRelationalConstraintKind::Exclusive {
+            relations: references,
+        } => RelationalConstraintKind::Exclusive {
+            relation_ids: resolve_relation_group(relations, &references, value.span, diagnostics)?,
+        },
+        UnlinkedRelationalConstraintKind::Exhaustive {
+            relations: references,
+        } => RelationalConstraintKind::Exhaustive {
+            relation_ids: resolve_relation_group(relations, &references, value.span, diagnostics)?,
+        },
+        UnlinkedRelationalConstraintKind::Coexistent {
+            relations: references,
+        } => RelationalConstraintKind::Coexistent {
+            relation_ids: resolve_relation_group(relations, &references, value.span, diagnostics)?,
+        },
+    };
+    let generated = generated_relational_constraint_id(&constraint);
+    let declaration = UnlinkedDeclaration {
+        id: Some(generated),
+        ..value.declaration
+    };
+    let id = canonical_member(&declaration, module_id, diagnostics)?;
+    duplicate_id(&id, declaration.span, top_level_ids, diagnostics);
+    Some(RelationalConstraintDefinition { id, constraint })
+}
+
+fn require_binary_cardinality(
+    relation: &RelationDefinition,
+    span: TextRange,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<()> {
+    if relation.parameter_model_ids.len() == 2 {
+        Some(())
+    } else {
+        diagnostics.push(
+            Diagnostic::error(
+                "RSPDL-REL-002",
+                "semantic.relation.cardinality_requires_binary",
+                span,
+            )
+            .with_argument("relation_id", &relation.id),
+        );
+        None
+    }
+}
+
+fn require_cardinality_anchor(
+    model: &DataModelDefinition,
+    relation: &RelationDefinition,
+    span: TextRange,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<()> {
+    let actual_model_id = relation.parameter_model_ids.first()?;
+    if actual_model_id == &model.id {
+        Some(())
+    } else {
+        diagnostics.push(
+            Diagnostic::error(
+                "RSPDL-REL-002",
+                "semantic.relation.cardinality_anchor_mismatch",
+                span,
+            )
+            .with_argument("relation_id", &relation.id)
+            .with_argument("expected_model_id", actual_model_id)
+            .with_argument("actual_model_id", &model.id),
+        );
+        None
+    }
+}
+
+fn resolve_relation_group(
+    definitions: &[RelationDefinition],
+    references: &[SurfaceRef],
+    span: TextRange,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<Vec<CanonicalId>> {
+    let mut relation_ids = references
+        .iter()
+        .filter_map(|reference| resolve_relation(definitions, reference, diagnostics))
+        .map(|relation| relation.id.clone())
+        .collect::<Vec<_>>();
+    if relation_ids.len() != references.len() {
+        return None;
+    }
+    relation_ids.sort();
+    let original_len = relation_ids.len();
+    relation_ids.dedup();
+    if relation_ids.len() != original_len || relation_ids.len() < 2 {
+        diagnostics.push(Diagnostic::error(
+            "RSPDL-REL-003",
+            "semantic.relation.group_requires_distinct_members",
+            span,
+        ));
+        return None;
+    }
+    let signature = definitions
+        .iter()
+        .find(|relation| relation.id == relation_ids[0])?
+        .parameter_model_ids
+        .clone();
+    if relation_ids.iter().any(|id| {
+        definitions
+            .iter()
+            .find(|relation| &relation.id == id)
+            .is_none_or(|relation| relation.parameter_model_ids != signature)
+    }) {
+        diagnostics.push(Diagnostic::error(
+            "RSPDL-REL-003",
+            "semantic.relation.group_signature_mismatch",
+            span,
+        ));
+        return None;
+    }
+    Some(relation_ids)
+}
+
+fn validate_relation_compatibility(
+    constraints: &[(RelationalConstraintDefinition, TextRange)],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut exclusive = constraints
+        .iter()
+        .filter_map(|(definition, span)| match &definition.constraint {
+            RelationalConstraintKind::Exclusive { relation_ids } => {
+                Some((relation_ids, definition, span))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    exclusive.sort_by(|(_, left, _), (_, right, _)| left.id.cmp(&right.id));
+    for (definition, span) in constraints {
+        let RelationalConstraintKind::Coexistent { relation_ids } = &definition.constraint else {
+            continue;
+        };
+        let conflict = relation_ids.iter().enumerate().find_map(|(index, left)| {
+            relation_ids.iter().skip(index + 1).find_map(|right| {
+                exclusive
+                    .iter()
+                    .find(|(ids, _, _)| ids.contains(left) && ids.contains(right))
+                    .map(|(_, rule, _)| (left, right, *rule))
+            })
+        });
+        if let Some((left, right, exclusive)) = conflict {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-REL-004",
+                    "semantic.relation.compatibility_conflict",
+                    *span,
+                )
+                .with_argument("exclusive_rule_id", &exclusive.id)
+                .with_argument("coexistent_rule_id", &definition.id)
+                .with_argument("relation_ids", format!("{left},{right}")),
+            );
+        }
     }
 }
 
@@ -254,6 +527,14 @@ fn lower_model(
     duplicate_id(&id, value.declaration.span, top_level_ids, diagnostics);
     if !model_names.insert(value.declaration.name.clone()) {
         duplicate_name("data_model", &value.declaration, diagnostics);
+    }
+    if value.fields.is_empty() {
+        diagnostics.push(Diagnostic::error(
+            "RSPDL-DATA-007",
+            "semantic.model.field_required",
+            value.declaration.span,
+        ));
+        return;
     }
 
     let mut fields = Vec::new();
@@ -908,6 +1189,43 @@ fn resolve_model<'a>(
     }
 }
 
+fn resolve_relation<'a>(
+    definitions: &'a [RelationDefinition],
+    reference: &SurfaceRef,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<&'a RelationDefinition> {
+    if !validate_reference(reference, "RSPDL-REL-001", diagnostics) {
+        return None;
+    }
+    let matches = definitions
+        .iter()
+        .filter(|relation| top_level_reference_matches(&relation.id, reference))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [relation] => Some(*relation),
+        [] => {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-REL-001",
+                    "semantic.relation.not_found",
+                    reference.span(),
+                )
+                .with_argument("reference", reference.id()),
+            );
+            None
+        }
+        _ => {
+            diagnostics.push(ambiguous_reference(
+                "RSPDL-REL-001",
+                "relation",
+                reference,
+                matches.iter().map(|relation| &relation.id),
+            ));
+            None
+        }
+    }
+}
+
 fn find_model<'a>(
     models: &'a [DataModelDefinition],
     reference: &SurfaceRef,
@@ -1181,6 +1499,31 @@ fn generated_policy_id(
     )
 }
 
+fn generated_relational_constraint_id(constraint: &RelationalConstraintKind) -> String {
+    let identity = match constraint {
+        RelationalConstraintKind::NonEmpty { model_id } => format!("nonempty\0{model_id}"),
+        RelationalConstraintKind::Required { relation_id } => format!("required\0{relation_id}"),
+        RelationalConstraintKind::Unique { relation_id } => format!("unique\0{relation_id}"),
+        RelationalConstraintKind::Exclusive { relation_ids } => {
+            format!("exclusive\0{}", joined_ids(relation_ids))
+        }
+        RelationalConstraintKind::Exhaustive { relation_ids } => {
+            format!("exhaustive\0{}", joined_ids(relation_ids))
+        }
+        RelationalConstraintKind::Coexistent { relation_ids } => {
+            format!("coexistent\0{}", joined_ids(relation_ids))
+        }
+    };
+    generated_id("relation_rule", &identity)
+}
+
+fn joined_ids(ids: &[CanonicalId]) -> String {
+    ids.iter()
+        .map(CanonicalId::as_str)
+        .collect::<Vec<_>>()
+        .join("\0")
+}
+
 fn generated_id(kind: &str, identity: &str) -> String {
     let mut hash = 0xcbf29ce484222325u64;
     for byte in identity.as_bytes() {
@@ -1300,19 +1643,5 @@ fn model_error(rule_id: &str, error: ModelError, span: TextRange) -> Diagnostic 
         ModelError::InvalidInteger { value } => {
             Diagnostic::error(rule_id, "model.invalid_integer", span).with_argument("value", value)
         }
-        ModelError::UnknownPredicate { predicate } => {
-            Diagnostic::error(rule_id, "model.unknown_predicate", span)
-                .with_argument("predicate", predicate)
-        }
-        ModelError::ConflictingPredicateSignature { predicate } => {
-            Diagnostic::error(rule_id, "model.conflicting_predicate_signature", span)
-                .with_argument("predicate", predicate)
-        }
-        ModelError::NonGroundFact {
-            predicate,
-            variable,
-        } => Diagnostic::error(rule_id, "model.non_ground_fact", span)
-            .with_argument("predicate", predicate)
-            .with_argument("variable", variable),
     }
 }

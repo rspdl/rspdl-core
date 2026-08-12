@@ -86,6 +86,49 @@ pub struct UnlinkedDataModel {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedRelation {
+    pub declaration: UnlinkedDeclaration,
+    /// Ordered relation parameters. The first parameter is the anchor used by
+    /// `required` and `unique` constraints.
+    pub parameter_models: Vec<SurfaceRef>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UnlinkedRelationalConstraintKind {
+    NonEmpty {
+        model: SurfaceRef,
+    },
+    Required {
+        model: SurfaceRef,
+        relation: SurfaceRef,
+    },
+    Unique {
+        model: SurfaceRef,
+        relation: SurfaceRef,
+    },
+    Exclusive {
+        relations: Vec<SurfaceRef>,
+    },
+    Exhaustive {
+        relations: Vec<SurfaceRef>,
+    },
+    /// Explicitly records that overlap is compatible. It does not require an
+    /// overlapping tuple to exist.
+    Coexistent {
+        relations: Vec<SurfaceRef>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedRelationalConstraint {
+    pub declaration: UnlinkedDeclaration,
+    pub constraint: UnlinkedRelationalConstraintKind,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedScreen {
     pub declaration: UnlinkedDeclaration,
     pub model: SurfaceRef,
@@ -173,6 +216,8 @@ pub struct UnlinkedModule {
     pub declaration: UnlinkedDeclaration,
     pub enums: Vec<UnlinkedEnum>,
     pub models: Vec<UnlinkedDataModel>,
+    pub relations: Vec<UnlinkedRelation>,
+    pub relational_constraints: Vec<UnlinkedRelationalConstraint>,
     pub screens: Vec<UnlinkedScreen>,
     pub derivations: Vec<UnlinkedSumDerivation>,
     pub recalculations: Vec<UnlinkedRecalculation>,

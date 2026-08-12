@@ -5,7 +5,8 @@ use rspdl_domain::{
     ScreenOperationKind, SurfaceRef, UnlinkedAction, UnlinkedConstraint, UnlinkedDataModel,
     UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent,
     UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
-    UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
+    UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 use crate::ast::*;
@@ -50,6 +51,7 @@ struct ModelSymbols {
 struct StableIdIndex {
     enums: Vec<EnumSymbols>,
     models: Vec<ModelSymbols>,
+    relations: Vec<Symbol>,
     roles: Vec<Symbol>,
     actions: Vec<Symbol>,
 }
@@ -78,6 +80,9 @@ impl StableIdIndex {
                         })
                         .collect(),
                 }),
+                DeclarationAst::Relation(value) => {
+                    index.relations.push(Symbol::from(&value.declaration));
+                }
                 DeclarationAst::Role(value) => {
                     index.roles.push(Symbol::from(&value.declaration));
                 }
@@ -127,6 +132,15 @@ impl StableIdIndex {
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Option<SurfaceRef> {
         resolve_symbols(self.roles.iter(), value, "role", span, diagnostics)
+    }
+
+    fn relation_reference(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        resolve_symbols(self.relations.iter(), value, "relation", span, diagnostics)
     }
 
     fn action_reference(
@@ -300,6 +314,8 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         declaration: declaration(&document.module.declaration, true),
         enums: Vec::new(),
         models: Vec::new(),
+        relations: Vec::new(),
+        relational_constraints: Vec::new(),
         screens: Vec::new(),
         derivations: Vec::new(),
         recalculations: Vec::new(),
@@ -339,6 +355,100 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                     })
                     .collect(),
             }),
+            DeclarationAst::Relation(value) => {
+                let parameter_models = value
+                    .parameter_models
+                    .iter()
+                    .map(|model| {
+                        required_reference(
+                            index.model_reference(model, value.span, &mut diagnostics),
+                            value.span,
+                        )
+                    })
+                    .collect();
+                module.relations.push(UnlinkedRelation {
+                    declaration: declaration(&value.declaration, true),
+                    parameter_models,
+                    span: value.span,
+                });
+            }
+            DeclarationAst::RelationalConstraint(value) => {
+                let constraint = match &value.constraint {
+                    RelationalConstraintKindAst::NonEmpty { model } => {
+                        UnlinkedRelationalConstraintKind::NonEmpty {
+                            model: required_reference(
+                                index.model_reference(model, value.span, &mut diagnostics),
+                                value.span,
+                            ),
+                        }
+                    }
+                    RelationalConstraintKindAst::Required { model, relation } => {
+                        UnlinkedRelationalConstraintKind::Required {
+                            model: required_reference(
+                                index.model_reference(model, value.span, &mut diagnostics),
+                                value.span,
+                            ),
+                            relation: required_reference(
+                                index.relation_reference(relation, value.span, &mut diagnostics),
+                                value.span,
+                            ),
+                        }
+                    }
+                    RelationalConstraintKindAst::Unique { model, relation } => {
+                        UnlinkedRelationalConstraintKind::Unique {
+                            model: required_reference(
+                                index.model_reference(model, value.span, &mut diagnostics),
+                                value.span,
+                            ),
+                            relation: required_reference(
+                                index.relation_reference(relation, value.span, &mut diagnostics),
+                                value.span,
+                            ),
+                        }
+                    }
+                    RelationalConstraintKindAst::Exclusive { relations } => {
+                        UnlinkedRelationalConstraintKind::Exclusive {
+                            relations: relation_references(
+                                relations,
+                                value.span,
+                                &index,
+                                &mut diagnostics,
+                            ),
+                        }
+                    }
+                    RelationalConstraintKindAst::Exhaustive { relations } => {
+                        UnlinkedRelationalConstraintKind::Exhaustive {
+                            relations: relation_references(
+                                relations,
+                                value.span,
+                                &index,
+                                &mut diagnostics,
+                            ),
+                        }
+                    }
+                    RelationalConstraintKindAst::Coexistent { relations } => {
+                        UnlinkedRelationalConstraintKind::Coexistent {
+                            relations: relation_references(
+                                relations,
+                                value.span,
+                                &index,
+                                &mut diagnostics,
+                            ),
+                        }
+                    }
+                };
+                module
+                    .relational_constraints
+                    .push(UnlinkedRelationalConstraint {
+                        declaration: UnlinkedDeclaration {
+                            name: String::new(),
+                            id: None,
+                            span: value.span,
+                        },
+                        constraint,
+                        span: value.span,
+                    });
+            }
             DeclarationAst::Screen(value) => {
                 let model = index.model_reference(&value.model, value.span, &mut diagnostics);
                 let fields = value
@@ -522,6 +632,18 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
     }
 }
 
+fn relation_references(
+    values: &[String],
+    span: Span,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<SurfaceRef> {
+    values
+        .iter()
+        .map(|value| required_reference(index.relation_reference(value, span, diagnostics), span))
+        .collect()
+}
+
 fn declaration(value: &NamedIdAst, keep_id: bool) -> UnlinkedDeclaration {
     UnlinkedDeclaration {
         name: value.name.clone(),
@@ -624,8 +746,8 @@ mod tests {
 신청(request)은 다음 필드들로 구성되어 있다.
     금액(amount): 필수 정수
 신청의 금액은 0보다 커야 한다.
-@역할 관리자(manager)
-@행동 변경(change)
+관리자(manager)는 역할이다.
+변경(change)은 행동이다.
 관리자는 신청의 금액을 변경할 수 있다.
 "#;
         let parsed = parse(source);

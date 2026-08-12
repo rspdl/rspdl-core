@@ -44,10 +44,13 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 - Locale과 분리된 stable ID linking, type checking 및 data usage analyzer
 - message key와 정렬된 argument를 사용하는 Locale 중립 structured diagnostic
 - Z3 기반 record constraint 검사
-- Datalog 기반 runtime policy match와 `allowed`, `denied`, `conflict`, `unmatched` 분류
+- field를 가진 record model, 문장형 unary/binary relation과 `nonempty`, `required`, `unique`, `exclusive`, `exhaustive`, compatible `coexistent` 선언
+- 실제 record 없이 finite scope의 typed field constraint와 relation rule을 검사하고 가상 entity/field/relation witness를 찾는 bounded model finder
+- 단일 닫힌 enum decision point의 정적 gap, compatible overlap 및 allow/deny conflict 분석 API
+- 결정적 직접 runtime policy match와 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - JSON compilation 및 diagnostic 출력
 
-화면 간 순서와 분기, 삭제 이후 접근, 교차 모델 relation/join 실행, 일반 계산식과 조건부 정책 분석은 목표 범위이지만 아직 구현되지 않았습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
+화면 간 순서와 분기, 삭제 이후 접근, 실제 relation data binding과 join 실행, 3항 이상 관계·임의 양화식, 일반 계산식, 조건부 정책의 한국어 문법·compiler 진단 연결, default·override와 unreachable 분석은 목표 범위이지만 아직 구현되지 않았습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
 
 ## 짧은 예시
 
@@ -61,14 +64,53 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 재고 항목의 수량은 0 이상이어야 한다.
 ```
 
+관계와 cardinality도 annotation이 아니라 방향이 드러나는 문장으로 쓴다.
+
+```rspdl
+프로젝트는 사용자를 소유자(owner)로 가질 수 있다.
+모든 프로젝트는 소유자를 하나 이상 가져야 한다.
+각 프로젝트는 소유자를 최대 하나만 가질 수 있다.
+```
+
+`@`는 현재 문서 metadata인 `@모듈`에만 허용된다. 데이터 모델은 하나 이상의 field를 가져야 하며 빈 모델을 추상 개체처럼 사용할 수 없다.
+
 ```console
 cargo run -p rspdl-cli -- compile examples/inventory.rspdl --json
+cargo run -p rspdl-cli -- model examples/project-ownership.rspdl --scope 3 --json
 cargo run -p rspdl-cli -- compile examples/field-provenance.rspdl --json
 cargo run -p rspdl-cli -- check examples/expense-approval.rspdl \
   --data crates/rspdl-cli/tests/fixtures/expense-approval-data.json --json
 ```
 
 `check`는 compile 또는 input 오류에 exit code `1`, 정책 충돌·미일치나 제약 위반 발견에 `2`, 발견 사항이 없으면 `0`을 반환합니다.
+
+`model`은 실제 data file을 받지 않습니다. 선언을 만족하는 가상 세계가 scope 안에 있으면 `SAT`과 witness를 반환하고, 없으면 전역 모순이 아닌 `UNSAT_WITHIN_BOUND`와 관련 Rule ID를 반환합니다.
+
+### 분석 결과를 직접 확인하는 예시
+
+정책 조건 공간 분석은 아직 한국어 문법이나 CLI에 연결되지 않은 Rust API입니다. 실행 가능한 Z3 예시는 하나의 `active` 정책만 있을 때 누락된 상태, 같은 상태의 allow/deny 충돌, 같은 effect의 compatible overlap을 각각 보여줍니다.
+
+```console
+$ cargo run -p rspdl-solver-z3 --example total_policy_analysis
+GAP ended: status=ended
+GAP paused: status=paused
+GAP scheduled: status=scheduled
+CONFLICT active_allow + active_deny: status=active
+COMPATIBLE_OVERLAP active_first + active_second: status=active
+```
+
+Bounded relational model은 같은 선언도 scope에 따라 결과가 달라질 수 있습니다. [프로젝트 배정 예시](examples/project-assignment-bound.rspdl)는 주 담당자와 보조 담당자가 모두 필요하지만 같은 `(프로젝트, 사용자)` tuple에서는 둘이 겹칠 수 없다고 선언합니다.
+
+```console
+$ cargo run -p rspdl-cli -- model examples/project-assignment-bound.rspdl --scope 1
+UNSAT_WITHIN_BOUND (모델별 scope: 1, 규칙: ...)
+
+$ cargo run -p rspdl-cli -- model examples/project-assignment-bound.rspdl --scope 2
+SAT (모델별 scope: 2)
+...
+```
+
+Scope 1에서는 사용자 slot이 하나뿐이라 두 관계를 분리할 수 없습니다. Scope 2에서는 서로 다른 가상 사용자를 선택하는 witness가 존재합니다. 작은 scope의 `UNSAT_WITHIN_BOUND`는 무한한 모든 세계에서의 모순을 의미하지 않습니다.
 
 ## 개발 시작하기
 
@@ -86,6 +128,8 @@ cargo build --workspace
 - [Data Lifecycle Modeling Gap](docs/problems/0001-data-lifecycle-modeling-gap.md): 데이터 존재 시점과 연산 공백
 - [Field Provenance and Sum Derivation](docs/rfcs/0005-field-provenance-and-sum-derivation.md): 화면 생산·소비와 합계 계산 문법
 - [Policy Consistency Blind Spots](docs/problems/0002-policy-consistency-blind-spots.md): 충돌·누락·중첩·도달 불가
+- [Total Policy Condition Spaces and SMT-First Consistency Analysis](docs/rfcs/0006-total-policy-condition-space-analysis.md): 닫힌 vocabulary, 전체 조건 공간과 명시적 override의 SMT 분석 계약
+- [Finite Relational Rules and Bounded Model Finding](docs/rfcs/0007-finite-relational-model-finding.md): typed relation, 명시적 cardinality/compatibility와 가상 데이터 모델 탐색
 - [Problem-driven Development](docs/guides/problem-driven-development.md): 원인에서 코드와 증명까지 연결하는 기여 흐름
 - [Frontend and Semantic Analysis Contract](docs/specs/frontend-semantic-analysis-contract.md): 다른 표현 언어가 구현할 stable-ID IR과 진단 계약
 - [Knowledge Index](docs/index.md): RFC, ADR, architecture를 포함한 전체 문서 인덱스

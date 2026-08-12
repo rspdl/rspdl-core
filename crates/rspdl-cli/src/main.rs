@@ -3,9 +3,11 @@ use std::fs;
 use std::process::ExitCode;
 
 use rspdl_compiler::{
-    CheckOptions, KoSource, PolicyStatus, RuntimeDiagnostic, WorkspaceCheckReport, check_ko,
-    check_ko_files, compile_ko, compile_ko_files,
+    CheckOptions, KoSource, ModelFindingOptions, ModelFindingReport, PolicyStatus,
+    RuntimeDiagnostic, WorkspaceCheckReport, check_ko, check_ko_files, compile_ko,
+    compile_ko_files, find_ko_model,
 };
+use rspdl_domain::BoundedModelResult;
 use rspdl_ko::{Diagnostic, ParseOutput, format_document, parse, render_diagnostic};
 use serde::Serialize;
 
@@ -39,9 +41,127 @@ fn run(arguments: Vec<String>) -> Result<ExitCode, String> {
     match command {
         "parse" => parse_command(&arguments[1..]),
         "compile" => compile_command(&arguments[1..]),
+        "model" => model_command(&arguments[1..]),
         "check" => check_command(&arguments[1..]),
         "format" => format_command(&arguments[1..]),
         _ => Err(format!("알 수 없는 명령 `{command}`입니다.")),
+    }
+}
+
+fn model_command(arguments: &[String]) -> Result<ExitCode, String> {
+    let mut path = None;
+    let mut scope = ModelFindingOptions::default().scope_per_model;
+    let mut json = false;
+    let mut index = 0;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--json" => json = true,
+            "--scope" => {
+                index += 1;
+                let value = arguments
+                    .get(index)
+                    .ok_or_else(|| "`--scope` 뒤에 1 이상의 정수가 필요합니다.".to_owned())?;
+                scope = value
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|scope| *scope > 0)
+                    .ok_or_else(|| "`--scope`는 1 이상의 정수여야 합니다.".to_owned())?;
+            }
+            argument if argument.starts_with('-') => {
+                return Err(format!("알 수 없는 인자 `{argument}`입니다."));
+            }
+            value if path.is_none() => path = Some(value.to_owned()),
+            value => return Err(format!("model 명령은 파일 하나만 받습니다: `{value}`")),
+        }
+        index += 1;
+    }
+    let path = path.ok_or_else(|| "RSPDL 파일 경로가 필요합니다.".to_owned())?;
+    let source = read(&path)?;
+    let report = find_ko_model(
+        &source,
+        ModelFindingOptions {
+            scope_per_model: scope,
+            ..ModelFindingOptions::default()
+        },
+    );
+    if json {
+        print_json(&report)?;
+    } else {
+        print_model_report(&report);
+    }
+    Ok(if report.has_errors() {
+        ExitCode::from(1)
+    } else if report.has_findings() {
+        ExitCode::from(2)
+    } else {
+        ExitCode::SUCCESS
+    })
+}
+
+fn print_model_report(report: &ModelFindingReport) {
+    print_diagnostics(&report.compilation.diagnostics);
+    if let Some(failure) = &report.failure {
+        eprintln!(
+            "{} {}: {}",
+            failure.rule_id, failure.message_key, failure.reason
+        );
+    }
+    match &report.result {
+        Some(BoundedModelResult::Sat {
+            scope_per_model,
+            witness,
+        }) => {
+            println!("SAT (모델별 scope: {scope_per_model})");
+            for entity in &witness.entities {
+                println!("ENTITY {}: {}", entity.model_id, entity.entity_id);
+            }
+            for field in &witness.field_values {
+                let value = serde_json::to_string(&field.value)
+                    .unwrap_or_else(|_| "<직렬화할 수 없는 값>".into());
+                println!("FIELD {} / {}: {}", field.entity_id, field.field_id, value);
+            }
+            for tuple in &witness.relation_tuples {
+                println!(
+                    "RELATION {}({})",
+                    tuple.relation_id,
+                    tuple
+                        .entity_ids
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+        }
+        Some(BoundedModelResult::UnsatWithinBound {
+            scope_per_model,
+            core_rule_ids,
+        }) => println!(
+            "UNSAT_WITHIN_BOUND (모델별 scope: {scope_per_model}, 규칙: {})",
+            core_rule_ids
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Some(BoundedModelResult::Unknown {
+            scope_per_model,
+            rule_id,
+            message_key,
+            reason,
+        }) => eprintln!(
+            "{rule_id} {message_key}: UNKNOWN (모델별 scope: {scope_per_model}): {reason}"
+        ),
+        Some(BoundedModelResult::Unsupported {
+            scope_per_model,
+            rule_id,
+            message_key,
+            constructs,
+        }) => eprintln!(
+            "{rule_id} {message_key}: UNSUPPORTED (모델별 scope: {scope_per_model}): {}",
+            constructs.join(", ")
+        ),
+        None => {}
     }
 }
 
@@ -414,9 +534,6 @@ fn render_runtime_diagnostic(diagnostic: &RuntimeDiagnostic) -> String {
             argument("field_id"),
             argument("expected_type")
         ),
-        "runtime.backend.datalog_error" => {
-            format!("Datalog 실행에 실패했습니다: {}", argument("reason"))
-        }
         "runtime.backend.z3_configuration_error" => {
             format!("solver 설정이 올바르지 않습니다: {}", argument("reason"))
         }
@@ -461,6 +578,7 @@ fn usage() {
         "Usage:\n\
          rspdl parse <file>... [--json]\n\
          rspdl compile <file>... [--json]\n\
+         rspdl model <file> [--scope <n>] [--json]\n\
          rspdl check <file>... --data <input.json> [--json]\n\
          rspdl format <file>..."
     );

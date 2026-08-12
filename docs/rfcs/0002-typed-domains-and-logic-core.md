@@ -3,25 +3,25 @@ id: typed-domains-and-logic-core
 title: 정규화 타입·도메인과 논리 IR 코어
 type: rfc
 status: proposed
-version: "0.1"
-summary: Defines normalized data types, finite and computable infinite domains, typed set algebra, and the shared logical expression core.
+version: "0.3"
+summary: Defines normalized value domains, typed set and Boolean IR, and its boundary with finite relational model finding.
 topics:
   - type-system
   - data-model
   - domains
   - set-algebra
-  - datalog
   - smt
 related:
   - rspdl-language-prd
   - rspdl-compiler-architecture
+  - finite-relational-model-finding
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-02"
+last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
-target_spec: "0.1.0"
+target_spec: "0.3.0"
 ---
 
 # 정규화 타입·도메인과 논리 IR 코어
@@ -30,7 +30,7 @@ target_spec: "0.1.0"
 
 이 RFC는 Proposed 상태다.
 
-RSPDL의 데이터 선언, 파생 규칙, 정책, 상태 전이와 무결성 제약이 공유하는 Locale 독립적 의미 백본을 정의한다. 이 백본은 이후 Datalog 고정점 평가기와 SMT 반례 검증기의 공통 입력이 된다.
+RSPDL의 데이터 선언, 파생 규칙, 정책, 상태 전이와 무결성 제약이 공유하는 Locale 독립적 의미 백본을 정의한다. 이 백본은 직접 runtime 정책 매칭과 SMT 반례 검증의 공통 입력이 된다.
 
 ## 핵심 결정
 
@@ -102,8 +102,6 @@ prime(integer)
 구체적인 정수가 소수인지는 정확하게 판정할 수 있다. 그러나 일반 SMT의 표준 integer theory가 primality predicate에 대한 완전한 symbolic reasoning을 제공하는 것은 아니다. 따라서 현재 capability는 다음과 같다.
 
 - ground value validation: exact
-- finite materialization을 사용한 Datalog: 가능
-- 무한 prime domain 전체에 대한 Datalog evaluation: finite grounding 필요
 - prime predicate에 대한 SMT symbolic reasoning: unsupported
 
 지원하지 않는 backend가 prime을 정수로 근사해 잘못된 `SAT` 또는 `UNSAT`을 반환해서는 안 된다.
@@ -145,7 +143,7 @@ Difference는 교환법칙이 성립하지 않으므로 operand 순서를 보존
 
 ## 공유 논리 IR
 
-Datalog rule body, 정책 조건과 무결성 제약은 다음 최소 IR을 공유한다.
+정책 조건과 무결성 제약은 다음 최소 IR을 공유한다.
 
 ### Term
 
@@ -172,22 +170,30 @@ Predicate application은 signature의 arity와 parameter type을 생성 시 검�
 
 이 RFC는 “증명 실패에 의한 부정”을 논리적 부정으로 취급한다고 결정하지 않는다.
 
-## Datalog와 SMT의 경계
+### Entity relation과 bounded quantification
 
-이 코어는 Datalog나 SMT solver 자체가 아니다.
+Record model은 bounded relational analysis에서 entity sort로 사용된다. Relation은 정렬된 model parameter signature와 stable ID를 가진 Boolean predicate다. 값의 복사 횟수를 세는 `Bag -> count`는 기본 데이터 의미가 아니다. 같은 tuple의 중복은 relation의 set semantics에서 존재하지 않으며, 서로 다른 domain object는 가상 atom 또는 실제 record ID로 구분한다.
+
+현재 공유 `BooleanExpression`은 quantifier-free다. `required`, `unique`, `nonempty`, `exclusive`, `exhaustive`는 [Finite Relational Rules and Bounded Model Finding RFC](0007-finite-relational-model-finding.md)에 정의된 1차 논리 schema이고, 지정된 finite scope에서 conjunction/disjunction으로 grounding된 뒤 이 Boolean IR에 들어간다. 따라서 범용 quantifier node를 구현한 것처럼 표현하지 않으며, scope 안의 `UNSAT`도 unbounded proof로 승격하지 않는다.
+
+`coexistent`는 논리적으로 overlap을 강제하는 existential assertion이 아니라 함께 참이어도 compatible하다는 제품 의미 metadata다. Solver는 선언되지 않은 compatibility, totality와 cardinality를 스스로 만들지 않는다.
+
+## 직접 매칭과 SMT의 경계
+
+이 코어는 runtime matcher나 SMT solver 자체가 아니다.
 
 ```mermaid
 flowchart LR
     SOURCE["Locale Source"] --> FRONTEND["Locale Frontend"]
     FRONTEND --> CORE["Typed Domain + Logic IR"]
     CORE --> DATA["Data Model"]
-    CORE --> DATALOG["Datalog Lowering"]
+    CORE --> MATCHER["Direct Runtime Matching"]
     CORE --> SMT["SMT Lowering"]
-    DATALOG --> FIXPOINT["Fixpoint Evaluation"]
+    MATCHER --> RESULT["Policy Result"]
     SMT --> COUNTER["Counterexample Search"]
 ```
 
-Datalog lowering은 range restriction, finite grounding, recursion과 stratified negation을 추가로 검증해야 한다. SMT lowering은 사용된 domain, predicate와 연산마다 theory support를 확인해야 한다.
+현재 runtime matcher는 선언된 무조건 allow/deny 정책과 action request 및 role assignment를 직접 대조한다. SMT lowering은 사용된 domain, predicate와 연산마다 theory support를 확인해야 한다.
 
 ## 의도적으로 결정하지 않은 사항
 
@@ -195,7 +201,7 @@ Datalog lowering은 range restriction, finite grounding, recursion과 stratified
 - refinement 사이의 명시적 subtype/cast 문법
 - 실수, decimal, timestamp, duration과 byte sequence
 - Unicode normalization form
-- Datalog의 열린 세계/닫힌 세계 및 negation semantics
+- 재귀적 관계 폐쇄가 필요할 때의 별도 evaluation model
 - SMT solver 선택과 supported theory profile
 - 무한 문자열에 대한 정규식과 문자열 연산 범위
 - 데이터 선언의 Controlled Korean 표면 문법

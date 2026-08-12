@@ -1,8 +1,6 @@
-use rspdl_datalog::DatalogEvaluator;
 use rspdl_domain::{
     Atom, BooleanExpression, CanonicalId, CanonicalModel, CanonicalType, CanonicalValue,
-    ConstraintProblem, ConstraintSolver, DerivationRule, Domain, EnumType, Fact, LogicProgram,
-    PredicateApplication, PredicateSignature, RuleLiteral, SolveOptions, SolveResult, Term,
+    ConstraintProblem, ConstraintSolver, Domain, EnumType, SolveOptions, SolveResult, Term,
     Variable, VariableDomain,
 };
 use rspdl_solver_z3::Z3Solver;
@@ -57,62 +55,4 @@ fn accounting_overlap_is_sat_and_exclusive_is_unsat() {
             .unwrap(),
         SolveResult::Unsat
     ));
-}
-
-#[test]
-fn ground_accounting_rules_materialize_both_conditions() {
-    let string = CanonicalType::String;
-    let manager = PredicateSignature::new(id("accounting_manager"), vec![string.clone()]);
-    let applicant = PredicateSignature::new(id("applicant"), vec![string.clone(), string.clone()]);
-    let approver = PredicateSignature::new(id("approver"), vec![string.clone(), string.clone()]);
-    let approval = PredicateSignature::new(id("accounting_approval"), vec![string.clone()]);
-    let self_application = PredicateSignature::new(id("self_application"), vec![string.clone()]);
-    let alice = Term::Constant(CanonicalValue::string("alice"));
-    let request = Term::Constant(CanonicalValue::string("request_one"));
-    let r = Term::Variable(Variable::new(id("r"), string.clone()));
-    let a = Term::Variable(Variable::new(id("a"), string.clone()));
-    let app = |p: &PredicateSignature, args| PredicateApplication::new(p.clone(), args).unwrap();
-    let facts = vec![
-        Fact::new(app(&manager, vec![alice.clone()])).unwrap(),
-        Fact::new(app(&applicant, vec![request.clone(), alice.clone()])).unwrap(),
-        Fact::new(app(&approver, vec![request.clone(), alice.clone()])).unwrap(),
-    ];
-    let allow = DerivationRule::new(
-        id("derive_approval"),
-        app(&approval, vec![r.clone()]),
-        vec![
-            RuleLiteral::Positive(app(&approver, vec![r.clone(), a.clone()])),
-            RuleLiteral::Positive(app(&manager, vec![a.clone()])),
-        ],
-    );
-    let self_rule = DerivationRule::new(
-        id("derive_self"),
-        app(&self_application, vec![r.clone()]),
-        vec![
-            RuleLiteral::Positive(app(&applicant, vec![r.clone(), a.clone()])),
-            RuleLiteral::Positive(app(&approver, vec![r, a])),
-        ],
-    );
-    let program = LogicProgram::new(
-        vec![
-            manager,
-            applicant,
-            approver,
-            approval.clone(),
-            self_application.clone(),
-        ],
-        facts,
-        vec![allow, self_rule],
-    )
-    .unwrap();
-    let db = DatalogEvaluator::evaluate(&program).unwrap();
-    let expected = vec![CanonicalValue::string("request_one")];
-    assert_eq!(db.tuples(approval.id()).unwrap().len(), 1);
-    assert!(db.tuples(approval.id()).unwrap().contains(&expected));
-    assert_eq!(db.tuples(self_application.id()).unwrap().len(), 1);
-    assert!(
-        db.tuples(self_application.id())
-            .unwrap()
-            .contains(&expected)
-    );
 }

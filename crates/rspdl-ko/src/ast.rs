@@ -47,6 +47,32 @@ pub struct DataModelAst {
     pub fields: Vec<FieldAst>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RelationAst {
+    pub declaration: NamedIdAst,
+    /// Ordered model parameters. `required` and `unique` use the first model
+    /// as their anchor.
+    pub parameter_models: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RelationalConstraintKindAst {
+    NonEmpty { model: String },
+    Required { model: String, relation: String },
+    Unique { model: String, relation: String },
+    Exclusive { relations: Vec<String> },
+    Exhaustive { relations: Vec<String> },
+    Coexistent { relations: Vec<String> },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RelationalConstraintAst {
+    pub constraint: RelationalConstraintKindAst,
+    pub span: Span,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScreenOperationKindAst {
@@ -174,6 +200,8 @@ pub struct PolicyAst {
 pub enum DeclarationAst {
     Enum(EnumAst),
     DataModel(DataModelAst),
+    Relation(RelationAst),
+    RelationalConstraint(RelationalConstraintAst),
     Screen(ScreenAst),
     SumDerivation(SumDerivationAst),
     Recalculation(RecalculationAst),
