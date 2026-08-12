@@ -3,8 +3,8 @@ id: frontend-semantic-analysis-contract
 title: Frontend and Semantic Analysis Contract
 type: spec
 status: implemented
-version: "4"
-summary: Defines the stable-ID Unlinked IR and structured diagnostic boundary that lets independent surface-language frontends use one semantic analyzer.
+version: "5"
+summary: Defines stable-ID Unlinked records, relations and rules plus the structured diagnostic boundary shared by independent frontends.
 topics:
   - compiler-frontend
   - unlinked-ir
@@ -15,13 +15,14 @@ related:
   - rust-korean-first-frontend
   - rspdl-compiler-architecture
   - natural-korean-domain-grammar
+  - finite-relational-model-finding
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
 last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
-target_spec: "0.2.0"
+target_spec: "0.3.0"
 ---
 
 # Frontend and Semantic Analysis Contract
@@ -77,6 +78,7 @@ Frontend가 소유한다.
 - scanner, parser와 Locale AST
 - syntax recovery와 Locale surface lint
 - 표면 문형을 공통 의미 construct로 desugar
+- 하나 이상의 field를 가진 Locale record 선언을 `UnlinkedDataModel`로 desugar
 - Locale 표시 이름 reference를 같은 source에 선언된 stable ID로 연결
 - 모든 declaration과 reference의 source range 보존
 - 표시 이름과 일치하는 선언이 없거나 둘 이상의 선언과 일치하면 Locale reference 진단을 반환하고 module 생성을 중단
@@ -86,10 +88,11 @@ Frontend가 소유하지 않는다.
 - stable ID 문법 검증, module qualification과 중복 판정
 - stable ID 기반 symbol resolution
 - field, enum, constraint와 policy type checking
+- relation parameter, cardinality와 compatibility group 검증
 - producer/consumer graph와 lifecycle 분석
 - policy consistency 분석
-- Canonical internal constraint 또는 policy ID 생성
-- `RSPDL-LINK-*`, `RSPDL-TYPE-*`, `RSPDL-DATA-*` 의미 진단
+- Canonical internal constraint, policy 또는 relation meta-rule ID 생성
+- `RSPDL-LINK-*`, `RSPDL-TYPE-*`, `RSPDL-DATA-*`, `RSPDL-REL-*` 의미 진단
 
 ## Analyzer responsibility
 
@@ -97,10 +100,11 @@ Frontend가 소유하지 않는다.
 
 1. declaration과 reference의 stable ID를 검증하고 module scope로 한정한다.
 2. reference stable ID를 정확히 하나의 선언과 연결한다.
-3. enum, field, constraint와 policy 타입을 검사한다.
+3. enum, field, constraint, policy와 relation signature를 검사한다.
+   빈 `UnlinkedDataModel`은 `RSPDL-DATA-007`로 거부하고, relation cardinality 규칙에 명시된 anchor model이 relation의 첫 parameter와 같은지 검사한다.
 4. 해석된 의미만 사용해 anonymous rule ID를 생성한다.
 5. Canonical `SemanticModule`을 구성한다.
-6. data lifecycle과 policy 의미 규칙을 실행한다.
+6. data lifecycle, relation compatibility와 policy 의미 규칙을 실행한다.
 
 오류가 있으면 부분 `SemanticModule`을 성공으로 반환하지 않으며 structured diagnostic을 반환한다.
 
@@ -129,10 +133,11 @@ Runtime input과 backend 실행 진단은 source `span` 대신 JSON `path`를 �
 
 ## Canonical generated IDs
 
-Constraint와 policy의 anonymous ID는 Locale display text나 source 위치를 사용하지 않는다. Analyzer가 frontend에서 받은 reference stable ID를 Canonical ID로 연결한 뒤 다음 semantic identity에 FNV-1a 64-bit를 적용한다.
+Constraint, policy와 relation meta-rule의 anonymous ID는 Locale display text나 source 위치를 사용하지 않는다. Analyzer가 frontend에서 받은 reference stable ID를 Canonical ID로 연결한 뒤 다음 semantic identity에 FNV-1a 64-bit를 적용한다.
 
 - constraint: `model-id NUL operand NUL operator NUL operand`
 - policy: `role-id NUL model-id NUL field-id NUL action-id NUL effect`
+- relation meta-rule: normalized kind 뒤에 model ID 하나 또는 정렬·중복 제거된 relation ID 목록
 
 따라서 같은 stable ID와 의미를 사용하는 서로 다른 Locale frontend는 같은 anonymous ID를 만든다.
 

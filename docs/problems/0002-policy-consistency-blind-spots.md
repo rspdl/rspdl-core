@@ -58,7 +58,7 @@ owners:
 - 우선순위를 임의로 정해 conflict를 숨기지 않는다.
 - solver timeout과 지원하지 않는 조건은 통과가 아니라 `unknown`으로 보고한다.
 - 런타임 요청 하나의 unmatched 결과만으로 전체 조건 공간의 gap을 증명하지 않는다.
-- 현재 0.1 구현은 조건 없는 runtime allow/deny의 `conflict`와 `unmatched`를 분류한다. 별도의 backend-neutral API는 단일 닫힌 enum decision point에서 정적 `gap`, compatible `overlap`, allow/deny `conflict`를 Z3로 판정하지만, 아직 조건부 표면 언어·compiler 진단과 연결되지 않았고 `default`, `override`, `unreachable` 및 일반 effect compatibility는 지원하지 않는다.
+- 현재 구현은 조건 없는 runtime allow/deny의 `conflict`와 `unmatched`를 분류한다. 별도의 backend-neutral API는 단일 닫힌 enum decision point에서 정적 `gap`, compatible `overlap`, allow/deny `conflict`를 Z3로 판정하지만, 아직 조건부 정책 표면 언어·compiler 진단과 연결되지 않았다. 데이터 relation 쪽에는 unary/binary relation과 명시적 `exclusive`, `exhaustive`, `coexistent`, cardinality를 finite scope에서 검증하는 bounded model finder가 연결되어 있다. `default`, `override`, `unreachable`, 일반 effect compatibility와 임의 양화식은 아직 지원하지 않는다.
 
 ## References
 

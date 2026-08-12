@@ -3,8 +3,8 @@ id: typed-domains-and-logic-core
 title: 정규화 타입·도메인과 논리 IR 코어
 type: rfc
 status: proposed
-version: "0.2"
-summary: Defines normalized data types, finite and computable infinite domains, typed set algebra, and the shared logical expression core.
+version: "0.3"
+summary: Defines normalized value domains, typed set and Boolean IR, and its boundary with finite relational model finding.
 topics:
   - type-system
   - data-model
@@ -14,13 +14,14 @@ topics:
 related:
   - rspdl-language-prd
   - rspdl-compiler-architecture
+  - finite-relational-model-finding
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
 last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
-target_spec: "0.2.0"
+target_spec: "0.3.0"
 ---
 
 # 정규화 타입·도메인과 논리 IR 코어
@@ -168,6 +169,14 @@ Predicate application은 signature의 arity와 parameter type을 생성 시 검�
 `and`와 `or`는 operand를 펼치고 정렬하며 중복을 제거한다. `not`은 별도 node로 유지하여 이후 열린 세계/닫힌 세계와 negation semantics를 명시적으로 결정할 수 있게 한다.
 
 이 RFC는 “증명 실패에 의한 부정”을 논리적 부정으로 취급한다고 결정하지 않는다.
+
+### Entity relation과 bounded quantification
+
+Record model은 bounded relational analysis에서 entity sort로 사용된다. Relation은 정렬된 model parameter signature와 stable ID를 가진 Boolean predicate다. 값의 복사 횟수를 세는 `Bag -> count`는 기본 데이터 의미가 아니다. 같은 tuple의 중복은 relation의 set semantics에서 존재하지 않으며, 서로 다른 domain object는 가상 atom 또는 실제 record ID로 구분한다.
+
+현재 공유 `BooleanExpression`은 quantifier-free다. `required`, `unique`, `nonempty`, `exclusive`, `exhaustive`는 [Finite Relational Rules and Bounded Model Finding RFC](0007-finite-relational-model-finding.md)에 정의된 1차 논리 schema이고, 지정된 finite scope에서 conjunction/disjunction으로 grounding된 뒤 이 Boolean IR에 들어간다. 따라서 범용 quantifier node를 구현한 것처럼 표현하지 않으며, scope 안의 `UNSAT`도 unbounded proof로 승격하지 않는다.
+
+`coexistent`는 논리적으로 overlap을 강제하는 existential assertion이 아니라 함께 참이어도 compatible하다는 제품 의미 metadata다. Solver는 선언되지 않은 compatibility, totality와 cardinality를 스스로 만들지 않는다.
 
 ## 직접 매칭과 SMT의 경계
 
