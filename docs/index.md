@@ -21,9 +21,10 @@ related:
   - field-provenance-and-sum-derivation
   - natural-korean-domain-grammar
   - stratified-datalog-and-typed-solver
+  - total-policy-condition-space-analysis
   - typed-domains-and-logic-core
   - frontend-semantic-analysis-contract
-last_updated: "2026-08-08"
+last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
 ---
@@ -46,5 +47,6 @@ owners:
 | `field-provenance-and-sum-derivation` | `rfc` | `implemented` | [Field Provenance, Screen Usage, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md) | Defines sentence-shaped screen data operations, field provenance checks, cross-model sum dependencies, and explicit recalculation triggers. | `data-lifecycle-modeling-gap` | `data-lifecycle`, `field-provenance`, `screen-usage`, `derivation`, `aggregation`, `diagnostics` |
 | `natural-korean-domain-grammar` | `rfc` | `implemented` | [Korean Domain Frontend Language Specification](rfcs/0004-natural-korean-domain-grammar.md) | Defines Korean surface grammar and its deterministic lowering to the shared locale-neutral Unlinked IR contract. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `ko-KR`, `controlled-language`, `data-model`, `constraints`, `policies`, `cfg` |
 | `stratified-datalog-and-typed-solver` | `rfc` | `proposed` | [Stratified Datalog and Typed Solver](rfcs/0003-stratified-datalog-and-typed-solver.md) | Defines active-domain stratified Datalog evaluation and the typed constraint-solver contract. | `policy-consistency-blind-spots` | `datalog`, `stratification`, `smt`, `z3`, `constraints` |
+| `total-policy-condition-space-analysis` | `rfc` | `proposed` | [Total Policy Condition Spaces and SMT-First Consistency Analysis](rfcs/0006-total-policy-condition-space-analysis.md) | Defines closed policy vocabulary, exhaustive condition-space coverage, explicit override semantics, and SMT-first consistency analysis. | `policy-consistency-blind-spots`, `data-lifecycle-modeling-gap` | `policy-analysis`, `smt`, `condition-coverage`, `totality`, `override`, `closed-vocabulary` |
 | `typed-domains-and-logic-core` | `rfc` | `proposed` | [정규화 타입·도메인과 논리 IR 코어](rfcs/0002-typed-domains-and-logic-core.md) | Defines normalized data types, finite and computable infinite domains, typed set algebra, and the shared logical expression core. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `type-system`, `data-model`, `domains`, `set-algebra`, `datalog`, `smt` |
 | `frontend-semantic-analysis-contract` | `spec` | `implemented` | [Frontend and Semantic Analysis Contract](specs/frontend-semantic-analysis-contract.md) | Defines the stable-ID Unlinked IR and structured diagnostic boundary that lets independent surface-language frontends use one semantic analyzer. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `compiler-frontend`, `unlinked-ir`, `semantic-analysis`, `locale-independence`, `conformance` |

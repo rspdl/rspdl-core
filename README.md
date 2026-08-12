@@ -86,6 +86,7 @@ cargo build --workspace
 - [Data Lifecycle Modeling Gap](docs/problems/0001-data-lifecycle-modeling-gap.md): 데이터 존재 시점과 연산 공백
 - [Field Provenance and Sum Derivation](docs/rfcs/0005-field-provenance-and-sum-derivation.md): 화면 생산·소비와 합계 계산 문법
 - [Policy Consistency Blind Spots](docs/problems/0002-policy-consistency-blind-spots.md): 충돌·누락·중첩·도달 불가
+- [Total Policy Condition Spaces and SMT-First Consistency Analysis](docs/rfcs/0006-total-policy-condition-space-analysis.md): 닫힌 vocabulary, 전체 조건 공간과 명시적 override의 SMT 분석 계약
 - [Problem-driven Development](docs/guides/problem-driven-development.md): 원인에서 코드와 증명까지 연결하는 기여 흐름
 - [Frontend and Semantic Analysis Contract](docs/specs/frontend-semantic-analysis-contract.md): 다른 표현 언어가 구현할 stable-ID IR과 진단 계약
 - [Knowledge Index](docs/index.md): RFC, ADR, architecture를 포함한 전체 문서 인덱스

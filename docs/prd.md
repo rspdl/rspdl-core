@@ -4,7 +4,7 @@ title: RSPDL Product Requirements
 type: prd
 status: draft
 created: 2026-07-26
-version: "0.7"
+version: "0.8"
 summary: Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context.
 topics:
   - language-design
@@ -18,10 +18,11 @@ related:
   - rspdl-compiler-architecture
   - problem-driven-development
   - field-provenance-and-sum-derivation
+  - total-policy-condition-space-analysis
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-08"
+last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -56,11 +57,15 @@ target_spec: "0.2.0"
 - 의미 모델 요구사항은 다음과 같다.
   - `INTENT-001`: 모든 선언과 참조는 번역 가능한 표시 이름과 안정적인 machine ID를 분리한다.
   - `INTENT-002`: 권한, 데이터, 정책과 플로우를 하나의 Semantic Graph에서 연결한다.
+  - `INTENT-003`: data, role, resource, action, predicate와 effect를 포함한 모든 의미 vocabulary는 typed stable ID로 먼저 선언하며, frontend나 analyzer가 알려지지 않은 단어를 새 의미로 추측하지 않는다.
   - `DATA-001`: 데이터의 생성, 조회, 수정, 삭제와 파생 연산을 존재 상태 및 전이와 연결할 수 있어야 한다.
   - `DATA-002`: 생성 전 사용, 삭제 후 사용, 끊어진 참조와 가용하지 않은 입력의 파생을 진단해야 한다.
   - `POLICY-001`: actor 또는 role, resource, action, condition, effect와 적용 범위를 표현해야 한다.
   - `POLICY-002`: conflict, gap, overlap과 unreachable을 서로 다른 결과로 분석해야 한다.
-  - `POLICY-003`: totality, default와 override는 암시하지 않고 명시적으로 표현해야 한다.
+  - `POLICY-003`: decision point의 totality, default와 override를 Canonical IR에 명시적으로 보존하고, 누락 branch를 의도된 partial policy나 암묵적 우선순위로 해석하지 않는다.
+  - `POLICY-004`: 초기 조건부 decision point는 선언된 유효 입력 domain 전체를 명시적 branch, default 또는 no-op 결과로 덮어야 하며, 조건의 반대 영역을 생략한 채 의도된 미정의로 간주할 수 없다.
+  - `POLICY-005`: 상태별 조건부 invariant와 겹치는 branch 사이의 priority를 구분하고, source 순서·조건의 겉보기 구체성·effect 이름에서 priority를 추론하지 않는다.
+  - `POLICY-006`: overlap은 effect compatibility와 분리해 판정하며, 배타적 decision slot, post-state와 cross-field·lifecycle invariant로 동작 충돌의 근거를 표현해야 한다.
 - 언어와 호환성 요구사항은 다음과 같다.
   - `SYNTAX-001`: 초기 문법은 자유 자연어가 아닌 구조화된 블록 형식이어야 한다.
   - `LOCALE-001`: 같은 의미의 Locale 문서는 정규화 후 동일한 Canonical IR을 생성해야 한다.
@@ -71,6 +76,7 @@ target_spec: "0.2.0"
 - 진단과 영향 분석 요구사항은 다음과 같다.
   - `DIAG-001`: 진단은 Rule ID, severity, message key, source span, 관련 심볼과 evidence를 제공해야 한다.
   - `DIAG-002`: 지원하지 않는 의미와 solver timeout은 성공으로 근사하지 않고 `unknown`으로 반환해야 한다.
+  - `DIAG-003`: 정적 policy finding은 선언된 유효 domain 안의 canonical witness를 포함하고, 유한 enum gap은 누락 variant 또는 동등한 compact region을 결정적인 순서로 제공해야 한다.
   - `IMPACT-001`: stable ID를 기준으로 한 변경의 direct 및 transitive semantic dependency를 찾을 수 있어야 한다.
   - `IMPACT-002`: 같은 source와 spec version은 같은 IR, 진단, evidence 순서를 생성해야 한다.
 - 공개 의미 규칙의 증명 요구사항은 다음과 같다.
@@ -91,6 +97,7 @@ target_spec: "0.2.0"
   - 화면 간 순서·분기, 삭제 이후 접근과 path별 데이터 availability
   - relation/join 기반 교차 모델 집계 실행과 일반 계산식
   - 조건부 정책과 전체 조건 공간의 정적 gap, overlap 및 unreachable 분석
+  - 조건부 field requiredness, effect compatibility, explicit default와 override
   - 유저 플로우, 관계, 컬렉션, module import와 다국어 의미 동등성
   - semantic dependency 기반 영향 분석과 downstream code generation
 - 성공 기준은 다음과 같다.
@@ -103,6 +110,8 @@ target_spec: "0.2.0"
 
 - AI 출력도 사람의 출력과 같은 parser, semantic analysis와 conformance gate를 통과한다.
 - compiler는 문서에 없는 사실, 정책 우선순위 또는 lifecycle 동작을 추측하지 않는다.
+- 정적 조건 공간 분석은 typed SMT query를 기준 경로로 삼고, Datalog 의미 확장은 유한 관계의 재귀적 폐쇄가 필요한 제품 시나리오가 명확해질 때까지 보류한다.
+- `push/pop`과 assumption switch 같은 증분 solver 전략은 관찰 가능한 의미, witness와 진단 순서를 바꿀 수 없다.
 - RSPDL core는 Canonical IR, semantic analysis와 diagnostics를 소유한다.
 - 정책표, IA, UI projection, 검색, 집계와 code generation은 공개 IR을 소비하는 application 책임이다.
 - 자유 형식 자연어 직접 해석과 특정 제품 UI는 초기 언어 범위에 포함하지 않는다.
@@ -118,3 +127,4 @@ target_spec: "0.2.0"
 - [Core and Application Projection Boundary](adr/0002-core-application-boundary.md)
 - [Korean Domain Frontend Language Specification](rfcs/0004-natural-korean-domain-grammar.md)
 - [Field Provenance, Screen Usage, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)
+- [Total Policy Condition Spaces and SMT-First Consistency Analysis](rfcs/0006-total-policy-condition-space-analysis.md)

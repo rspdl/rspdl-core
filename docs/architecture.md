@@ -3,7 +3,7 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "0.4"
+version: "0.5"
 summary: Defines the implemented stable-ID Unlinked IR boundary, locale-neutral diagnostics, analyzer pipeline, dependency direction, and test architecture.
 topics:
   - rust
@@ -21,10 +21,11 @@ related:
   - typed-domains-and-logic-core
   - field-provenance-and-sum-derivation
   - frontend-semantic-analysis-contract
+  - total-policy-condition-space-analysis
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-08"
+last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -174,7 +175,7 @@ Locale에 독립적인 compiler domain을 소유한다.
 
 사람에게 표시할 번역 문장은 domain diagnostic에 저장하지 않는다. Domain은 message key와 구조화된 argument를 반환한다.
 
-초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md)와 [Stratified Datalog and Typed Solver RFC](rfcs/0003-stratified-datalog-and-typed-solver.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. `rspdl-datalog`는 안전한 active-domain rules를 결정적으로 materialize하고, `rspdl-solver-z3`는 backend-neutral constraint API를 typed SMT solving으로 연결한다.
+초기 의미 백본은 [정규화 타입·도메인과 논리 IR 코어 RFC](rfcs/0002-typed-domains-and-logic-core.md), [Stratified Datalog and Typed Solver RFC](rfcs/0003-stratified-datalog-and-typed-solver.md)와 [Total Policy Condition Spaces and SMT-First Consistency Analysis RFC](rfcs/0006-total-policy-condition-space-analysis.md)를 따른다. 모든 canonical value, variable, predicate와 set expression은 완전히 해석된 타입을 가지며 `Any`나 암시적 형변환을 허용하지 않는다. `rspdl-solver-z3`는 backend-neutral constraint API를 typed SMT solving으로 연결하며 정적 policy condition-space 분석의 우선 backend다. `rspdl-datalog`는 현재 runtime active-domain match를 결정적으로 materialize하지만, 유한 관계의 재귀적 폐쇄가 필요한 구체적인 제품 시나리오가 생기기 전까지 의미 확장을 보류한다.
 
 ### `rspdl-ko`
 
