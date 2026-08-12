@@ -290,10 +290,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rspdl-grammar-compiler"
+version = "0.1.0"
+
+[[package]]
 name = "rspdl-ko"
 version = "0.1.0"
 dependencies = [
  "rspdl-domain",
+ "rspdl-grammar-compiler",
  "serde",
  "serde_json",
 ]

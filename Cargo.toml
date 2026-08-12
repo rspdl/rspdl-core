@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/rspdl-domain",
+    "crates/rspdl-grammar-compiler",
     "crates/rspdl-solver-z3",
     "crates/rspdl-ko",
     "crates/rspdl-compiler",

@@ -5,6 +5,8 @@
 mod ast;
 mod diagnostic;
 mod formatter;
+#[cfg(test)]
+mod generated_parser;
 mod lowering;
 mod parser;
 mod scanner;

@@ -8,5 +8,9 @@ rust-version.workspace = true
 
 [dependencies]
 rspdl-domain = { path = "../rspdl-domain" }
+rspdl-grammar-compiler = { path = "../rspdl-grammar-compiler" }
 serde.workspace = true
 serde_json.workspace = true
+
+[build-dependencies]
+rspdl-grammar-compiler = { path = "../rspdl-grammar-compiler" }

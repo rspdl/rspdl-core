@@ -1,0 +1,9 @@
+[package]
+name = "rspdl-grammar-compiler"
+version = "0.1.0"
+description = "Executable EBNF compiler and parser runtime for RSPDL frontends"
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
