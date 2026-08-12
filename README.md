@@ -86,6 +86,32 @@ cargo run -p rspdl-cli -- check examples/expense-approval.rspdl \
 
 `model`은 실제 data file을 받지 않습니다. 선언을 만족하는 가상 세계가 scope 안에 있으면 `SAT`과 witness를 반환하고, 없으면 전역 모순이 아닌 `UNSAT_WITHIN_BOUND`와 관련 Rule ID를 반환합니다.
 
+### 분석 결과를 직접 확인하는 예시
+
+정책 조건 공간 분석은 아직 한국어 문법이나 CLI에 연결되지 않은 Rust API입니다. 실행 가능한 Z3 예시는 하나의 `active` 정책만 있을 때 누락된 상태, 같은 상태의 allow/deny 충돌, 같은 effect의 compatible overlap을 각각 보여줍니다.
+
+```console
+$ cargo run -p rspdl-solver-z3 --example total_policy_analysis
+GAP ended: status=ended
+GAP paused: status=paused
+GAP scheduled: status=scheduled
+CONFLICT active_allow + active_deny: status=active
+COMPATIBLE_OVERLAP active_first + active_second: status=active
+```
+
+Bounded relational model은 같은 선언도 scope에 따라 결과가 달라질 수 있습니다. [프로젝트 배정 예시](examples/project-assignment-bound.rspdl)는 주 담당자와 보조 담당자가 모두 필요하지만 같은 `(프로젝트, 사용자)` tuple에서는 둘이 겹칠 수 없다고 선언합니다.
+
+```console
+$ cargo run -p rspdl-cli -- model examples/project-assignment-bound.rspdl --scope 1
+UNSAT_WITHIN_BOUND (모델별 scope: 1, 규칙: ...)
+
+$ cargo run -p rspdl-cli -- model examples/project-assignment-bound.rspdl --scope 2
+SAT (모델별 scope: 2)
+...
+```
+
+Scope 1에서는 사용자 slot이 하나뿐이라 두 관계를 분리할 수 없습니다. Scope 2에서는 서로 다른 가상 사용자를 선택하는 witness가 존재합니다. 작은 scope의 `UNSAT_WITHIN_BOUND`는 무한한 모든 세계에서의 모순을 의미하지 않습니다.
+
 ## 개발 시작하기
 
 Rust toolchain, C/C++ build tools와 CMake가 필요합니다. 첫 빌드는 vendored Z3 컴파일로 시간이 걸릴 수 있습니다.
