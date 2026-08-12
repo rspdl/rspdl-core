@@ -3,7 +3,7 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "0.7"
+version: "0.8"
 summary: Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded relational model-finding path, dependency direction, and tests.
 topics:
   - rust
@@ -23,9 +23,11 @@ related:
   - frontend-semantic-analysis-contract
   - total-policy-condition-space-analysis
   - finite-relational-model-finding
+  - executable-frontend-grammar-compiler
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
+  - frontend-grammar-implementation-drift
 last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
@@ -76,6 +78,9 @@ rspdl-domain/
 │   │   │   ├── lint/
 │   │   │   └── formatter/
 │   │   └── tests/
+│   ├── rspdl-grammar-compiler/
+│   │   ├── src/
+│   │   └── tests/
 │   ├── rspdl-compiler/
 │   │   ├── src/
 │   │   │   ├── frontend.rs
@@ -108,9 +113,11 @@ flowchart TD
     COMPILER --> KO["rspdl-ko"]
     COMPILER --> DOMAIN["rspdl-domain"]
     COMPILER --> Z3["rspdl-solver-z3"]
+    KO --> GRAMMAR["rspdl-grammar-compiler runtime"]
     KO --> DOMAIN
     Z3 --> DOMAIN
     EN["future rspdl-en"] --> DOMAIN
+    EN -. "future" .-> GRAMMAR
     COMPILER -. "future" .-> EN
 ```
 
@@ -127,7 +134,11 @@ flowchart TD
 flowchart LR
     SRC["UTF-8 Source"] --> SCAN["ko-KR Scanner"]
     SCAN --> TOK["Raw Tokens + Trivia"]
-    TOK --> PARSE["ko-KR CFG Parser"]
+    GRAMMAR["Executable EBNF"] --> GEN["rspdl-grammar-compiler"]
+    GEN --> SHADOW["Generated Policy Parser (shadow)"]
+    TOK -. "differential test" .-> SHADOW
+    TOK --> PARSE["Handwritten ko-KR Parser (production)"]
+    PARSE <-. "capture and acceptance equivalence" .-> SHADOW
     PARSE --> CST["ko-KR CST"]
     CST --> AST["ko-KR AST"]
     AST --> LINT["Surface Lint"]
@@ -188,7 +199,9 @@ Controlled Korean surface language 전체를 소유한다.
 - grammar 위치에 따른 suffix marker 분리
 - `수정할`을 Action과 `할` marker로 분리하는 action suffix 처리
 - Locale CST와 AST
-- handwritten recursive-descent parser와 오류 복구
+- production handwritten parser와 오류 복구
+- build에서 검증·생성되는 실행 가능한 EBNF와 generated parser
+- production 전환 동안 handwritten parser와 generated parser의 differential test
 - 한국어 표현 품질 lint
 - 조사와 공백을 정규화하는 formatter
 - Locale 표시 이름을 stable-ID `SurfaceRef`로 연결하는 Unlinked IR lowering
@@ -199,6 +212,19 @@ Controlled Korean surface language 전체를 소유한다.
 - core structured diagnostic의 한국어 rendering
 
 형태소 분석, 품사 분석과 동의어 추론은 포함하지 않는다.
+
+### `rspdl-grammar-compiler`
+
+Locale에 독립적인 제한 EBNF compiler와 generated parser runtime을 소유한다.
+
+- grammar source parsing과 grammar IR
+- duplicate/undefined rule, unknown matcher, nullable repetition과 left recursion 검증
+- deterministic Rust parser definition 생성
+- literal terminal, sequence, alternative, optional, repetition과 capture 실행
+- Locale adapter가 구현하는 contextual matcher 호출
+- 가장 먼 parse failure와 완전 parse ambiguity 검출
+
+한국어 marker, Locale AST, lowering, formatter와 사용자 diagnostic 문장은 소유하지 않는다.
 
 ### `rspdl-compiler`
 

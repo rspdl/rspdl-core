@@ -3,7 +3,7 @@ id: controlled-korean-surface-grammar
 title: Controlled Korean Surface Grammar
 type: rfc
 status: proposed
-version: "0.1"
+version: "0.2"
 summary: Proposes a deterministic Korean surface grammar that treats particles and endings as structural markers rather than morphology.
 topics:
   - ko-KR
@@ -16,10 +16,12 @@ related:
   - rspdl-language-prd
   - rust-korean-first-frontend
   - rspdl-compiler-architecture
+  - executable-frontend-grammar-compiler
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-02"
+  - frontend-grammar-implementation-drift
+last_updated: "2026-08-12"
 owners:
   - rspdl-maintainers
 target_spec: "0.1.0"
@@ -319,13 +321,13 @@ conformance/ko-KR/policy/capability-basic/
 
 ## 구현 권고
 
-v0.x에서는 token 기반 handwritten recursive-descent parser를 우선 권고한다.
+초기 구현은 token 기반 handwritten recursive-descent parser로 시작했다.
 
 - 문형별 오류와 복구 지점을 직접 제어할 수 있다.
 - parser가 기대하는 marker 집합으로 suffix를 분리할 수 있다.
 - 문법 변경이 잦은 동안 생성 parser의 제약을 피할 수 있다.
 
-EBNF는 규범 문법으로 유지하되 EBNF와 구현의 일치를 conformance fixture로 검증한다. 문법이 안정된 뒤 parser generator 도입을 다시 평가할 수 있다.
+문형 증가 뒤에는 규범 EBNF와 문장 분류·cursor 구현의 중복이 더 큰 반복 비용이 됐다. [실행 가능한 Frontend Grammar Compiler ADR](../adr/0003-executable-frontend-grammar-compiler.md)에 따라 EBNF를 실행 가능한 source로 옮기되, 기존 parser와 production 단위 differential test를 통과한 문형만 점진적으로 전환한다. Contextual suffix matcher, 구조화 진단과 recovery는 Locale adapter와 grammar metadata로 명시한다.
 
 ## 미결정 사항
 
