@@ -454,4 +454,44 @@ mod tests {
         assert_eq!(original_module, semantic_module(&reparsed));
         assert_eq!(first, format_document(&reparsed).unwrap());
     }
+
+    #[test]
+    fn unary_relation_groups_round_trip() {
+        let source = "@모듈 분류(classification)\n사용자(user)는 다음 필드들로 구성되어 있다.\n  이름(name): 필수 문자열\n사용자는 내부(internal)에 해당할 수 있다.\n사용자는 외부(external)에 해당할 수 있다.\n내부, 외부 중 둘 이상은 동시에 성립할 수 없다.\n내부, 외부 중 하나 이상은 항상 성립해야 한다.\n";
+        let original = parse(source).document.unwrap();
+        let original_module = semantic_module(&original);
+
+        let first = format_document(&original).unwrap();
+        assert_only_module_uses_annotation(&first);
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        let reparsed = reparsed.document.unwrap();
+
+        assert_eq!(original_module, semantic_module(&reparsed));
+        assert_eq!(first, format_document(&reparsed).unwrap());
+    }
+
+    #[test]
+    fn coexistent_relation_group_round_trips() {
+        let source = "@모듈 협업(collaboration)\n프로젝트(project)는 다음 필드들로 구성되어 있다.\n  이름(name): 필수 문자열\n사용자(user)는 다음 필드들로 구성되어 있다.\n  이름(name): 필수 문자열\n프로젝트는 사용자를 소유자(owner)로 가질 수 있다.\n프로젝트는 사용자를 검토자(reviewer)로 가질 수 있다.\n소유자, 검토자는 동시에 성립할 수 있다.\n";
+        let original = parse(source).document.unwrap();
+        let original_module = semantic_module(&original);
+
+        let first = format_document(&original).unwrap();
+        assert_only_module_uses_annotation(&first);
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        let reparsed = reparsed.document.unwrap();
+
+        assert_eq!(original_module, semantic_module(&reparsed));
+        assert_eq!(first, format_document(&reparsed).unwrap());
+    }
 }

@@ -337,13 +337,7 @@ fn parse_relational_constraint(
             RelationalConstraintKindAst::Unique { model, relation }
         }
         RelationalConstraintDeclarationKind::Exclusive => {
-            let separator = word_position(tokens, "중").ok_or_else(|| {
-                Diagnostic::error(
-                    "RSPDL-KO-SYN-071",
-                    "ko.syntax.relational_constraint_group_references",
-                    line.span,
-                )
-            })?;
+            let separator = group_separator(tokens, 6, line.span)?;
             let relations = relation_group(&tokens[..separator], line.span)?;
             cursor.index = separator + 1;
             cursor.expect_word("둘")?;
@@ -356,13 +350,7 @@ fn parse_relational_constraint(
             RelationalConstraintKindAst::Exclusive { relations }
         }
         RelationalConstraintDeclarationKind::Exhaustive => {
-            let separator = word_position(tokens, "중").ok_or_else(|| {
-                Diagnostic::error(
-                    "RSPDL-KO-SYN-071",
-                    "ko.syntax.relational_constraint_group_references",
-                    line.span,
-                )
-            })?;
+            let separator = group_separator(tokens, 5, line.span)?;
             let relations = relation_group(&tokens[..separator], line.span)?;
             cursor.index = separator + 1;
             cursor.expect_word("하나")?;
@@ -411,6 +399,20 @@ fn relation_group(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnosti
             span,
         ))
     }
+}
+
+fn group_separator(tokens: &[Token], tail_len: usize, span: Span) -> Result<usize, Diagnostic> {
+    let separator = tokens
+        .len()
+        .checked_sub(tail_len + 1)
+        .filter(|index| matches!(&tokens[*index].kind, TokenKind::Word(word) if word == "중"));
+    separator.ok_or_else(|| {
+        Diagnostic::error(
+            "RSPDL-KO-SYN-071",
+            "ko.syntax.relational_constraint_group_references",
+            span,
+        )
+    })
 }
 
 fn strip_final_marker(
@@ -1313,12 +1315,6 @@ fn last_sentence_word(line: &Line, offset: usize) -> Option<&str> {
     word_at(line, index)
 }
 
-fn word_position(tokens: &[Token], expected: &str) -> Option<usize> {
-    tokens
-        .iter()
-        .position(|token| matches!(&token.kind, TokenKind::Word(word) if word == expected))
-}
-
 fn parse_type_reference(line: &Line, start: usize) -> Result<TypeReferenceAst, Diagnostic> {
     if start >= line.tokens.len() {
         return Err(Diagnostic::error(
@@ -1860,6 +1856,41 @@ mod tests {
                 })
                 .count(),
             6
+        );
+    }
+
+    #[test]
+    fn relation_group_separator_does_not_split_a_name_containing_jung() {
+        let source = r#"@모듈 상태(status)
+신청(request)은 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열
+신청은 승인 중(pending)에 해당할 수 있다.
+신청은 검토 완료(reviewed)에 해당할 수 있다.
+승인 중, 검토 완료 중 둘 이상은 동시에 성립할 수 없다.
+승인 중, 검토 완료 중 하나 이상은 항상 성립해야 한다.
+"#;
+
+        let output = parse(source);
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let declarations = output.document.unwrap().declarations;
+        let groups = declarations
+            .iter()
+            .filter_map(|declaration| match declaration {
+                DeclarationAst::RelationalConstraint(RelationalConstraintAst {
+                    constraint:
+                        RelationalConstraintKindAst::Exclusive { relations }
+                        | RelationalConstraintKindAst::Exhaustive { relations },
+                    ..
+                }) => Some(relations),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(groups.len(), 2);
+        assert!(
+            groups
+                .iter()
+                .all(|relations| relations.as_slice() == ["승인 중", "검토 완료"])
         );
     }
 

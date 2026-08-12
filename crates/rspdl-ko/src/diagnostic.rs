@@ -203,20 +203,26 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "supported"),
             argument(diagnostic, "actual")
         ),
-        "semantic.relation.not_found" => format!(
-            "관계 {}을 찾을 수 없습니다.",
-            argument(diagnostic, "reference")
-        ),
+        "semantic.relation.not_found" => {
+            let reference = argument(diagnostic, "reference");
+            format!(
+                "관계 {reference}{} 찾을 수 없습니다.",
+                object_marker(reference)
+            )
+        }
         "semantic.relation.cardinality_requires_binary" => format!(
             "필수/유일 cardinality는 이항 관계에만 사용할 수 있습니다: {}.",
             argument(diagnostic, "relation_id")
         ),
-        "semantic.relation.cardinality_anchor_mismatch" => format!(
-            "관계 {}의 기준 개체는 {}이지만 규칙에는 {}이 사용되었습니다.",
-            argument(diagnostic, "relation_id"),
-            argument(diagnostic, "expected_model_id"),
-            argument(diagnostic, "actual_model_id")
-        ),
+        "semantic.relation.cardinality_anchor_mismatch" => {
+            let relation_id = argument(diagnostic, "relation_id");
+            let expected_model_id = argument(diagnostic, "expected_model_id");
+            let actual_model_id = argument(diagnostic, "actual_model_id");
+            format!(
+                "관계 {relation_id}의 기준 개체는 {expected_model_id}인데 규칙에는 {actual_model_id}{} 사용되었습니다.",
+                subject_marker(actual_model_id)
+            )
+        }
         "semantic.model.field_required" => {
             "데이터 모델은 하나 이상의 필드를 선언해야 합니다.".into()
         }
@@ -226,10 +232,13 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "semantic.relation.group_signature_mismatch" => {
             "같은 그룹의 관계는 parameter 모델과 순서가 같아야 합니다.".into()
         }
-        "semantic.relation.compatibility_conflict" => format!(
-            "같은 관계 그룹 {}을 배타적이면서 공존 가능하다고 선언할 수 없습니다.",
-            argument(diagnostic, "relation_ids")
-        ),
+        "semantic.relation.compatibility_conflict" => {
+            let relation_ids = argument(diagnostic, "relation_ids");
+            format!(
+                "같은 관계 그룹 {relation_ids}{} 배타적이면서 공존 가능하다고 선언할 수 없습니다.",
+                object_marker(relation_ids)
+            )
+        }
         "semantic.screen.id_name_conflict" => format!(
             "화면 ID {}가 {}와 {} 두 이름으로 사용되었습니다.",
             argument(diagnostic, "screen_id"),
@@ -399,6 +408,17 @@ fn object_marker(value: &str) -> &'static str {
     }
 }
 
+fn subject_marker(value: &str) -> &'static str {
+    match value
+        .chars()
+        .last()
+        .filter(|character| ('가'..='힣').contains(character))
+    {
+        Some(last) if (last as u32 - '가' as u32) % 28 == 0 => "가",
+        Some(_) | None => "이",
+    }
+}
+
 fn fallback(diagnostic: &Diagnostic) -> String {
     if diagnostic.arguments.is_empty() {
         return diagnostic.message_key.clone();
@@ -458,5 +478,53 @@ mod tests {
             render_diagnostic(&consonant_ending),
             "데이터 모델 금액을 찾을 수 없습니다."
         );
+    }
+
+    #[test]
+    fn renders_natural_particles_for_relation_diagnostics() {
+        for (reference, expected) in [
+            ("소유자", "관계 소유자를 찾을 수 없습니다."),
+            ("검토팀", "관계 검토팀을 찾을 수 없습니다."),
+        ] {
+            let diagnostic = Diagnostic::error(
+                "RSPDL-REL-001",
+                "semantic.relation.not_found",
+                TextRange::default(),
+            )
+            .with_argument("reference", reference);
+            assert_eq!(render_diagnostic(&diagnostic), expected);
+        }
+
+        let anchor = Diagnostic::error(
+            "RSPDL-REL-003",
+            "semantic.relation.cardinality_anchor_mismatch",
+            TextRange::default(),
+        )
+        .with_argument("relation_id", "소유자")
+        .with_argument("expected_model_id", "프로젝트")
+        .with_argument("actual_model_id", "사용자");
+        assert_eq!(
+            render_diagnostic(&anchor),
+            "관계 소유자의 기준 개체는 프로젝트인데 규칙에는 사용자가 사용되었습니다."
+        );
+
+        for (relations, expected) in [
+            (
+                "소유자",
+                "같은 관계 그룹 소유자를 배타적이면서 공존 가능하다고 선언할 수 없습니다.",
+            ),
+            (
+                "검토팀",
+                "같은 관계 그룹 검토팀을 배타적이면서 공존 가능하다고 선언할 수 없습니다.",
+            ),
+        ] {
+            let diagnostic = Diagnostic::error(
+                "RSPDL-REL-004",
+                "semantic.relation.compatibility_conflict",
+                TextRange::default(),
+            )
+            .with_argument("relation_ids", relations);
+            assert_eq!(render_diagnostic(&diagnostic), expected);
+        }
     }
 }
