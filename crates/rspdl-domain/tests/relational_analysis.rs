@@ -52,6 +52,35 @@ impl ConstraintSolver for CompleteSatSolver {
                         .expect("enum domains are non-empty")
                         .clone(),
                     CanonicalType::Refinement(_) => CanonicalValue::prime(2).unwrap(),
+                    CanonicalType::Decimal
+                    | CanonicalType::Date
+                    | CanonicalType::Time
+                    | CanonicalType::DateTime
+                    | CanonicalType::Duration
+                    | CanonicalType::Latitude
+                    | CanonicalType::Longitude
+                    | CanonicalType::Money(_)
+                    | CanonicalType::Percentage
+                    | CanonicalType::Quantity(_)
+                    | CanonicalType::Coordinate
+                    | CanonicalType::LocalDateTime
+                    | CanonicalType::ZonedDateTime
+                    | CanonicalType::CalendarDuration
+                    | CanonicalType::Uuid
+                    | CanonicalType::Email
+                    | CanonicalType::Url
+                    | CanonicalType::PhoneNumber
+                    | CanonicalType::IpAddress
+                    | CanonicalType::Cidr
+                    | CanonicalType::CountryCode
+                    | CanonicalType::LanguageCode
+                    | CanonicalType::CurrencyCode
+                    | CanonicalType::List(_)
+                    | CanonicalType::Set(_)
+                    | CanonicalType::Map { .. }
+                    | CanonicalType::Reference(_) => {
+                        panic!("extended scalar fields are rejected before test solving")
+                    }
                 };
                 (variable.id().clone(), value)
             })
@@ -228,6 +257,26 @@ fn refinement_fields_are_not_approximated_by_another_domain() {
         BoundedModelResult::Unsupported { constructs, .. }
             if constructs == ["refinement_field:test.item.value"]
     ));
+}
+
+#[test]
+fn money_field_is_unsupported_before_the_solver_is_called() {
+    let mut module = empty_module();
+    module.models = vec![model_with_field(
+        "test.item",
+        "test.item.amount",
+        CanonicalType::Money(rspdl_domain::CurrencyCode::new("KRW").unwrap()),
+    )];
+    let result = find_bounded_relational_model(
+        &module,
+        &UnknownSolver,
+        BoundedModelOptions::new(1, SolveOptions::default()).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        matches!(result, BoundedModelResult::Unsupported { constructs, .. }
+        if constructs == ["symbolic_field:money(KRW):test.item.amount"])
+    );
 }
 
 #[test]

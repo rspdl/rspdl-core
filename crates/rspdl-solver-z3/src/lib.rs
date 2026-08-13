@@ -39,7 +39,7 @@ impl Z3Solver {
     fn collect_enum_types(x: &BooleanExpression, out: &mut BTreeSet<EnumType>) {
         match x.view() {
             BooleanExpressionView::Atom(a) => match a.view() {
-                AtomView::Equal(a, b) | AtomView::IntegerComparison(_, a, b) => {
+                AtomView::Equal(a, b) | AtomView::OrderedComparison(_, a, b) => {
                     Self::collect_term(a, out);
                     Self::collect_term(b, out)
                 }
@@ -124,7 +124,7 @@ impl Z3Solver {
     ) -> Result<(), Z3SolverError> {
         match x.view() {
             BooleanExpressionView::Atom(a) => match a.view() {
-                AtomView::Equal(a, b) | AtomView::IntegerComparison(_, a, b) => {
+                AtomView::Equal(a, b) | AtomView::OrderedComparison(_, a, b) => {
                     Self::validate_term(a, d)?;
                     Self::validate_term(b, d)?;
                 }
@@ -226,7 +226,11 @@ impl Z3Solver {
                     name,
                     &enums.get(kind).ok_or(Z3SolverError::InvalidModel)?.sort,
                 ),
-                _ => return Err(Z3SolverError::Unsupported("refinement domain".into())),
+                unsupported => {
+                    return Err(Z3SolverError::Unsupported(format!(
+                        "symbolic domain `{unsupported}`"
+                    )));
+                }
             };
             vars.insert(v.id().clone(), ast);
         }
@@ -312,7 +316,7 @@ impl Z3Solver {
                 AtomView::Equal(a, b) => Self::term(a, v, e)?
                     .safe_eq(&Self::term(b, v, e)?)
                     .map_err(|_| Z3SolverError::Unsupported("type mismatch".into())),
-                AtomView::IntegerComparison(op, a, b) => {
+                AtomView::OrderedComparison(op, a, b) => {
                     let a = Self::term(a, v, e)?
                         .as_int()
                         .ok_or_else(|| Z3SolverError::Unsupported("integer comparison".into()))?;
@@ -378,7 +382,9 @@ impl Z3Solver {
                             .apply(&[]),
                     ))
                 }
-                _ => Err(Z3SolverError::Unsupported("refinement value".into())),
+                unsupported => Err(Z3SolverError::Unsupported(format!(
+                    "constant type `{unsupported}`"
+                ))),
             },
         }
     }

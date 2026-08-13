@@ -1377,6 +1377,43 @@ fn type_reference(
         TypeReferenceAst::String => UnlinkedTypeReference::String,
         TypeReferenceAst::Integer => UnlinkedTypeReference::Integer,
         TypeReferenceAst::Boolean => UnlinkedTypeReference::Boolean,
+        TypeReferenceAst::Decimal => UnlinkedTypeReference::Decimal,
+        TypeReferenceAst::Date => UnlinkedTypeReference::Date,
+        TypeReferenceAst::Time => UnlinkedTypeReference::Time,
+        TypeReferenceAst::DateTime => UnlinkedTypeReference::DateTime,
+        TypeReferenceAst::Duration => UnlinkedTypeReference::Duration,
+        TypeReferenceAst::Latitude => UnlinkedTypeReference::Latitude,
+        TypeReferenceAst::Longitude => UnlinkedTypeReference::Longitude,
+        TypeReferenceAst::Money(currency) => UnlinkedTypeReference::Money(currency.clone()),
+        TypeReferenceAst::Percentage => UnlinkedTypeReference::Percentage,
+        TypeReferenceAst::Quantity(unit) => UnlinkedTypeReference::Quantity(unit.clone()),
+        TypeReferenceAst::Coordinate => UnlinkedTypeReference::Coordinate,
+        TypeReferenceAst::LocalDateTime => UnlinkedTypeReference::LocalDateTime,
+        TypeReferenceAst::ZonedDateTime => UnlinkedTypeReference::ZonedDateTime,
+        TypeReferenceAst::CalendarDuration => UnlinkedTypeReference::CalendarDuration,
+        TypeReferenceAst::Uuid => UnlinkedTypeReference::Uuid,
+        TypeReferenceAst::Email => UnlinkedTypeReference::Email,
+        TypeReferenceAst::Url => UnlinkedTypeReference::Url,
+        TypeReferenceAst::PhoneNumber => UnlinkedTypeReference::PhoneNumber,
+        TypeReferenceAst::IpAddress => UnlinkedTypeReference::IpAddress,
+        TypeReferenceAst::Cidr => UnlinkedTypeReference::Cidr,
+        TypeReferenceAst::CountryCode => UnlinkedTypeReference::CountryCode,
+        TypeReferenceAst::LanguageCode => UnlinkedTypeReference::LanguageCode,
+        TypeReferenceAst::CurrencyCode => UnlinkedTypeReference::CurrencyCode,
+        TypeReferenceAst::List(element) => {
+            UnlinkedTypeReference::List(Box::new(type_reference(element, span, index, diagnostics)))
+        }
+        TypeReferenceAst::Set(element) => {
+            UnlinkedTypeReference::Set(Box::new(type_reference(element, span, index, diagnostics)))
+        }
+        TypeReferenceAst::Map(key, value) => UnlinkedTypeReference::Map {
+            key: Box::new(type_reference(key, span, index, diagnostics)),
+            value: Box::new(type_reference(value, span, index, diagnostics)),
+        },
+        TypeReferenceAst::Reference(model) => UnlinkedTypeReference::Reference(required_reference(
+            index.model_reference(model, span, diagnostics),
+            span,
+        )),
         TypeReferenceAst::Named(value) => UnlinkedTypeReference::Named(required_reference(
             index.enum_reference(value, span, diagnostics),
             span,

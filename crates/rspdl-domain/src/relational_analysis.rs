@@ -157,8 +157,11 @@ pub fn find_bounded_relational_model<S: ConstraintSolver>(
         model
             .fields
             .iter()
-            .filter(|field| matches!(field.value_type, CanonicalType::Refinement(_)))
-            .map(|field| format!("refinement_field:{}", field.id))
+            .filter(|field| domain_for_type(&field.value_type).is_none())
+            .map(|field| match field.value_type {
+                CanonicalType::Refinement(_) => format!("refinement_field:{}", field.id),
+                _ => format!("symbolic_field:{}:{}", field.value_type, field.id),
+            })
     }));
     unsupported.sort();
     unsupported.dedup();
@@ -519,15 +522,15 @@ fn ground_field_constraint(
             RelationOperator::NotEqual => BooleanExpression::negate(BooleanExpression::atom(
                 Atom::equal(left, right).expect("linked equality operands have the same type"),
             )),
-            RelationOperator::LessThan => integer_comparison(ComparisonOperator::Lt, left, right),
+            RelationOperator::LessThan => ordered_comparison(ComparisonOperator::Lt, left, right),
             RelationOperator::LessThanOrEqual => {
-                integer_comparison(ComparisonOperator::Le, left, right)
+                ordered_comparison(ComparisonOperator::Le, left, right)
             }
             RelationOperator::GreaterThan => {
-                integer_comparison(ComparisonOperator::Gt, left, right)
+                ordered_comparison(ComparisonOperator::Gt, left, right)
             }
             RelationOperator::GreaterThanOrEqual => {
-                integer_comparison(ComparisonOperator::Ge, left, right)
+                ordered_comparison(ComparisonOperator::Ge, left, right)
             }
         };
         let optional_guards = [&definition.left, &definition.right]
@@ -564,10 +567,10 @@ fn constraint_term(
     }
 }
 
-fn integer_comparison(operator: ComparisonOperator, left: Term, right: Term) -> BooleanExpression {
+fn ordered_comparison(operator: ComparisonOperator, left: Term, right: Term) -> BooleanExpression {
     BooleanExpression::atom(
-        Atom::integer_comparison(operator, left, right)
-            .expect("linked ordered constraint operands are integers"),
+        Atom::ordered_comparison(operator, left, right)
+            .expect("linked ordered constraint operands have an ordered type"),
     )
 }
 
@@ -591,7 +594,34 @@ fn domain_for_type(value_type: &CanonicalType) -> Option<Domain> {
             }),
         )
         .expect("enum values are well typed"),
-        CanonicalType::Refinement(_) => return None,
+        CanonicalType::Decimal
+        | CanonicalType::Date
+        | CanonicalType::Time
+        | CanonicalType::DateTime
+        | CanonicalType::Duration
+        | CanonicalType::Latitude
+        | CanonicalType::Longitude
+        | CanonicalType::Money(_)
+        | CanonicalType::Percentage
+        | CanonicalType::Quantity(_)
+        | CanonicalType::Coordinate
+        | CanonicalType::LocalDateTime
+        | CanonicalType::ZonedDateTime
+        | CanonicalType::CalendarDuration
+        | CanonicalType::Uuid
+        | CanonicalType::Email
+        | CanonicalType::Url
+        | CanonicalType::PhoneNumber
+        | CanonicalType::IpAddress
+        | CanonicalType::Cidr
+        | CanonicalType::CountryCode
+        | CanonicalType::LanguageCode
+        | CanonicalType::CurrencyCode
+        | CanonicalType::List(_)
+        | CanonicalType::Set(_)
+        | CanonicalType::Map { .. }
+        | CanonicalType::Reference(_)
+        | CanonicalType::Refinement(_) => return None,
     })
 }
 

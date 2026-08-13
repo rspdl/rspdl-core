@@ -1933,12 +1933,111 @@ fn parse_type_reference(line: &Line, start: usize) -> Result<TypeReferenceAst, D
             line.span,
         ));
     }
+    let tokens = &line.tokens[start..];
+    if let [
+        Token {
+            kind: TokenKind::Word(keyword),
+            ..
+        },
+        Token {
+            kind: TokenKind::CanonicalId(parameter),
+            ..
+        },
+    ] = tokens
+        && matches!(keyword.as_str(), "통화" | "수량" | "참조")
+    {
+        return Ok(match keyword.as_str() {
+            "통화" => TypeReferenceAst::Money(parameter.clone()),
+            "수량" => TypeReferenceAst::Quantity(parameter.clone()),
+            "참조" => TypeReferenceAst::Reference(parameter.clone()),
+            _ => unreachable!("guarded above"),
+        });
+    }
+    if let [
+        Token {
+            kind: TokenKind::Word(keyword),
+            ..
+        },
+        rest @ ..,
+    ] = tokens
+        && matches!(keyword.as_str(), "목록" | "집합")
+    {
+        let element = parse_type_reference(
+            &Line {
+                indent: line.indent,
+                tokens: rest.to_vec(),
+                span: line.span,
+            },
+            0,
+        )?;
+        return Ok(if keyword == "목록" {
+            TypeReferenceAst::List(Box::new(element))
+        } else {
+            TypeReferenceAst::Set(Box::new(element))
+        });
+    }
+    if let [
+        Token {
+            kind: TokenKind::Word(keyword),
+            ..
+        },
+        key,
+        Token {
+            kind: TokenKind::Comma,
+            ..
+        },
+        value,
+    ] = tokens
+        && keyword == "맵"
+    {
+        let key = parse_type_reference(
+            &Line {
+                indent: line.indent,
+                tokens: vec![key.clone()],
+                span: line.span,
+            },
+            0,
+        )?;
+        let value = parse_type_reference(
+            &Line {
+                indent: line.indent,
+                tokens: vec![value.clone()],
+                span: line.span,
+            },
+            0,
+        )?;
+        return Ok(TypeReferenceAst::Map(Box::new(key), Box::new(value)));
+    }
+    if let [
+        Token {
+            kind: TokenKind::Word(keyword),
+            ..
+        },
+        Token {
+            kind: TokenKind::CanonicalId(parameters),
+            ..
+        },
+    ] = tokens
+        && keyword == "맵"
+    {
+        let (key, value) = parameters.split_once(',').ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-011",
+                "ko.syntax.field_type_invalid",
+                line.span,
+            )
+        })?;
+        return Ok(TypeReferenceAst::Map(
+            Box::new(type_reference_from_name(key.trim(), line.span)?),
+            Box::new(type_reference_from_name(value.trim(), line.span)?),
+        ));
+    }
     let mut parts = Vec::new();
     for token in &line.tokens[start..] {
         match &token.kind {
-            TokenKind::Word(value) | TokenKind::QuotedIdentifier(value) => {
-                parts.push(value.clone())
-            }
+            TokenKind::Word(value)
+            | TokenKind::QuotedIdentifier(value)
+            | TokenKind::CanonicalId(value) => parts.push(value.clone()),
             _ => {
                 return Err(Diagnostic::error(
                     "RSPDL-KO-SYN-011",
@@ -1956,6 +2055,27 @@ fn type_reference_from_name(name: &str, span: Span) -> Result<TypeReferenceAst, 
         "문자열" => Ok(TypeReferenceAst::String),
         "정수" => Ok(TypeReferenceAst::Integer),
         "불리언" => Ok(TypeReferenceAst::Boolean),
+        "소수" => Ok(TypeReferenceAst::Decimal),
+        "날짜" => Ok(TypeReferenceAst::Date),
+        "시간" => Ok(TypeReferenceAst::Time),
+        "날짜시간" => Ok(TypeReferenceAst::DateTime),
+        "기간" => Ok(TypeReferenceAst::Duration),
+        "위도" => Ok(TypeReferenceAst::Latitude),
+        "경도" => Ok(TypeReferenceAst::Longitude),
+        "백분율" | "비율" => Ok(TypeReferenceAst::Percentage),
+        "좌표" => Ok(TypeReferenceAst::Coordinate),
+        "지역 날짜시간" => Ok(TypeReferenceAst::LocalDateTime),
+        "시간대 날짜시간" => Ok(TypeReferenceAst::ZonedDateTime),
+        "달력 기간" => Ok(TypeReferenceAst::CalendarDuration),
+        "UUID" => Ok(TypeReferenceAst::Uuid),
+        "이메일" => Ok(TypeReferenceAst::Email),
+        "URL" => Ok(TypeReferenceAst::Url),
+        "전화번호" => Ok(TypeReferenceAst::PhoneNumber),
+        "IP" => Ok(TypeReferenceAst::IpAddress),
+        "CIDR" => Ok(TypeReferenceAst::Cidr),
+        "국가 코드" => Ok(TypeReferenceAst::CountryCode),
+        "언어 코드" => Ok(TypeReferenceAst::LanguageCode),
+        "통화 코드" => Ok(TypeReferenceAst::CurrencyCode),
         "" => Err(Diagnostic::error(
             "RSPDL-KO-SYN-011",
             "ko.syntax.field_type_required",
@@ -2048,6 +2168,35 @@ impl<'a> BodyCursor<'a> {
             ) {
                 self.index += 3;
                 return Ok((RelationOperatorAst::NotEqual, literal));
+            }
+            let operator =
+                match self
+                    .tokens
+                    .get(self.index + 1)
+                    .and_then(|token| match &token.kind {
+                        TokenKind::Word(word) => Some(word.as_str()),
+                        _ => None,
+                    }) {
+                    Some("이상이어야") => Some((RelationOperatorAst::GreaterThanOrEqual, 2)),
+                    Some("이하여야") => Some((RelationOperatorAst::LessThanOrEqual, 2)),
+                    Some("보다") => {
+                        match self
+                            .tokens
+                            .get(self.index + 2)
+                            .and_then(|token| match &token.kind {
+                                TokenKind::Word(word) => Some(word.as_str()),
+                                _ => None,
+                            }) {
+                            Some("커야") => Some((RelationOperatorAst::GreaterThan, 3)),
+                            Some("작아야") => Some((RelationOperatorAst::LessThan, 3)),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                };
+            if let Some((operator, consumed)) = operator {
+                self.index += consumed;
+                return Ok((operator, literal));
             }
         }
         if let TokenKind::QuotedIdentifier(value) = &token.kind {

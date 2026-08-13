@@ -432,8 +432,8 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "semantic.constraint.operand_type_mismatch" => {
             "제약의 양쪽 operand 타입이 다릅니다.".into()
         }
-        "semantic.constraint.order_requires_integer" => {
-            "대소 비교는 정수 필드에만 사용할 수 있습니다.".into()
+        "semantic.constraint.order_requires_ordered_type" => {
+            "대소 비교는 정수, 소수, 날짜, 시간, 날짜시간, 기간, 위도 또는 경도에만 사용할 수 있습니다.".into()
         }
         "semantic.relation.arity_unsupported" => format!(
             "관계 parameter는 {}개만 지원하지만 {}개가 선언되었습니다.",
@@ -615,6 +615,39 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "model.invalid_integer" => format!(
             "{}은 canonical base-10 정수가 아닙니다.",
             argument(diagnostic, "value")
+        ),
+        "model.invalid_decimal" => format!(
+            "{}은 올바른 소수가 아닙니다.",
+            argument(diagnostic, "value")
+        ),
+        "model.invalid_date" => format!(
+            "{}은 올바른 날짜가 아닙니다.",
+            argument(diagnostic, "value")
+        ),
+        "model.invalid_time" => format!(
+            "{}은 올바른 시간이 아닙니다.",
+            argument(diagnostic, "value")
+        ),
+        "model.invalid_date_time" => format!(
+            "{}은 올바른 RFC 3339 날짜시간이 아닙니다.",
+            argument(diagnostic, "value")
+        ),
+        "model.invalid_duration" => format!(
+            "{}은 올바른 고정 기간이 아닙니다.",
+            argument(diagnostic, "value")
+        ),
+        "model.invalid_latitude" => format!(
+            "위도 {}은 -90 이상 90 이하여야 합니다.",
+            argument(diagnostic, "value")
+        ),
+        "model.invalid_longitude" => format!(
+            "경도 {}은 -180 이상 180 이하여야 합니다.",
+            argument(diagnostic, "value")
+        ),
+        "model.unsupported_operation" => format!(
+            "타입 {}에는 {} 연산을 사용할 수 없습니다.",
+            argument(diagnostic, "value_type"),
+            argument(diagnostic, "operation")
         ),
         _ => fallback(diagnostic),
     }

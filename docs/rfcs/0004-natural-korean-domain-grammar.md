@@ -3,7 +3,7 @@ id: natural-korean-domain-grammar
 title: Korean Domain Frontend Language Specification
 type: rfc
 status: implemented
-version: "0.7"
+version: "0.8"
 summary: Defines Korean record, relation, constraint and policy grammar and its deterministic lowering to the locale-neutral Unlinked IR contract.
 topics:
   - ko-KR
@@ -24,10 +24,10 @@ problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - frontend-grammar-implementation-drift
-last_updated: "2026-08-12"
+last_updated: "2026-08-13"
 owners:
   - rspdl-maintainers
-target_spec: "0.3.0"
+target_spec: "0.4.0"
 ---
 
 # Korean Domain Frontend Language Specification
@@ -38,7 +38,7 @@ target_spec: "0.3.0"
 
 `@`는 문서 수준 metadata에만 예약한다. 현재 whitelist는 module identity를 선언하는 `@모듈` 하나다. Domain declaration이나 rule을 위한 다른 annotation은 문법 오류다. 새 annotation은 문장/블록으로 의미를 결정적이고 읽기 쉽게 보존할 수 없다는 RFC 근거가 있을 때만 추가할 수 있으며 parser 구현 편의나 입력 길이는 근거가 아니다.
 
-컬렉션, 유저 플로우, 조건부 정책, 일반 `AND`/`OR`/`NOT`, 3항 이상 관계, 모듈 import와 자유 한국어 해석은 현재 범위에 포함하지 않는다. Unary/binary relation과 제한된 관계 메타 규칙은 [Finite Relational Rules and Bounded Model Finding RFC](0007-finite-relational-model-finding.md)의 구현 범위를 따른다.
+유저 플로우, 조건부 정책, 일반 `AND`/`OR`/`NOT`, 3항 이상 관계, 모듈 import와 자유 한국어 해석은 현재 범위에 포함하지 않는다. Field value collection은 지원한다. Unary/binary relation과 제한된 관계 메타 규칙은 [Finite Relational Rules and Bounded Model Finding RFC](0007-finite-relational-model-finding.md)의 구현 범위를 따른다.
 
 ## 2. 전체 예시
 
@@ -124,6 +124,7 @@ quoted-character =
 
 digit = "0".."9" ;
 nonzero-digit = "1".."9" ;
+uppercase-ascii-letter = "A".."Z" ;
 
 surface-reference = surface-name ;
 model-reference = surface-reference ;
@@ -153,7 +154,7 @@ enum-value-reference = surface-reference ;
 
 ### 4.2 타입과 한정자 keyword
 
-`필수`와 `선택`은 field cardinality를 나타낸다. 내장 타입 keyword는 `문자열`, `정수`, `불리언`이다. 그 밖의 type reference는 선언된 열거형의 표시 이름이어야 한다.
+`필수`와 `선택`은 field cardinality를 나타낸다. 내장 단순 타입 keyword는 `문자열`, `정수`, `불리언`, `소수`, `날짜`, `시간`, `날짜시간`, `기간`, `위도`, `경도`, `백분율`/`비율`, `좌표`, `지역 날짜시간`, `시간대 날짜시간`, `달력 기간`, `UUID`, `이메일`, `URL`, `전화번호`, `IP`, `CIDR`, `국가 코드`, `언어 코드`, `통화 코드`다. `통화(KRW)`, `수량(kg)`, `목록(문자열)`, `집합(문자열)`, `맵(문자열, 문자열)`, `참조(payment)`는 parameter가 타입 동일성에 참여한다. 그 밖의 단순 type reference는 선언된 열거형의 표시 이름이어야 한다.
 
 ### 4.3 문장 marker
 
@@ -206,7 +207,28 @@ field-declaration =
     ("필수" | "선택"), type-reference, newline ;
 
 type-reference =
-    "문자열" | "정수" | "불리언" | surface-name ;
+      simple-type
+    | "통화", "(", currency-code, ")"
+    | "수량", "(", unit-id, ")"
+    | "참조", "(", model-reference, ")"
+    | ("목록" | "집합"), "(", simple-type, ")"
+    | "맵", "(", map-key-type, ",", simple-type, ")"
+    | surface-name ;
+
+simple-type =
+      "문자열" | "정수" | "불리언" | "소수"
+    | "날짜" | "시간" | "날짜시간" | "기간"
+    | "위도" | "경도" | "백분율" | "비율" | "좌표"
+    | "지역 날짜시간" | "시간대 날짜시간" | "달력 기간"
+    | "UUID" | "이메일" | "URL" | "전화번호" | "IP" | "CIDR"
+    | "국가 코드" | "언어 코드" | "통화 코드" ;
+
+map-key-type =
+      "문자열" | "UUID" | "이메일" | "URL" | "전화번호"
+    | "IP" | "CIDR" | "국가 코드" | "언어 코드" | "통화 코드" ;
+
+currency-code = uppercase-ascii-letter, uppercase-ascii-letter, uppercase-ascii-letter ;
+unit-id = "kg" | "g" | "m" | "km" | "s" | "ms" ;
 
 relation-declaration =
       model-reference, ("은" | "는"),
@@ -255,6 +277,19 @@ policy-declaration =
 
 parser는 같은 블록에서 동일한 들여쓰기 열을 요구한다. 유효한 들여쓰기 폭은 임의로 정할 수 있지만 formatter는 공백 네 칸으로 정규화한다.
 
+현재 한국어 표면 문법의 `목록`, `집합`, `맵` parameter는 위의 비매개변수 단순 타입 한 단계만 받는다. Canonical IR은 중첩 collection과 typed reference element를 표현할 수 있지만, 이를 한국어 source가 이미 지원하는 것으로 해석하지 않는다.
+
+```rspdl
+결제(payment)는 다음 필드들로 구성되어 있다.
+    금액(amount): 필수 통화(KRW)
+
+고객(customer)은 다음 필드들로 구성되어 있다.
+    외부 ID(external_id): 필수 UUID
+    태그(tags): 필수 집합(문자열)
+    설정(settings): 필수 맵(문자열, 문자열)
+    기본 결제(default_payment): 필수 참조(payment)
+```
+
 ### 5.2 제약 문장
 
 ```ebnf
@@ -268,8 +303,11 @@ constraint-expression =
       field-reference, ("은" | "는"), field-relation ;
 
 ordered-comparison =
-      integer-literal, "보다", ("커야" | "작아야"), "한다"
-    | integer-literal, ("이상이어야" | "이하여야"), "한다" ;
+      ordered-literal, "보다", ("커야" | "작아야"), "한다"
+    | ordered-literal, ("이상이어야" | "이하여야"), "한다" ;
+
+ordered-literal =
+    integer-literal | string-literal ;
 
 equality-comparison =
     literal, "이어야", "한다" ;
@@ -294,7 +332,12 @@ literal =
 비용 신청의 승인 상태는 승인됨이어야 한다.
 비용 신청의 신청자와 승인자는 같아야 한다.
 비용 신청의 신청자와 승인자는 달라야 한다.
+예약의 시작일은 "2026-08-13" 이상이어야 한다.
+예약의 시작 시각은 "09:00:00"보다 커야 한다.
+장소의 위도는 "37.5665"이어야 한다.
 ```
+
+확장 scalar literal은 JSON string 안에 [Typed Domains and Logic Core](0002-typed-domains-and-logic-core.md)의 representation을 쓴다. 왼쪽 field의 resolved type에 따라 같은 string token을 소수·시간·위치·통화·비율·수량 또는 refinement canonical value로 변환한다. 이를 일반 문자열과 자동 형변환하는 것으로 해석하지 않는다. 예를 들어 `날짜` field의 `"2026-02-30"`은 string equality가 아니라 잘못된 date literal이고, `통화(KRW)` field의 `"10 USD"`는 currency type mismatch다.
 
 ### 5.3 정책 문장
 
@@ -331,10 +374,12 @@ policy-statement =
 
 ### 6.2 공통 타입 검사
 
-- `보다`, `이상`, `이하` 비교는 정수 field에만 적용한다.
+- ordered comparison은 `정수`, `소수`, `날짜`, `시간`, `날짜시간`, `기간`, `위도`, `경도`의 같은 타입 operand 사이에만 적용한다.
 - equality literal의 타입은 field 타입과 같아야 한다.
 - enum literal은 field가 참조하는 enum에 선언된 표시 이름이어야 한다.
 - field-to-field equality는 양쪽 field 타입이 같아야 한다.
+- `문자열`, `불리언`, enum에 ordered comparison을 적용하거나 서로 다른 ordered type을 섞으면 `RSPDL-TYPE-001` 오류다.
+- 위도와 경도는 서로 다른 타입이며 바꿔 쓸 수 없다. 각각 `[-90, 90]`, `[-180, 180]` 밖의 literal은 `RSPDL-TYPE-001` 오류다.
 - policy가 참조하는 role, model, field와 action은 모두 선언되어야 한다.
 - relation parameter는 선언된 model이어야 하며 현재 arity는 1 또는 2다.
 - `required`와 `unique` 문장은 anchor model을 직접 이름으로 적어야 하며, 그 model은 binary relation의 첫 parameter와 같아야 한다.
@@ -351,9 +396,13 @@ policy-statement =
 
 `rspdl-compiler`는 외부 JSON의 `records`, `role_assignments`, `action_requests`를 `SemanticModule`에 연결한다. 필수 field의 누락 또는 `null`은 backend 실행 전 입력 오류다. 선택 field가 없거나 `null`이면 그 field를 참조하는 제약은 해당 record에 적용하지 않는다.
 
+`날짜`, `시간`, `날짜시간`, `기간`, `지역 날짜시간`, `시간대 날짜시간`, `달력 기간` field는 canonical text를 JSON string으로 받는다. 시간대 날짜시간은 explicit offset과 IANA zone을 함께 받아 pinned time-zone data와 일치하지 않는 DST offset을 거부한다. `소수`, `위도`, `경도`는 정밀도를 보존하기 위해 JSON string을 기준 형식으로 사용하며 exponent가 없는 JSON number도 허용한다.
+
+`통화`, `백분율`/`비율`, `수량`, `좌표`와 문자열 refinement도 canonical string을 받는다. 통화와 수량은 field의 currency/dimension과 다른 값을 거부하고, UUID·IP·CIDR 등은 타입별 lexical/canonical validation을 적용한다. `목록`과 `집합`은 JSON array, `맵`은 JSON object, `참조`는 target record ID string을 받는다. 모든 원소·key·value를 재귀적으로 타입 검사하고 집합 중복을 거부한다. Typed reference의 target model 존재는 compile 시 common analyzer가 검사하지만 외부 runtime record의 실제 존재 조회는 하지 않는다.
+
 ### 7.2 제약 backend
 
-각 record와 constraint 조합마다 constraint의 부정을 Z3 문제로 만든다. 부정이 `SAT`이면 record는 제약을 위반하며 반례를 finding에 포함한다. `UNSAT`이면 통과하고 `Unknown` 또는 timeout은 backend 오류다.
+Runtime constraint는 concrete canonical value의 equality와 type-specific ordered comparison을 직접 정확하게 실행한다. 확장 scalar를 finite active domain 없이 symbolic model finding에 사용하면 backend가 지원하지 않는 construct로 보고하며 integer나 string theory로 근사하지 않는다.
 
 ### 7.3 정책 backend
 

@@ -1,11 +1,165 @@
 use rspdl_domain::{
     Atom, Backend, BooleanExpression, CanonicalId, CanonicalType, CanonicalValue, Cardinality,
-    Domain, EnumType, EnumerationSupport, ModelError, PredicateSignature, SetExpression,
-    SymbolicSupport, Term, Variable,
+    CurrencyCode, Domain, EnumType, EnumerationSupport, ModelError, PredicateSignature,
+    QuantityDimension, SetExpression, SymbolicSupport, Term, Variable,
 };
 
 fn id(value: &str) -> CanonicalId {
     CanonicalId::new(value).expect("test IDs are canonical")
+}
+
+#[test]
+fn parameterized_money_and_quantity_preserve_identity_and_exact_operations() {
+    let won = CanonicalValue::money_from_str("10000 KRW").unwrap();
+    let more_won = CanonicalValue::money_from_str("500 KRW").unwrap();
+    assert_eq!(
+        won.add(&more_won).unwrap().value_type(),
+        &CanonicalType::Money(CurrencyCode::new("KRW").unwrap())
+    );
+    assert!(matches!(
+        won.add(&CanonicalValue::money_from_str("10 USD").unwrap()),
+        Err(ModelError::TypeMismatch { .. })
+    ));
+
+    let kilograms = CanonicalValue::quantity_from_str("1 kg").unwrap();
+    let grams = CanonicalValue::quantity_from_str("500 g").unwrap();
+    assert_eq!(
+        CanonicalValue::quantity_from_str("1000 g")
+            .unwrap()
+            .compare_ordered(&kilograms)
+            .unwrap(),
+        std::cmp::Ordering::Equal
+    );
+    assert_eq!(
+        kilograms
+            .add(&grams)
+            .unwrap()
+            .compare_ordered(&CanonicalValue::quantity_from_str("1.5 kg").unwrap())
+            .unwrap(),
+        std::cmp::Ordering::Equal
+    );
+    assert!(matches!(
+        kilograms.compare_ordered(&CanonicalValue::quantity_from_str("1 km").unwrap()),
+        Err(ModelError::TypeMismatch { .. })
+    ));
+    assert_eq!(
+        kilograms.value_type(),
+        &CanonicalType::Quantity(QuantityDimension::Mass)
+    );
+}
+
+#[test]
+fn refinements_and_coordinates_reject_malformed_and_boundary_values() {
+    assert_eq!(
+        CanonicalValue::coordinate_from_str("90,-180")
+            .unwrap()
+            .value_type(),
+        &CanonicalType::Coordinate
+    );
+    assert!(CanonicalValue::coordinate_from_str("90.1,0").is_err());
+    assert!(
+        CanonicalValue::refinement_from_str(
+            CanonicalType::Uuid,
+            "550e8400-e29b-41d4-a716-446655440000"
+        )
+        .is_ok()
+    );
+    assert!(CanonicalValue::refinement_from_str(CanonicalType::Email, "not-an-email").is_err());
+}
+
+#[test]
+fn temporal_spatial_and_collection_contracts_are_deterministic() {
+    let local = CanonicalValue::local_date_time_from_iso("2026-08-13T14:30:00").unwrap();
+    assert_eq!(local.canonical_text(), "2026-08-13T14:30:00");
+    assert!(CanonicalValue::local_date_time_from_iso("2026-08-13T14:30:00Z").is_err());
+    let early =
+        CanonicalValue::zoned_date_time_from_str("2026-11-01T01:30:00-04:00 America/New_York")
+            .unwrap();
+    let late =
+        CanonicalValue::zoned_date_time_from_str("2026-11-01T01:30:00-05:00 America/New_York")
+            .unwrap();
+    assert_ne!(early.canonical_text(), late.canonical_text());
+    assert_eq!(
+        early.compare_ordered(&late).unwrap(),
+        std::cmp::Ordering::Less
+    );
+    assert!(
+        CanonicalValue::zoned_date_time_from_str("2026-03-08T02:30:00-05:00 America/New_York")
+            .is_err()
+    );
+    let duration = CanonicalValue::calendar_duration_from_iso("P1M").unwrap();
+    assert!(
+        CanonicalValue::date_from_iso("2026-01-31")
+            .unwrap()
+            .apply_calendar_duration_to_date(&duration)
+            .is_err()
+    );
+    let extreme = CanonicalValue::calendar_duration_from_iso("P2147483647Y").unwrap();
+    assert!(matches!(
+        CanonicalValue::date_from_iso("2026-01-01")
+            .unwrap()
+            .apply_calendar_duration_to_date(&extreme),
+        Err(ModelError::CalendarDateOverflow)
+    ));
+
+    let seoul = CanonicalValue::coordinate_from_str("37.5665,126.9780").unwrap();
+    assert!(
+        seoul
+            .is_within_radius(&seoul, &CanonicalValue::quantity_from_str("0 m").unwrap())
+            .unwrap()
+    );
+    assert!(matches!(
+        seoul.is_within_radius(&seoul, &CanonicalValue::quantity_from_str("-1 m").unwrap()),
+        Err(ModelError::InvalidRadius)
+    ));
+    assert_eq!(
+        CanonicalValue::coordinate_from_str("0,0")
+            .unwrap()
+            .distance_to(&CanonicalValue::coordinate_from_str("0,1").unwrap())
+            .unwrap()
+            .canonical_text(),
+        "111195.080233533 m"
+    );
+    let antipodal_distance = CanonicalValue::coordinate_from_str("0,0")
+        .unwrap()
+        .distance_to(&CanonicalValue::coordinate_from_str("0,180").unwrap())
+        .unwrap();
+    assert_eq!(
+        antipodal_distance
+            .compare_ordered(&CanonicalValue::quantity_from_str("20015114 m").unwrap())
+            .unwrap(),
+        std::cmp::Ordering::Greater
+    );
+    let cidr = CanonicalValue::refinement_from_str(CanonicalType::Cidr, "192.0.2.15/24").unwrap();
+    assert_eq!(cidr.canonical_text(), "192.0.2.0/24");
+    assert!(
+        cidr.cidr_contains(
+            &CanonicalValue::refinement_from_str(CanonicalType::IpAddress, "192.0.2.99").unwrap()
+        )
+        .unwrap()
+    );
+
+    let list =
+        CanonicalValue::list(CanonicalType::String, vec![CanonicalValue::string("x")]).unwrap();
+    assert!(list.list_contains(&CanonicalValue::string("x")).unwrap());
+    assert!(
+        CanonicalValue::set(
+            CanonicalType::String,
+            [CanonicalValue::string("x"), CanonicalValue::string("x")]
+        )
+        .is_err()
+    );
+    assert!(matches!(
+        CanonicalType::map(CanonicalType::Integer, CanonicalType::String),
+        Err(ModelError::UnsupportedMapKeyType { .. })
+    ));
+    let reference = CanonicalValue::reference(id("model.payment"), "p-1").unwrap();
+    assert_ne!(
+        reference.value_type(),
+        CanonicalValue::reference(id("model.customer"), "p-1")
+            .unwrap()
+            .value_type()
+    );
 }
 
 #[test]
@@ -262,4 +416,72 @@ fn canonical_integer_text_has_one_representation() {
             "{invalid}"
         );
     }
+}
+
+#[test]
+fn extended_scalars_validate_and_normalize_canonical_values() {
+    let decimal = CanonicalValue::decimal_from_str("42.5000").unwrap();
+    assert_eq!(decimal.as_decimal().unwrap().to_string(), "42.5");
+    assert!(CanonicalValue::decimal_from_str("1e3").is_err());
+    assert!(CanonicalValue::decimal_from_str("01.5").is_err());
+
+    assert!(CanonicalValue::date_from_iso("2024-02-29").is_ok());
+    assert!(CanonicalValue::date_from_iso("2026-02-29").is_err());
+    assert!(CanonicalValue::time_from_iso("23:59:59.999999999").is_ok());
+    assert!(CanonicalValue::time_from_iso("24:00:00").is_err());
+
+    let utc = CanonicalValue::date_time_from_rfc3339("2026-08-13T05:30:00Z").unwrap();
+    let offset = CanonicalValue::date_time_from_rfc3339("2026-08-13T14:30:00+09:00").unwrap();
+    assert_eq!(utc, offset);
+    assert_eq!(
+        offset.as_date_time().unwrap().to_string(),
+        "2026-08-13T05:30:00Z"
+    );
+    let serialized = serde_json::to_value(&offset).unwrap();
+    assert_eq!(serialized["value_type"]["kind"], "date_time");
+    assert_eq!(serialized["representation"]["kind"], "date_time");
+    assert_eq!(
+        serialized["representation"]["value"],
+        "2026-08-13T05:30:00Z"
+    );
+
+    let duration = CanonicalValue::duration_from_iso("-PT1.500000000S").unwrap();
+    assert_eq!(duration.as_duration().unwrap().to_string(), "-PT1.5S");
+    assert!(CanonicalValue::duration_from_iso("P1D").is_err());
+
+    assert!(CanonicalValue::latitude_from_decimal("-90").is_ok());
+    assert!(CanonicalValue::latitude_from_decimal("90.0001").is_err());
+    assert!(CanonicalValue::longitude_from_decimal("180").is_ok());
+    assert!(CanonicalValue::longitude_from_decimal("-180.0001").is_err());
+}
+
+#[test]
+fn ordered_comparison_accepts_only_ordered_values_of_the_same_type() {
+    let earlier = CanonicalValue::date_from_iso("2026-08-12").unwrap();
+    let later = CanonicalValue::date_from_iso("2026-08-13").unwrap();
+    assert_eq!(
+        earlier.compare_ordered(&later).unwrap(),
+        std::cmp::Ordering::Less
+    );
+    Atom::ordered_comparison(
+        rspdl_domain::ComparisonOperator::Lt,
+        Term::Constant(earlier),
+        Term::Constant(later),
+    )
+    .expect("date is ordered");
+
+    assert!(matches!(
+        Atom::ordered_comparison(
+            rspdl_domain::ComparisonOperator::Lt,
+            Term::Constant(CanonicalValue::string("a")),
+            Term::Constant(CanonicalValue::string("b")),
+        ),
+        Err(ModelError::UnsupportedOperation { .. })
+    ));
+    assert!(matches!(
+        CanonicalValue::latitude_from_decimal("1")
+            .unwrap()
+            .compare_ordered(&CanonicalValue::longitude_from_decimal("1").unwrap()),
+        Err(ModelError::TypeMismatch { .. })
+    ));
 }

@@ -50,6 +50,7 @@ fn compile_grammar(grammar_path: &std::path::Path, output_dir: &std::path::Path)
         "screen_model_ref",
         "source_direct",
         "string_equal",
+        "string_before",
         "string_not_equal",
         "surface_name",
         "template_string",

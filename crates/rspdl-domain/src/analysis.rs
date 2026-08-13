@@ -209,6 +209,17 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         .iter()
         .map(|definition| (definition.name.clone(), definition.clone()))
         .collect::<BTreeMap<_, _>>();
+    let declared_model_ids = module
+        .models
+        .iter()
+        .filter_map(|model| {
+            model
+                .declaration
+                .id
+                .as_ref()
+                .and_then(|id| qualify_member_id(&module_id, id).ok())
+        })
+        .collect::<BTreeSet<_>>();
     let mut models = Vec::new();
     let mut model_names = BTreeSet::new();
     for value in module.models {
@@ -216,6 +227,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
             value,
             &module_id,
             &enum_by_name,
+            &declared_model_ids,
             &mut top_level_ids,
             &mut model_names,
             &mut models,
@@ -257,24 +269,15 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
                         }
                     })
                 }
-                UnlinkedActionInputKind::Value { value_type } => match value_type {
-                    UnlinkedTypeReference::String => Some(ActionInputKind::Value {
-                        value_type: CanonicalType::String,
-                    }),
-                    UnlinkedTypeReference::Integer => Some(ActionInputKind::Value {
-                        value_type: CanonicalType::Integer,
-                    }),
-                    UnlinkedTypeReference::Boolean => Some(ActionInputKind::Value {
-                        value_type: CanonicalType::Boolean,
-                    }),
-                    UnlinkedTypeReference::Named(reference) => {
-                        resolve_enum(enum_by_name.values(), &reference, &mut diagnostics).map(
-                            |definition| ActionInputKind::Value {
-                                value_type: CanonicalType::Enum(definition.enum_type.clone()),
-                            },
-                        )
-                    }
-                },
+                UnlinkedActionInputKind::Value { value_type } => link_field_type(
+                    value_type,
+                    &enum_by_name,
+                    &module_id,
+                    &declared_model_ids,
+                    input.declaration.span,
+                    &mut diagnostics,
+                )
+                .map(|value_type| ActionInputKind::Value { value_type }),
             };
             if let Some(kind) = kind {
                 action.inputs.push(ActionInputDefinition {
@@ -315,24 +318,15 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
                         }
                     })
                 }
-                UnlinkedEventInputKind::Value { value_type } => match value_type {
-                    UnlinkedTypeReference::String => Some(EventInputKind::Value {
-                        value_type: CanonicalType::String,
-                    }),
-                    UnlinkedTypeReference::Integer => Some(EventInputKind::Value {
-                        value_type: CanonicalType::Integer,
-                    }),
-                    UnlinkedTypeReference::Boolean => Some(EventInputKind::Value {
-                        value_type: CanonicalType::Boolean,
-                    }),
-                    UnlinkedTypeReference::Named(reference) => {
-                        resolve_enum(enum_by_name.values(), &reference, &mut diagnostics).map(
-                            |definition| EventInputKind::Value {
-                                value_type: CanonicalType::Enum(definition.enum_type.clone()),
-                            },
-                        )
-                    }
-                },
+                UnlinkedEventInputKind::Value { value_type } => link_field_type(
+                    value_type,
+                    &enum_by_name,
+                    &module_id,
+                    &declared_model_ids,
+                    input.declaration.span,
+                    &mut diagnostics,
+                )
+                .map(|value_type| EventInputKind::Value { value_type }),
             };
             if let Some(kind) = kind {
                 event.inputs.push(EventInputDefinition {
@@ -729,6 +723,7 @@ fn lower_model(
     value: UnlinkedDataModel,
     module_id: &CanonicalId,
     enums: &BTreeMap<String, EnumDefinition>,
+    declared_model_ids: &BTreeSet<CanonicalId>,
     top_level_ids: &mut BTreeSet<CanonicalId>,
     model_names: &mut BTreeSet<String>,
     models: &mut Vec<DataModelDefinition>,
@@ -766,15 +761,14 @@ fn lower_model(
         if !names.insert(field.declaration.name.clone()) {
             duplicate_name("field", &field.declaration, diagnostics);
         }
-        let value_type = match field.value_type {
-            UnlinkedTypeReference::String => Some(CanonicalType::String),
-            UnlinkedTypeReference::Integer => Some(CanonicalType::Integer),
-            UnlinkedTypeReference::Boolean => Some(CanonicalType::Boolean),
-            UnlinkedTypeReference::Named(reference) => {
-                resolve_enum(enums.values(), &reference, diagnostics)
-                    .map(|definition| CanonicalType::Enum(definition.enum_type.clone()))
-            }
-        };
+        let value_type = link_field_type(
+            field.value_type,
+            enums,
+            module_id,
+            declared_model_ids,
+            field.declaration.span,
+            diagnostics,
+        );
         let Some(value_type) = value_type else {
             continue;
         };
@@ -800,6 +794,123 @@ fn lower_model(
         fields,
         span: value.span,
     });
+}
+
+fn link_field_type(
+    value: UnlinkedTypeReference,
+    enums: &BTreeMap<String, EnumDefinition>,
+    module_id: &CanonicalId,
+    declared_model_ids: &BTreeSet<CanonicalId>,
+    span: TextRange,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<CanonicalType> {
+    let value_type = match value {
+        UnlinkedTypeReference::String => CanonicalType::String,
+        UnlinkedTypeReference::Integer => CanonicalType::Integer,
+        UnlinkedTypeReference::Boolean => CanonicalType::Boolean,
+        UnlinkedTypeReference::Decimal => CanonicalType::Decimal,
+        UnlinkedTypeReference::Date => CanonicalType::Date,
+        UnlinkedTypeReference::Time => CanonicalType::Time,
+        UnlinkedTypeReference::DateTime => CanonicalType::DateTime,
+        UnlinkedTypeReference::Duration => CanonicalType::Duration,
+        UnlinkedTypeReference::Latitude => CanonicalType::Latitude,
+        UnlinkedTypeReference::Longitude => CanonicalType::Longitude,
+        UnlinkedTypeReference::Money(currency) => match crate::CurrencyCode::new(currency) {
+            Ok(currency) => CanonicalType::Money(currency),
+            Err(error) => {
+                diagnostics.push(model_error("RSPDL-TYPE-001", error, span));
+                return None;
+            }
+        },
+        UnlinkedTypeReference::Percentage => CanonicalType::Percentage,
+        UnlinkedTypeReference::Quantity(unit) => {
+            match CanonicalValue::quantity_from_str(format!("1 {unit}")) {
+                Ok(value) => value.value_type().clone(),
+                Err(error) => {
+                    diagnostics.push(model_error("RSPDL-TYPE-001", error, span));
+                    return None;
+                }
+            }
+        }
+        UnlinkedTypeReference::Coordinate => CanonicalType::Coordinate,
+        UnlinkedTypeReference::LocalDateTime => CanonicalType::LocalDateTime,
+        UnlinkedTypeReference::ZonedDateTime => CanonicalType::ZonedDateTime,
+        UnlinkedTypeReference::CalendarDuration => CanonicalType::CalendarDuration,
+        UnlinkedTypeReference::Uuid => CanonicalType::Uuid,
+        UnlinkedTypeReference::Email => CanonicalType::Email,
+        UnlinkedTypeReference::Url => CanonicalType::Url,
+        UnlinkedTypeReference::PhoneNumber => CanonicalType::PhoneNumber,
+        UnlinkedTypeReference::IpAddress => CanonicalType::IpAddress,
+        UnlinkedTypeReference::Cidr => CanonicalType::Cidr,
+        UnlinkedTypeReference::CountryCode => CanonicalType::CountryCode,
+        UnlinkedTypeReference::LanguageCode => CanonicalType::LanguageCode,
+        UnlinkedTypeReference::CurrencyCode => CanonicalType::CurrencyCode,
+        UnlinkedTypeReference::List(element) => CanonicalType::List(Box::new(link_field_type(
+            *element,
+            enums,
+            module_id,
+            declared_model_ids,
+            span,
+            diagnostics,
+        )?)),
+        UnlinkedTypeReference::Set(element) => CanonicalType::Set(Box::new(link_field_type(
+            *element,
+            enums,
+            module_id,
+            declared_model_ids,
+            span,
+            diagnostics,
+        )?)),
+        UnlinkedTypeReference::Map { key, value } => CanonicalType::map(
+            link_field_type(
+                *key,
+                enums,
+                module_id,
+                declared_model_ids,
+                span,
+                diagnostics,
+            )?,
+            link_field_type(
+                *value,
+                enums,
+                module_id,
+                declared_model_ids,
+                span,
+                diagnostics,
+            )?,
+        )
+        .map_err(|error| diagnostics.push(model_error("RSPDL-TYPE-001", error, span)))
+        .ok()?,
+        UnlinkedTypeReference::Reference(reference) => {
+            match qualify_member_id(module_id, reference.id()) {
+                Ok(model) if declared_model_ids.contains(&model) => CanonicalType::Reference(model),
+                Ok(model) => {
+                    diagnostics.push(
+                        link_error("semantic.reference.target_not_found", span)
+                            .with_argument("reference", model),
+                    );
+                    return None;
+                }
+                Err(error) => {
+                    diagnostics.push(model_error("RSPDL-TYPE-001", error, span));
+                    return None;
+                }
+            }
+        }
+        UnlinkedTypeReference::Named(reference) => {
+            resolve_enum(enums.values(), &reference, diagnostics)
+                .map(|definition| CanonicalType::Enum(definition.enum_type.clone()))?
+        }
+    };
+    Some(value_type)
+}
+
+fn qualify_member_id(module_id: &CanonicalId, value: &str) -> Result<CanonicalId, ModelError> {
+    if value.contains('.') {
+        CanonicalId::new(value)
+    } else {
+        CanonicalId::new(format!("{module_id}.{value}"))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -829,10 +940,10 @@ fn link_constraint(
             | RelationOperator::LessThanOrEqual
             | RelationOperator::GreaterThan
             | RelationOperator::GreaterThanOrEqual
-    ) && left_type != Some(CanonicalType::Integer)
+    ) && !left_type.as_ref().is_some_and(CanonicalType::is_ordered)
     {
         diagnostics.push(type_error(
-            "semantic.constraint.order_requires_integer",
+            "semantic.constraint.order_requires_ordered_type",
             value.span,
         ));
         return None;
@@ -3397,6 +3508,71 @@ fn literal_value(
         (UnlinkedLiteral::String { value, .. }, CanonicalType::String) => {
             Some(Ok(CanonicalValue::string(value)))
         }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::Decimal) => {
+            Some(CanonicalValue::decimal_from_str(value))
+        }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::Date) => {
+            Some(CanonicalValue::date_from_iso(value))
+        }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::Time) => {
+            Some(CanonicalValue::time_from_iso(value))
+        }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::DateTime) => {
+            Some(CanonicalValue::date_time_from_rfc3339(value))
+        }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::Duration) => {
+            Some(CanonicalValue::duration_from_iso(value))
+        }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::Latitude) => {
+            Some(CanonicalValue::latitude_from_decimal(value))
+        }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::Longitude) => {
+            Some(CanonicalValue::longitude_from_decimal(value))
+        }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::Money(currency)) => {
+            Some(CanonicalValue::money_from_str(value).and_then(|bound| {
+                if bound.value_type() == expected {
+                    Ok(bound)
+                } else {
+                    Err(ModelError::TypeMismatch {
+                        context: "money literal",
+                        expected: CanonicalType::Money(currency.clone()),
+                        actual: bound.value_type().clone(),
+                    })
+                }
+            }))
+        }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::Percentage) => {
+            Some(CanonicalValue::percentage_from_str(value))
+        }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::Quantity(_)) => {
+            Some(CanonicalValue::quantity_from_str(value).and_then(|bound| {
+                if bound.value_type() == expected {
+                    Ok(bound)
+                } else {
+                    Err(ModelError::TypeMismatch {
+                        context: "quantity literal",
+                        expected: expected.clone(),
+                        actual: bound.value_type().clone(),
+                    })
+                }
+            }))
+        }
+        (UnlinkedLiteral::String { value, .. }, CanonicalType::Coordinate) => {
+            Some(CanonicalValue::coordinate_from_str(value))
+        }
+        (
+            UnlinkedLiteral::String { value, .. },
+            CanonicalType::Uuid
+            | CanonicalType::Email
+            | CanonicalType::Url
+            | CanonicalType::PhoneNumber
+            | CanonicalType::IpAddress
+            | CanonicalType::Cidr
+            | CanonicalType::CountryCode
+            | CanonicalType::LanguageCode
+            | CanonicalType::CurrencyCode,
+        ) => Some(CanonicalValue::refinement_from_str(expected.clone(), value)),
         (UnlinkedLiteral::Integer { value, .. }, CanonicalType::Integer) => {
             Some(CanonicalValue::integer_from_decimal(value))
         }
@@ -3882,12 +4058,26 @@ fn operand_identity(operand: &ConstraintOperand) -> String {
                 format!("string:{}:{value}", value.len())
             } else if let Some(value) = value.as_integer() {
                 format!("integer:{value}")
+            } else if let Some(value) = value.as_decimal() {
+                format!("decimal:{value}")
             } else if let Some(value) = value.as_boolean() {
                 format!("boolean:{value}")
+            } else if let Some(value) = value.as_date() {
+                format!("date:{value}")
+            } else if let Some(value) = value.as_time() {
+                format!("time:{value}")
+            } else if let Some(value) = value.as_date_time() {
+                format!("date_time:{value}")
+            } else if let Some(value) = value.as_duration() {
+                format!("duration:{value}")
+            } else if let Some(value) = value.as_latitude() {
+                format!("latitude:{value}")
+            } else if let Some(value) = value.as_longitude() {
+                format!("longitude:{value}")
             } else if let Some(value) = value.as_enum_variant() {
                 format!("enum:{value}")
             } else {
-                unreachable!("every canonical value representation is covered")
+                format!("{}:{}", value.value_type(), value.canonical_text())
             }
         }
     }
@@ -3926,6 +4116,14 @@ fn model_error(rule_id: &str, error: ModelError, span: TextRange) -> Diagnostic 
         ModelError::InvalidCanonicalId { value } => {
             Diagnostic::error(rule_id, "model.invalid_canonical_id", span)
                 .with_argument("value", value)
+        }
+        ModelError::InvalidCurrencyCode { value } => {
+            Diagnostic::error(rule_id, "model.invalid_currency_code", span)
+                .with_argument("value", value)
+        }
+        ModelError::UnsupportedMapKeyType { value_type } => {
+            Diagnostic::error(rule_id, "model.unsupported_map_key_type", span)
+                .with_argument("value_type", value_type)
         }
         ModelError::EmptyEnum { type_id } => {
             Diagnostic::error(rule_id, "model.empty_enum", span).with_argument("type_id", type_id)
@@ -3984,5 +4182,63 @@ fn model_error(rule_id: &str, error: ModelError, span: TextRange) -> Diagnostic 
         ModelError::InvalidInteger { value } => {
             Diagnostic::error(rule_id, "model.invalid_integer", span).with_argument("value", value)
         }
+        ModelError::InvalidDecimal { value } => {
+            Diagnostic::error(rule_id, "model.invalid_decimal", span).with_argument("value", value)
+        }
+        ModelError::InvalidDate { value } => {
+            Diagnostic::error(rule_id, "model.invalid_date", span).with_argument("value", value)
+        }
+        ModelError::InvalidTime { value } => {
+            Diagnostic::error(rule_id, "model.invalid_time", span).with_argument("value", value)
+        }
+        ModelError::InvalidDateTime { value } => {
+            Diagnostic::error(rule_id, "model.invalid_date_time", span)
+                .with_argument("value", value)
+        }
+        ModelError::InvalidDuration { value } => {
+            Diagnostic::error(rule_id, "model.invalid_duration", span).with_argument("value", value)
+        }
+        ModelError::InvalidLatitude { value } => {
+            Diagnostic::error(rule_id, "model.invalid_latitude", span).with_argument("value", value)
+        }
+        ModelError::InvalidLongitude { value } => {
+            Diagnostic::error(rule_id, "model.invalid_longitude", span)
+                .with_argument("value", value)
+        }
+        ModelError::InvalidMoney { value }
+        | ModelError::InvalidPercentage { value }
+        | ModelError::InvalidQuantity { value }
+        | ModelError::InvalidCoordinate { value } => {
+            Diagnostic::error(rule_id, "model.invalid_extended_scalar", span)
+                .with_argument("value", value)
+        }
+        ModelError::InvalidRefinementText { value_type, value } => {
+            Diagnostic::error(rule_id, "model.invalid_refinement_text", span)
+                .with_argument("value_type", value_type)
+                .with_argument("value", value)
+        }
+        ModelError::InvalidLocalDateTime { value }
+        | ModelError::InvalidZonedDateTime { value }
+        | ModelError::InvalidCalendarDuration { value } => {
+            Diagnostic::error(rule_id, "model.invalid_temporal_value", span)
+                .with_argument("value", value)
+        }
+        ModelError::CalendarDateOverflow => {
+            Diagnostic::error(rule_id, "model.calendar_date_overflow", span)
+        }
+        ModelError::DuplicateSetElement => {
+            Diagnostic::error(rule_id, "model.duplicate_set_element", span)
+        }
+        ModelError::DuplicateMapKey => Diagnostic::error(rule_id, "model.duplicate_map_key", span),
+        ModelError::InvalidReferenceRecordId => {
+            Diagnostic::error(rule_id, "model.invalid_reference_record_id", span)
+        }
+        ModelError::InvalidRadius => Diagnostic::error(rule_id, "model.invalid_radius", span),
+        ModelError::UnsupportedOperation {
+            operation,
+            value_type,
+        } => Diagnostic::error(rule_id, "model.unsupported_operation", span)
+            .with_argument("operation", operation)
+            .with_argument("value_type", value_type),
     }
 }

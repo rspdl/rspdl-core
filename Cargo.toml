@@ -20,6 +20,9 @@ rust-version = "1.88"
 version = "0.1.0"
 
 [workspace.dependencies]
+chrono = { version = "=0.4.41", default-features = false, features = ["std"] }
+chrono-tz = "=0.10.4"
+libm = "=0.2.15"
 num-bigint = "0.4.6"
 num-prime = { version = "0.5.0", default-features = false }
 num-traits = "0.2.19"

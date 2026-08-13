@@ -1,0 +1,25 @@
+{
+  "spec_version": "0.4.0",
+  "locale": "ko-KR",
+  "category": "normal",
+  "expected_module": true,
+  "expected_diagnostics": [],
+  "expected_field_types": {
+    "extended.event.amount": "decimal",
+    "extended.event.latitude": "latitude",
+    "extended.event.longitude": "longitude",
+    "extended.event.occurred_at": "date_time",
+    "extended.event.start_date": "date",
+    "extended.event.start_time": "time",
+    "extended.event.wait_duration": "duration"
+  },
+  "expected_constraint_values": [
+    "10.5",
+    "2026-08-13",
+    "09:00:00",
+    "2026-08-13T05:30:00Z",
+    "PT1.5S",
+    "37.5665",
+    "126.978"
+  ]
+}

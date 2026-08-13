@@ -383,11 +383,40 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
     Ok(output)
 }
 
-fn type_reference(value: &TypeReferenceAst) -> String {
+pub(crate) fn type_reference(value: &TypeReferenceAst) -> String {
     match value {
-        TypeReferenceAst::String => "문자열".to_owned(),
-        TypeReferenceAst::Integer => "정수".to_owned(),
-        TypeReferenceAst::Boolean => "불리언".to_owned(),
+        TypeReferenceAst::String => "문자열".into(),
+        TypeReferenceAst::Integer => "정수".into(),
+        TypeReferenceAst::Boolean => "불리언".into(),
+        TypeReferenceAst::Decimal => "소수".into(),
+        TypeReferenceAst::Date => "날짜".into(),
+        TypeReferenceAst::Time => "시간".into(),
+        TypeReferenceAst::DateTime => "날짜시간".into(),
+        TypeReferenceAst::Duration => "기간".into(),
+        TypeReferenceAst::Latitude => "위도".into(),
+        TypeReferenceAst::Longitude => "경도".into(),
+        TypeReferenceAst::Money(currency) => format!("통화({currency})"),
+        TypeReferenceAst::Percentage => "백분율".into(),
+        TypeReferenceAst::Quantity(unit) => format!("수량({unit})"),
+        TypeReferenceAst::Coordinate => "좌표".into(),
+        TypeReferenceAst::LocalDateTime => "지역 날짜시간".into(),
+        TypeReferenceAst::ZonedDateTime => "시간대 날짜시간".into(),
+        TypeReferenceAst::CalendarDuration => "달력 기간".into(),
+        TypeReferenceAst::Uuid => "UUID".into(),
+        TypeReferenceAst::Email => "이메일".into(),
+        TypeReferenceAst::Url => "URL".into(),
+        TypeReferenceAst::PhoneNumber => "전화번호".into(),
+        TypeReferenceAst::IpAddress => "IP".into(),
+        TypeReferenceAst::Cidr => "CIDR".into(),
+        TypeReferenceAst::CountryCode => "국가 코드".into(),
+        TypeReferenceAst::LanguageCode => "언어 코드".into(),
+        TypeReferenceAst::CurrencyCode => "통화 코드".into(),
+        TypeReferenceAst::List(element) => format!("목록({})", type_reference(element)),
+        TypeReferenceAst::Set(element) => format!("집합({})", type_reference(element)),
+        TypeReferenceAst::Map(key, value) => {
+            format!("맵({}, {})", type_reference(key), type_reference(value))
+        }
+        TypeReferenceAst::Reference(model) => format!("참조({})", surface(model)),
         TypeReferenceAst::Named(value) => surface(value),
     }
 }
@@ -679,6 +708,26 @@ mod tests {
             variant: "접수됨".into(),
         });
         assert!(format_document(&conditional).is_err());
+    }
+
+    #[test]
+    fn extended_scalar_types_and_ordered_literals_round_trip() {
+        let source = "@모듈 확장(extended)\n이벤트(event)는 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 소수\n  날짜(date): 필수 날짜\n  시간(time): 필수 시간\n  시점(date_time): 필수 날짜시간\n  기간(duration): 필수 기간\n  위도(latitude): 필수 위도\n  경도(longitude): 필수 경도\n이벤트의 날짜는 \"2026-08-13\" 이상이어야 한다.\n";
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let document = parsed.document.unwrap();
+        let original_module = semantic_module(&document);
+        let formatted = format_document(&document).unwrap();
+        let reparsed = parse(&formatted);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}",
+            reparsed.diagnostics
+        );
+        assert_eq!(
+            original_module,
+            semantic_module(&reparsed.document.unwrap())
+        );
     }
 
     #[test]

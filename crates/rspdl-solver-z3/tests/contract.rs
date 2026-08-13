@@ -174,6 +174,30 @@ fn prime_and_predicate_are_unsupported() {
 }
 
 #[test]
+fn extended_scalar_symbolic_domains_are_rejected_without_approximation() {
+    let date = CanonicalValue::date_from_iso("2026-08-13").unwrap();
+    let problem = ConstraintProblem::new(
+        vec![VariableDomain::new(
+            id("date"),
+            Domain::finite(CanonicalType::Date, [date.clone()]).unwrap(),
+        )],
+        BooleanExpression::atom(
+            Atom::equal(
+                Term::Variable(Variable::new(id("date"), CanonicalType::Date)),
+                Term::Constant(date),
+            )
+            .unwrap(),
+        ),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        Z3Solver::new().solve(&problem, SolveOptions::default()),
+        Err(Z3SolverError::Unsupported(reason)) if reason == "symbolic domain `date`"
+    ));
+}
+
+#[test]
 fn options_contract() {
     assert_eq!(SolveOptions::default().timeout().as_millis(), 5000);
     assert!(SolveOptions::with_timeout(std::time::Duration::ZERO).is_err());

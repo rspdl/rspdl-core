@@ -1,0 +1,1 @@
+{"spec_version":"0.4.0","locale":"ko-KR","category":"failure","expected_module":false,"expected_compile_diagnostics":1,"expected_runtime_diagnostics":0,"expected_constraint_violations":0,"expected_compile_diagnostic_evidence":[{"rule_id":"RSPDL-TYPE-001","message_key":"model.type_mismatch"}]}

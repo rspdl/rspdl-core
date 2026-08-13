@@ -80,7 +80,7 @@ enum AtomKind {
         signature: PredicateSignature,
         arguments: Vec<Term>,
     },
-    IntegerComparison {
+    OrderedComparison {
         operator: ComparisonOperator,
         left: Term,
         right: Term,
@@ -101,7 +101,7 @@ pub enum AtomView<'a> {
     Equal(&'a Term, &'a Term),
     MemberOf(&'a Term, &'a SetExpression),
     Predicate(&'a PredicateSignature, &'a [Term]),
-    IntegerComparison(ComparisonOperator, &'a Term, &'a Term),
+    OrderedComparison(ComparisonOperator, &'a Term, &'a Term),
 }
 
 /// A type-checked atomic logical proposition.
@@ -157,8 +157,23 @@ impl Atom {
             &CanonicalType::Integer,
             right.value_type(),
         )?;
+        Self::ordered_comparison(operator, left, right)
+    }
+
+    pub fn ordered_comparison(
+        operator: ComparisonOperator,
+        left: Term,
+        right: Term,
+    ) -> Result<Self, ModelError> {
+        ensure_type("ordered comparison", left.value_type(), right.value_type())?;
+        if !left.value_type().is_ordered() {
+            return Err(ModelError::UnsupportedOperation {
+                operation: "ordered comparison",
+                value_type: left.value_type().clone(),
+            });
+        }
         Ok(Self {
-            atom: AtomKind::IntegerComparison {
+            atom: AtomKind::OrderedComparison {
                 operator,
                 left,
                 right,
@@ -173,11 +188,11 @@ impl Atom {
                 signature,
                 arguments,
             } => AtomView::Predicate(signature, arguments),
-            AtomKind::IntegerComparison {
+            AtomKind::OrderedComparison {
                 operator,
                 left,
                 right,
-            } => AtomView::IntegerComparison(*operator, left, right),
+            } => AtomView::OrderedComparison(*operator, left, right),
         }
     }
 }
@@ -186,7 +201,7 @@ impl Atom {
 #[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
 enum BooleanKind {
     Literal(bool),
-    Atom(Atom),
+    Atom(Box<Atom>),
     And(Vec<BooleanExpression>),
     Or(Vec<BooleanExpression>),
     Not(Box<BooleanExpression>),
@@ -234,7 +249,7 @@ impl BooleanExpression {
 
     pub fn atom(atom: Atom) -> Self {
         Self {
-            expression: BooleanKind::Atom(atom),
+            expression: BooleanKind::Atom(Box::new(atom)),
         }
     }
 

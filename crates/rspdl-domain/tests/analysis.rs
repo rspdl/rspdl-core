@@ -51,6 +51,81 @@ fn empty_module(name: &str) -> UnlinkedModule {
     }
 }
 
+#[test]
+fn common_analyzer_resolves_forward_typed_references_and_rejects_missing_targets() {
+    let mut module = empty_module("references");
+    module.models = vec![
+        UnlinkedDataModel {
+            declaration: declaration("source", Some("source")),
+            fields: vec![UnlinkedField {
+                declaration: declaration("target", Some("target")),
+                required: true,
+                value_type: UnlinkedTypeReference::List(Box::new(
+                    UnlinkedTypeReference::Reference(reference("target")),
+                )),
+                span: span(),
+            }],
+            span: span(),
+        },
+        UnlinkedDataModel {
+            declaration: declaration("target", Some("target")),
+            fields: vec![UnlinkedField {
+                declaration: declaration("name", Some("name")),
+                required: true,
+                value_type: UnlinkedTypeReference::String,
+                span: span(),
+            }],
+            span: span(),
+        },
+    ];
+    let success = analyze(module);
+    assert!(success.module.is_some(), "{:?}", success.diagnostics);
+    let mut missing = empty_module("references");
+    missing.models = vec![UnlinkedDataModel {
+        declaration: declaration("source", Some("source")),
+        fields: vec![UnlinkedField {
+            declaration: declaration("target", Some("target")),
+            required: true,
+            value_type: UnlinkedTypeReference::Reference(reference("missing")),
+            span: span(),
+        }],
+        span: span(),
+    }];
+    let failure = analyze(missing);
+    assert!(failure.module.is_none());
+    assert!(
+        failure
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.rule_id == "RSPDL-LINK-003"
+                && diagnostic.message_key == "semantic.reference.target_not_found")
+    );
+    let mut qualified = empty_module("references");
+    qualified.models = vec![
+        UnlinkedDataModel {
+            declaration: declaration("source", Some("source")),
+            fields: vec![UnlinkedField {
+                declaration: declaration("target", Some("target")),
+                required: true,
+                value_type: UnlinkedTypeReference::Reference(reference("shared.target")),
+                span: span(),
+            }],
+            span: span(),
+        },
+        UnlinkedDataModel {
+            declaration: declaration("target", Some("shared.target")),
+            fields: vec![UnlinkedField {
+                declaration: declaration("name", Some("name")),
+                required: true,
+                value_type: UnlinkedTypeReference::String,
+                span: span(),
+            }],
+            span: span(),
+        },
+    ];
+    assert!(analyze(qualified).module.is_some());
+}
+
 fn policy_module(labels: [&str; 5]) -> UnlinkedModule {
     let [module_name, model_name, field_name, role_name, action_name] = labels;
     let mut module = empty_module(module_name);
