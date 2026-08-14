@@ -95,6 +95,7 @@ target_spec: "0.3.0"
 - 현재 구현 범위는 다음과 같다.
   - 한국어 module, enum, record field, field constraint, role, action과 조건 없는 allow 또는 deny policy
   - 문장형 화면 create/read/update/delete와 field input/read/update 선언
+  - 문장형 action create/update/delete 결과와 동일 action·model의 mutation conflict 검증
   - 화면 입력과 합계 계산을 생산자로 연결한 field provenance 검증
   - 단일 정수 필드 합계, 원본 변경 시 재계산과 내부/비표시 의도
   - parser, formatter, Canonical domain model, Z3 constraint check와 결정적 직접 runtime policy match

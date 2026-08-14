@@ -4,7 +4,7 @@ title: Data Lifecycle Modeling Gap
 type: problem
 status: active
 created: 2026-08-02
-version: "1"
+version: "1.1"
 summary: Planning artifacts often omit when data comes into existence, changes, disappears, and remains available to dependent behavior.
 topics:
   - data-lifecycle
@@ -15,7 +15,7 @@ related:
   - rspdl-product-vision
   - rspdl-language-prd
   - problem-driven-development
-last_updated: "2026-08-03"
+last_updated: "2026-08-13"
 owners:
   - rspdl-maintainers
 ---
@@ -60,7 +60,7 @@ owners:
 - `선택 필드가 없음`, `아직 생성되지 않음`, `삭제됨`을 자동으로 같은 상태로 취급하지 않는다.
 - 문서에 없는 보존 기간, 복구 가능성, 삭제 전파 방식을 AI가 추측하지 않는다.
 - solver가 완전하게 판정하지 못한 경로는 성공으로 근사하지 않고 `unknown`으로 보고한다.
-- 현재 vertical slice는 화면 입력과 합계 계산의 field provenance, 화면 소비, 재계산 선언과 미조회 입력 안내를 지원한다.
+- 현재 vertical slice는 화면·행동 create producer, 화면 CRUD 소비, action create/update/delete 결과 충돌, 합계 계산의 field provenance, 재계산 선언과 미조회 입력 안내를 지원한다.
 - 화면 순서·분기, 삭제 이후 접근과 relation/join 기반 집계 범위는 아직 구현하지 않았다.
 
 ## References

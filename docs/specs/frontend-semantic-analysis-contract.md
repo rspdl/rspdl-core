@@ -3,8 +3,8 @@ id: frontend-semantic-analysis-contract
 title: Frontend and Semantic Analysis Contract
 type: spec
 status: implemented
-version: "5"
-summary: Defines stable-ID Unlinked records, relations and rules plus the structured diagnostic boundary shared by independent frontends.
+version: "6"
+summary: Defines stable-ID Unlinked records, action data mutations, relations, rules, and the structured diagnostic boundary shared by frontends.
 topics:
   - compiler-frontend
   - unlinked-ir
@@ -41,6 +41,7 @@ Locale Source -> Locale AST -> Stable-ID UnlinkedModule -> Link/Type Check -> Se
 
 - Locale AST는 frontend 내부 타입이며 호환 계약이 아니다.
 - `UnlinkedModule`은 선언 ID, 표시 이름, stable-ID `SurfaceRef`, literal, source range와 의미 construct를 보존한다.
+- action의 데이터 결과는 action·model `SurfaceRef`, `create|update|delete` mutation과 source range를 가진 `UnlinkedActionDataMutation`으로 보존한다.
 - `SemanticModule`은 모든 참조와 타입이 해석된 Canonical IR이다.
 - frontend output은 신뢰하지 않는다. 공통 analyzer가 ID 문법, 참조 존재성, 타입과 교차 선언 invariant를 다시 검증한다.
 
@@ -78,6 +79,7 @@ Frontend가 소유한다.
 - scanner, parser와 Locale AST
 - syntax recovery와 Locale surface lint
 - 표면 문형을 공통 의미 construct로 desugar
+- 행동 결과 문형을 stable-ID action·model reference와 Locale 독립 mutation kind로 desugar
 - 하나 이상의 field를 가진 Locale record 선언을 `UnlinkedDataModel`로 desugar
 - Locale 표시 이름 reference를 같은 source에 선언된 stable ID로 연결
 - 모든 declaration과 reference의 source range 보존
@@ -90,6 +92,7 @@ Frontend가 소유하지 않는다.
 - field, enum, constraint와 policy type checking
 - relation parameter, cardinality와 compatibility group 검증
 - producer/consumer graph와 lifecycle 분석
+- 동일 action·model의 중복 또는 상충하는 data mutation 판정
 - policy consistency 분석
 - Canonical internal constraint, policy 또는 relation meta-rule ID 생성
 - `RSPDL-LINK-*`, `RSPDL-TYPE-*`, `RSPDL-DATA-*`, `RSPDL-REL-*` 의미 진단
@@ -104,7 +107,7 @@ Frontend가 소유하지 않는다.
    빈 `UnlinkedDataModel`은 `RSPDL-DATA-007`로 거부하고, relation cardinality 규칙에 명시된 anchor model이 relation의 첫 parameter와 같은지 검사한다.
 4. 해석된 의미만 사용해 anonymous rule ID를 생성한다.
 5. Canonical `SemanticModule`을 구성한다.
-6. data lifecycle, relation compatibility와 policy 의미 규칙을 실행한다.
+6. data lifecycle, 동일 action 결과의 mutation compatibility, relation compatibility와 policy 의미 규칙을 실행한다.
 
 오류가 있으면 부분 `SemanticModule`을 성공으로 반환하지 않으며 structured diagnostic을 반환한다.
 

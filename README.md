@@ -36,8 +36,10 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 
 - 한국어 module, enum, record field와 field constraint
 - 문장형 화면 생성·입력·조회·수정·삭제 선언과 field provenance 검증
+- 문장형 action 생성·수정·삭제 결과와 동일 action·model mutation 충돌 검증
 - `필드의 합계` 계산 dependency와 원본 변경 시 재계산 선언
 - 생산자 없는 필드 사용 오류와 미조회 입력 필드 안내
+- 화면 또는 action 생성 경로가 없는 모델의 조회·수정·삭제·계산 사용 오류
 - role, action과 조건 없는 allow 또는 deny policy
 - deterministic parser, formatter와 Canonical domain model
 - 공통 `Frontend` trait과 stable-ID Unlinked IR을 통한 교체 가능한 Locale frontend
@@ -80,6 +82,16 @@ cargo run -p rspdl-cli -- model examples/project-ownership.rspdl --scope 3 --jso
 cargo run -p rspdl-cli -- compile examples/field-provenance.rspdl --json
 cargo run -p rspdl-cli -- check examples/expense-approval.rspdl \
   --data crates/rspdl-cli/tests/fixtures/expense-approval-data.json --json
+```
+
+### 거부 예시
+
+생성·입력되지 않은 데이터를 조회·계산·수정·삭제하거나, 하나의 행동이 같은 데이터에 `수정`과 `삭제`를 동시에 결과로 내면 compilation error로 거부한다. 실행 가능한 전체 입력과 기대 진단은 [`examples/rejected`](examples/rejected/README.md)에 있다.
+
+```console
+cargo run -p rspdl-cli -- compile examples/rejected/unproduced-data-usage.rspdl --json
+cargo run -p rspdl-cli -- compile examples/rejected/unproduced-calculation.rspdl --json
+cargo run -p rspdl-cli -- compile examples/rejected/conflicting-action-results.rspdl --json
 ```
 
 `check`는 compile 또는 input 오류에 exit code `1`, 정책 충돌·미일치나 제약 위반 발견에 `2`, 발견 사항이 없으면 `0`을 반환합니다.
