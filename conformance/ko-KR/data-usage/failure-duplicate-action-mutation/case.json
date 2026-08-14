@@ -1,0 +1,19 @@
+{
+  "spec_version": "0.2.0",
+  "locale": "ko-KR",
+  "category": "failure",
+  "expected_module": false,
+  "expected_diagnostics": [
+    {
+      "rule_id": "RSPDL-DATA-004",
+      "severity": "error",
+      "message_key": "semantic.action_data_mutation.duplicate",
+      "arguments": {
+        "action_id": "ordering.change_order",
+        "model_id": "ordering.order",
+        "mutation": "update"
+      }
+    }
+  ],
+  "expected_derivation": null
+}

@@ -1,9 +1,10 @@
 use rspdl_domain::{
-    FieldIntentKind, PolicyEffect, RelationOperator, ScreenOperationKind, SurfaceRef, TextRange,
-    UnlinkedAction, UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedField,
-    UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
-    UnlinkedScreen, UnlinkedTypeReference, analyze,
+    DataMutationKind, FieldIntentKind, PolicyEffect, RelationOperator, ScreenOperationKind,
+    SurfaceRef, TextRange, UnlinkedAction, UnlinkedActionDataMutation, UnlinkedConstraint,
+    UnlinkedDataModel, UnlinkedDeclaration, UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral,
+    UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRelation,
+    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
+    UnlinkedTypeReference, analyze,
 };
 
 fn span() -> TextRange {
@@ -30,6 +31,7 @@ fn empty_module(name: &str) -> UnlinkedModule {
         relations: Vec::new(),
         relational_constraints: Vec::new(),
         screens: Vec::new(),
+        action_data_mutations: Vec::new(),
         derivations: Vec::new(),
         recalculations: Vec::new(),
         field_intents: Vec::new(),
@@ -339,4 +341,132 @@ fn lifecycle_rules_run_without_a_locale_frontend() {
             .iter()
             .any(|diagnostic| diagnostic.rule_id == "RSPDL-DATA-W001")
     );
+}
+
+#[test]
+fn action_data_mutations_require_a_structural_model_producer() {
+    for mutation in [DataMutationKind::Update, DataMutationKind::Delete] {
+        let mut module = data_usage_module(true, true);
+        module.screens.retain(|screen| {
+            screen.operation != ScreenOperationKind::Create
+                && screen.operation != ScreenOperationKind::Input
+                && screen.operation != ScreenOperationKind::Read
+        });
+        module.actions.push(UnlinkedAction {
+            declaration: declaration("처리", Some("process")),
+        });
+        module
+            .action_data_mutations
+            .push(UnlinkedActionDataMutation {
+                action: reference("process"),
+                model: reference("item"),
+                mutation,
+                span: span(),
+            });
+
+        let output = analyze(module);
+        assert!(output.module.is_none(), "{mutation:?}");
+        assert!(output.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-DATA-002"
+                && diagnostic.message_key == "semantic.lifecycle.model_creator_missing"
+                && diagnostic.argument("model_id") == Some("expense.item")
+        }));
+    }
+}
+
+#[test]
+fn same_action_cannot_update_and_delete_the_same_model() {
+    let mut module = data_usage_module(true, true);
+    module.actions.push(UnlinkedAction {
+        declaration: declaration("취소", Some("cancel")),
+    });
+    for mutation in [DataMutationKind::Update, DataMutationKind::Delete] {
+        module
+            .action_data_mutations
+            .push(UnlinkedActionDataMutation {
+                action: reference("cancel"),
+                model: reference("item"),
+                mutation,
+                span: span(),
+            });
+    }
+
+    let output = analyze(module);
+    assert!(output.module.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-DATA-004"
+            && diagnostic.message_key == "semantic.action_data_mutation.conflict"
+            && diagnostic.argument("action_id") == Some("expense.cancel")
+            && diagnostic.argument("model_id") == Some("expense.item")
+            && diagnostic.argument("mutations") == Some("update,delete")
+    }));
+}
+
+#[test]
+fn duplicate_action_data_mutation_is_rejected() {
+    let mut module = data_usage_module(true, true);
+    module.actions.push(UnlinkedAction {
+        declaration: declaration("변경", Some("change")),
+    });
+    for _ in 0..2 {
+        module
+            .action_data_mutations
+            .push(UnlinkedActionDataMutation {
+                action: reference("change"),
+                model: reference("item"),
+                mutation: DataMutationKind::Update,
+                span: span(),
+            });
+    }
+
+    let output = analyze(module);
+    assert!(output.module.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-DATA-004"
+            && diagnostic.message_key == "semantic.action_data_mutation.duplicate"
+            && diagnostic.argument("mutation") == Some("update")
+    }));
+}
+
+#[test]
+fn different_actions_may_update_and_delete_the_same_model() {
+    let mut module = data_usage_module(true, true);
+    for (name, id, mutation) in [
+        ("변경", "change", DataMutationKind::Update),
+        ("삭제", "remove", DataMutationKind::Delete),
+    ] {
+        module.actions.push(UnlinkedAction {
+            declaration: declaration(name, Some(id)),
+        });
+        module
+            .action_data_mutations
+            .push(UnlinkedActionDataMutation {
+                action: reference(id),
+                model: reference("item"),
+                mutation,
+                span: span(),
+            });
+    }
+
+    let output = analyze(module);
+    assert!(output.module.is_some(), "{:?}", output.diagnostics);
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+}
+
+#[test]
+fn one_screen_may_offer_update_and_delete_capabilities() {
+    let mut module = data_usage_module(true, true);
+    for operation in [ScreenOperationKind::Update, ScreenOperationKind::Delete] {
+        module.screens.push(UnlinkedScreen {
+            declaration: declaration("관리 화면", Some("manage_item")),
+            model: reference("item"),
+            fields: Vec::new(),
+            operation,
+            span: span(),
+        });
+    }
+
+    let output = analyze(module);
+    assert!(output.module.is_some(), "{:?}", output.diagnostics);
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
 }

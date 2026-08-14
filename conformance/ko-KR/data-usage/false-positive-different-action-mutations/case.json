@@ -1,0 +1,20 @@
+{
+  "spec_version": "0.2.0",
+  "locale": "ko-KR",
+  "category": "false_positive",
+  "expected_module": true,
+  "expected_diagnostics": [],
+  "expected_action_data_mutations": [
+    {
+      "action_id": "ordering.change_order",
+      "model_id": "ordering.order",
+      "mutation": "update"
+    },
+    {
+      "action_id": "ordering.delete_order",
+      "model_id": "ordering.order",
+      "mutation": "delete"
+    }
+  ],
+  "expected_derivation": null
+}

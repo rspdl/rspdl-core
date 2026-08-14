@@ -48,6 +48,47 @@ fn compiles_every_rspdl_example() {
 }
 
 #[test]
+fn rejects_invalid_lifecycle_examples_with_expected_diagnostics() {
+    let workspace = workspace_root();
+    let cases = [
+        (
+            "unproduced-data-usage.rspdl",
+            &["RSPDL-DATA-001", "RSPDL-DATA-002"][..],
+        ),
+        ("unproduced-calculation.rspdl", &["RSPDL-DATA-001"][..]),
+        ("conflicting-action-results.rspdl", &["RSPDL-DATA-004"][..]),
+    ];
+
+    for (file_name, expected_rule_ids) in cases {
+        let source = workspace.join("examples/rejected").join(file_name);
+        let output = Command::new(env!("CARGO_BIN_EXE_rspdl"))
+            .args([
+                "compile",
+                source.to_str().expect("example path should be valid UTF-8"),
+                "--json",
+            ])
+            .output()
+            .expect("rspdl command should run");
+
+        assert_eq!(output.status.code(), Some(1), "{file_name}: {output:?}");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let actual_rule_ids = report["diagnostics"]
+            .as_array()
+            .expect("compile report should contain diagnostics")
+            .iter()
+            .filter_map(|diagnostic| diagnostic["rule_id"].as_str())
+            .collect::<Vec<_>>();
+
+        for expected_rule_id in expected_rule_ids {
+            assert!(
+                actual_rule_ids.contains(expected_rule_id),
+                "{file_name} should report {expected_rule_id}, got {actual_rule_ids:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn checks_the_expense_approval_example_with_runtime_fixture_data() {
     let workspace = workspace_root();
     let source = workspace.join("examples/expense-approval.rspdl");

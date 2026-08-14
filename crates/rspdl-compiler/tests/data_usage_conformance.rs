@@ -1,9 +1,9 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use rspdl_compiler::compile_ko;
-use rspdl_domain::DerivationExpression;
+use rspdl_domain::{DataMutationKind, DerivationExpression};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -13,6 +13,8 @@ struct Case {
     category: String,
     expected_module: bool,
     expected_diagnostics: Vec<ExpectedDiagnostic>,
+    #[serde(default)]
+    expected_action_data_mutations: Vec<ExpectedActionDataMutation>,
     expected_derivation: Option<ExpectedDerivation>,
 }
 
@@ -20,6 +22,10 @@ struct Case {
 struct ExpectedDiagnostic {
     rule_id: String,
     severity: String,
+    #[serde(default)]
+    message_key: Option<String>,
+    #[serde(default)]
+    arguments: BTreeMap<String, String>,
     #[serde(default)]
     span: Option<ExpectedSpan>,
 }
@@ -35,6 +41,13 @@ struct ExpectedDerivation {
     target_field_id: String,
     source_field_id: String,
     recalculate_when_changed_field_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct ExpectedActionDataMutation {
+    action_id: String,
+    model_id: String,
+    mutation: String,
 }
 
 #[test]
@@ -81,6 +94,15 @@ fn sentence_shaped_data_usage_conformance_suite() {
                 expected.severity,
                 "case {name}"
             );
+            if let Some(message_key) = &expected.message_key {
+                assert_eq!(&actual.message_key, message_key, "case {name} message key");
+            }
+            if !expected.arguments.is_empty() {
+                assert_eq!(
+                    actual.arguments, expected.arguments,
+                    "case {name} diagnostic arguments"
+                );
+            }
             if let Some(span) = &expected.span {
                 assert_eq!(actual.span.start, span.start, "case {name} span start");
                 assert_eq!(actual.span.end, span.end, "case {name} span end");
@@ -94,6 +116,31 @@ fn sentence_shaped_data_usage_conformance_suite() {
                 .map_or(0, |module| module.derivations.len()),
             usize::from(case.expected_derivation.is_some()),
             "case {name} derivation count"
+        );
+
+        let action_data_mutations = compilation
+            .module
+            .as_ref()
+            .map(|module| {
+                module
+                    .action_data_mutations
+                    .iter()
+                    .map(|mutation| ExpectedActionDataMutation {
+                        action_id: mutation.action_id.to_string(),
+                        model_id: mutation.model_id.to_string(),
+                        mutation: match mutation.mutation {
+                            DataMutationKind::Create => "create",
+                            DataMutationKind::Update => "update",
+                            DataMutationKind::Delete => "delete",
+                        }
+                        .into(),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        assert_eq!(
+            action_data_mutations, case.expected_action_data_mutations,
+            "case {name} action data mutations"
         );
 
         let derivation = compilation.module.as_ref().and_then(|module| {
