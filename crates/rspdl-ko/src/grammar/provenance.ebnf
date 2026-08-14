@@ -19,6 +19,14 @@ pub screen_statement =
     "."
     ;
 
+pub action_data_mutation_statement =
+    action: @marked_ref("이", "가")
+    "실행되면"
+    model: @marked_ref("을", "를")
+    operation: ("생성한다" | "수정한다" | "삭제한다")
+    "."
+    ;
+
 pub sum_derivation_statement =
     target_model: @marked_ref("의")
     target_field: @marked_ref("은", "는")

@@ -99,6 +99,21 @@ pub struct ScreenDefinition {
     pub operations: Vec<ScreenOperationDefinition>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataMutationKind {
+    Create,
+    Update,
+    Delete,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ActionDataMutationDefinition {
+    pub action_id: CanonicalId,
+    pub model_id: CanonicalId,
+    pub mutation: DataMutationKind,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DerivationExpression {
@@ -197,6 +212,8 @@ pub struct SemanticModule {
     pub relational_constraints: Vec<RelationalConstraintDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub screens: Vec<ScreenDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub action_data_mutations: Vec<ActionDataMutationDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub derivations: Vec<DerivationDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

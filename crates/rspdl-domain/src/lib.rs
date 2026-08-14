@@ -29,11 +29,12 @@ pub use domain::{
 };
 pub use error::ModelError;
 pub use frontend::{
-    Frontend, FrontendOutput, SurfaceRef, UnlinkedAction, UnlinkedConstraint, UnlinkedDataModel,
-    UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent,
-    UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
-    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
-    UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    Frontend, FrontendOutput, SurfaceRef, UnlinkedAction, UnlinkedActionDataMutation,
+    UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant,
+    UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand,
+    UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation,
+    UnlinkedTypeReference,
 };
 pub use logic::{
     Atom, AtomView, BooleanExpression, BooleanExpressionView, ComparisonOperator,
@@ -50,12 +51,12 @@ pub use relational_analysis::{
     VirtualFieldValue, VirtualRelationTuple, find_bounded_relational_model,
 };
 pub use semantic::{
-    ActionDefinition, ConstraintDefinition, ConstraintOperand, DataModelDefinition,
-    DerivationDefinition, DerivationExpression, EnumDefinition, EnumVariantDefinition,
-    FieldDefinition, FieldIntentDefinition, FieldIntentKind, PolicyDefinition, PolicyEffect,
-    RelationDefinition, RelationOperator, RelationalConstraintDefinition, RelationalConstraintKind,
-    RoleDefinition, ScreenDefinition, ScreenOperationDefinition, ScreenOperationKind,
-    SemanticModule,
+    ActionDataMutationDefinition, ActionDefinition, ConstraintDefinition, ConstraintOperand,
+    DataModelDefinition, DataMutationKind, DerivationDefinition, DerivationExpression,
+    EnumDefinition, EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, FieldIntentKind,
+    PolicyDefinition, PolicyEffect, RelationDefinition, RelationOperator,
+    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
+    ScreenOperationDefinition, ScreenOperationKind, SemanticModule,
 };
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;

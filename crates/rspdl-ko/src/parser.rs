@@ -81,6 +81,9 @@ pub fn parse(source: &str) -> ParseOutput {
             Some(DeclarationKind::Screen) => {
                 parse_screen(line, body, &mut diagnostics).map(DeclarationAst::Screen)
             }
+            Some(DeclarationKind::ActionDataMutation) => {
+                parse_action_data_mutation(line, body).map(DeclarationAst::ActionDataMutation)
+            }
             Some(DeclarationKind::SumDerivation) => {
                 parse_sum_derivation(line, body).map(DeclarationAst::SumDerivation)
             }
@@ -169,6 +172,7 @@ enum DeclarationKind {
     Relation,
     RelationalConstraint(RelationalConstraintDeclarationKind),
     Screen,
+    ActionDataMutation,
     SumDerivation,
     Recalculation,
     FieldIntent,
@@ -214,6 +218,7 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
             RelationalConstraintDeclarationKind::Coexistent,
         )),
         _ if is_screen_sentence(line) => Some(DeclarationKind::Screen),
+        _ if is_action_data_mutation_sentence(line) => Some(DeclarationKind::ActionDataMutation),
         _ if is_recalculation_sentence(line) => Some(DeclarationKind::Recalculation),
         _ if is_sum_derivation_sentence(line) => Some(DeclarationKind::SumDerivation),
         _ if is_field_intent_sentence(line) => Some(DeclarationKind::FieldIntent),
@@ -514,6 +519,15 @@ fn is_screen_sentence(line: &Line) -> bool {
         == Some("에서는")
         && last_sentence_word(line, 0) == Some("있다")
         && last_sentence_word(line, 1) == Some("수")
+}
+
+fn is_action_data_mutation_sentence(line: &Line) -> bool {
+    let operation = last_sentence_word(line, 0);
+    matches!(operation, Some("생성한다" | "수정한다" | "삭제한다"))
+        && line
+            .tokens
+            .iter()
+            .any(|token| matches!(&token.kind, TokenKind::Word(word) if word == "실행되면"))
 }
 
 fn is_enum_header(line: &Line) -> bool {
@@ -832,6 +846,30 @@ fn parse_screen(
         model,
         fields,
         operation,
+        span: line.span,
+    })
+}
+
+fn parse_action_data_mutation(
+    line: &Line,
+    body: &[Line],
+) -> Result<ActionDataMutationAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "action_data_mutation")?;
+    let mut cursor = BodyCursor::new(sentence_tokens(line)?, line.span);
+    let (action, _) = cursor.marked_ref(&["이", "가"])?;
+    cursor.expect_word("실행되면")?;
+    let (model, _) = cursor.marked_ref(&["을", "를"])?;
+    let mutation = match cursor.next_word() {
+        Some("생성한다") => DataMutationKindAst::Create,
+        Some("수정한다") => DataMutationKindAst::Update,
+        Some("삭제한다") => DataMutationKindAst::Delete,
+        _ => return Err(cursor.error("ko.syntax.action_data_mutation_invalid")),
+    };
+    cursor.expect_end()?;
+    Ok(ActionDataMutationAst {
+        action,
+        model,
+        mutation,
         span: line.span,
     })
 }
@@ -1744,6 +1782,36 @@ mod tests {
                         declaration,
                         DeclarationAst::Screen(ScreenAst { fields, .. })
                             if fields == &["배송 주소", "수령인 이름"]
+                    )
+                })
+        );
+    }
+
+    #[test]
+    fn parses_action_data_mutation_sentences() {
+        let source = r#"@모듈 주문(ordering)
+주문(order)은 다음 필드들로 구성되어 있다.
+    상태(status): 필수 문자열
+주문 취소(cancel_order)는 행동이다.
+주문 취소가 실행되면 주문을 수정한다.
+"#;
+        let output = parse(source);
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        assert!(
+            output
+                .document
+                .unwrap()
+                .declarations
+                .iter()
+                .any(|declaration| {
+                    matches!(
+                        declaration,
+                        DeclarationAst::ActionDataMutation(ActionDataMutationAst {
+                            action,
+                            model,
+                            mutation: DataMutationKindAst::Update,
+                            ..
+                        }) if action == "주문 취소" && model == "주문"
                     )
                 })
         );

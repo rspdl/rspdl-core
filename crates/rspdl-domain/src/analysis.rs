@@ -5,16 +5,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::{
-    ActionDefinition, CanonicalId, CanonicalType, CanonicalValue, ConstraintDefinition,
-    ConstraintOperand, DataModelDefinition, DerivationDefinition, DerivationExpression, Diagnostic,
-    EnumDefinition, EnumType, EnumVariantDefinition, FieldDefinition, FieldIntentDefinition,
-    ModelError, PolicyDefinition, PolicyEffect, RelationDefinition, RelationOperator,
-    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
-    ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SurfaceRef,
-    TextRange, UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedFieldIntent,
-    UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
-    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind,
-    UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    ActionDataMutationDefinition, ActionDefinition, CanonicalId, CanonicalType, CanonicalValue,
+    ConstraintDefinition, ConstraintOperand, DataModelDefinition, DataMutationKind,
+    DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition, EnumType,
+    EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, ModelError, PolicyDefinition,
+    PolicyEffect, RelationDefinition, RelationOperator, RelationalConstraintDefinition,
+    RelationalConstraintKind, RoleDefinition, ScreenDefinition, ScreenOperationDefinition,
+    ScreenOperationKind, SemanticModule, Severity, SurfaceRef, TextRange,
+    UnlinkedActionDataMutation, UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration,
+    UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
+    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -208,13 +209,15 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
         .map(|(definition, _)| definition)
         .collect();
 
-    let (screens, derivations, field_intents) = analyze_data_usage(
+    let (screens, action_data_mutations, derivations, field_intents) = analyze_data_usage(
         module.screens,
+        module.action_data_mutations,
         module.derivations,
         module.recalculations,
         module.field_intents,
         &module_id,
         &models,
+        &action_names,
         &mut top_level_ids,
         &mut diagnostics,
     );
@@ -265,6 +268,7 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
             relations,
             relational_constraints,
             screens,
+            action_data_mutations,
             derivations,
             field_intents,
             constraints,
@@ -687,24 +691,28 @@ struct ResolvedDerivation {
 #[allow(clippy::too_many_arguments)]
 fn analyze_data_usage(
     screens: Vec<UnlinkedScreen>,
+    action_data_mutations: Vec<UnlinkedActionDataMutation>,
     derivations: Vec<UnlinkedSumDerivation>,
     recalculations: Vec<UnlinkedRecalculation>,
     field_intents: Vec<UnlinkedFieldIntent>,
     module_id: &CanonicalId,
     models: &[DataModelDefinition],
+    actions: &BTreeMap<String, CanonicalId>,
     top_level_ids: &mut BTreeSet<CanonicalId>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> (
     Vec<ScreenDefinition>,
+    Vec<ActionDataMutationDefinition>,
     Vec<DerivationDefinition>,
     Vec<FieldIntentDefinition>,
 ) {
     if screens.is_empty()
+        && action_data_mutations.is_empty()
         && derivations.is_empty()
         && recalculations.is_empty()
         && field_intents.is_empty()
     {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     }
 
     let mut screen_map = BTreeMap::<CanonicalId, ScreenDefinition>::new();
@@ -805,6 +813,69 @@ fn analyze_data_usage(
         } else {
             model_uses.push((model.id.clone(), screen.span));
         }
+    }
+
+    let mut action_data_mutation_definitions = Vec::new();
+    let mut mutations_by_action_and_model =
+        BTreeMap::<(CanonicalId, CanonicalId), BTreeMap<DataMutationKind, TextRange>>::new();
+    for value in action_data_mutations {
+        let Some(action_id) = resolve_named_id("action", actions, &value.action, diagnostics)
+        else {
+            continue;
+        };
+        let Some(model) = find_model(models, &value.model, diagnostics) else {
+            continue;
+        };
+        let key = (action_id.clone(), model.id.clone());
+        let declared = mutations_by_action_and_model.entry(key).or_default();
+        if declared.contains_key(&value.mutation) {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-004",
+                    Severity::Error,
+                    "semantic.action_data_mutation.duplicate",
+                    value.span,
+                )
+                .with_argument("action_id", &action_id)
+                .with_argument("model_id", &model.id)
+                .with_argument("mutation", data_mutation_name(value.mutation)),
+            );
+            continue;
+        }
+        if !declared.is_empty() {
+            let mutations = declared
+                .keys()
+                .copied()
+                .chain(std::iter::once(value.mutation))
+                .map(data_mutation_name)
+                .collect::<Vec<_>>()
+                .join(",");
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-DATA-004",
+                    Severity::Error,
+                    "semantic.action_data_mutation.conflict",
+                    value.span,
+                )
+                .with_argument("action_id", &action_id)
+                .with_argument("model_id", &model.id)
+                .with_argument("mutations", mutations),
+            );
+        }
+        declared.insert(value.mutation, value.span);
+        match value.mutation {
+            DataMutationKind::Create => {
+                model_creators.insert(model.id.clone());
+            }
+            DataMutationKind::Update | DataMutationKind::Delete => {
+                model_uses.push((model.id.clone(), value.span));
+            }
+        }
+        action_data_mutation_definitions.push(ActionDataMutationDefinition {
+            action_id,
+            model_id: model.id.clone(),
+            mutation: value.mutation,
+        });
     }
 
     let mut resolved_derivations = Vec::new();
@@ -1048,8 +1119,22 @@ fn analyze_data_usage(
         screen.operations.sort();
     }
     derivation_definitions.sort_by(|left, right| left.target_field_id.cmp(&right.target_field_id));
+    action_data_mutation_definitions.sort();
     intents.sort();
-    (screen_definitions, derivation_definitions, intents)
+    (
+        screen_definitions,
+        action_data_mutation_definitions,
+        derivation_definitions,
+        intents,
+    )
+}
+
+const fn data_mutation_name(mutation: DataMutationKind) -> &'static str {
+    match mutation {
+        DataMutationKind::Create => "create",
+        DataMutationKind::Update => "update",
+        DataMutationKind::Delete => "delete",
+    }
 }
 
 fn resolve_operand(
