@@ -21,7 +21,7 @@ pub mod source;
 pub mod types;
 pub mod value;
 
-pub use analysis::{AnalysisOutput, analyze};
+pub use analysis::{AnalysisOutput, analyze, analyze_with_source};
 pub use diagnostic::{Diagnostic, Severity};
 pub use domain::{
     Backend, Cardinality, Domain, DomainCapabilities, EnumerationSupport, GroundMembership,
@@ -29,11 +29,12 @@ pub use domain::{
 };
 pub use error::ModelError;
 pub use frontend::{
-    Frontend, FrontendOutput, SurfaceRef, UnlinkedAction, UnlinkedConstraint, UnlinkedDataModel,
-    UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent,
-    UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
-    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
-    UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    Frontend, FrontendOutput, SurfaceRef, UnlinkedAction, UnlinkedActionDataMutation,
+    UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant,
+    UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand,
+    UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation,
+    UnlinkedTypeReference,
 };
 pub use logic::{
     Atom, AtomView, BooleanExpression, BooleanExpressionView, ComparisonOperator,
@@ -50,7 +51,8 @@ pub use relational_analysis::{
     VirtualFieldValue, VirtualRelationTuple, find_bounded_relational_model,
 };
 pub use semantic::{
-    ActionDefinition, ConstraintDefinition, ConstraintOperand, DataModelDefinition,
+    ActionDataMutationDefinition, ActionDataMutationProvenance, ActionDefinition,
+    ConstraintDefinition, ConstraintOperand, DataModelDefinition, DataMutationKind,
     DerivationDefinition, DerivationExpression, EnumDefinition, EnumVariantDefinition,
     FieldDefinition, FieldIntentDefinition, FieldIntentKind, PolicyDefinition, PolicyEffect,
     RelationDefinition, RelationOperator, RelationalConstraintDefinition, RelationalConstraintKind,
@@ -62,6 +64,6 @@ pub use solver::SolverContractError;
 pub use solver::{
     CanonicalModel, ConstraintProblem, ConstraintSolver, SolveOptions, SolveResult, VariableDomain,
 };
-pub use source::TextRange;
+pub use source::{SourceId, TextRange};
 pub use types::{BuiltinRefinement, CanonicalId, CanonicalType, EnumType, RefinementType};
 pub use value::{CanonicalInteger, CanonicalValue};

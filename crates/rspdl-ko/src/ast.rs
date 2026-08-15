@@ -92,6 +92,22 @@ pub struct ScreenAst {
     pub span: Span,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataMutationKindAst {
+    Create,
+    Update,
+    Delete,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ActionDataMutationAst {
+    pub action: String,
+    pub model: String,
+    pub mutation: DataMutationKindAst,
+    pub span: Span,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SumDerivationAst {
     pub target_model: String,
@@ -203,6 +219,7 @@ pub enum DeclarationAst {
     Relation(RelationAst),
     RelationalConstraint(RelationalConstraintAst),
     Screen(ScreenAst),
+    ActionDataMutation(ActionDataMutationAst),
     SumDerivation(SumDerivationAst),
     Recalculation(RecalculationAst),
     FieldIntent(FieldIntentAst),

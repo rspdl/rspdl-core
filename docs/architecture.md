@@ -3,7 +3,7 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "0.9"
+version: "1.0"
 summary: Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded relational model-finding path, dependency direction, and tests.
 topics:
   - rust
@@ -401,9 +401,10 @@ Golden file은 명세 계약이므로 단순 snapshot 갱신으로 승인하지 
 - Z3 제약 반례와 직접 runtime 정책 match 실행
 - `parse`, `compile`, `check`, `format` CLI와 안정적인 JSON artifact
 
-[Field Provenance, Screen Usage, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)은 다음 후속 vertical slice를 구현한다.
+[Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)은 다음 후속 vertical slice를 구현한다.
 
 - block 없는 화면별 model/field 동작 문장
+- action별 model create/update/delete 결과와 동일 action·model mutation conflict
 - 화면 입력과 합계 계산의 field producer graph
 - 생산자 없는 소비, 재계산 누락과 미조회 입력 진단
 - 교차 모델 합계 dependency와 관계 범위 `unknown` 보존

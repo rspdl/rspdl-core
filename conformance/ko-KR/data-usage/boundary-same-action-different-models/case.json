@@ -1,0 +1,24 @@
+{
+  "spec_version": "0.2.0",
+  "locale": "ko-KR",
+  "category": "boundary",
+  "expected_module": true,
+  "expected_diagnostics": [],
+  "expected_action_data_mutations": [
+    {
+      "action_id": "ordering.cancel_order",
+      "model_id": "ordering.log",
+      "mutation": "delete",
+      "source_id": "<inline>",
+      "span": { "start": 477, "end": 537 }
+    },
+    {
+      "action_id": "ordering.cancel_order",
+      "model_id": "ordering.order",
+      "mutation": "update",
+      "source_id": "<inline>",
+      "span": { "start": 423, "end": 476 }
+    }
+  ],
+  "expected_derivation": null
+}

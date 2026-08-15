@@ -43,6 +43,9 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "ko.syntax.screen_model_operation_invalid" => {
             "데이터 동작은 생성할, 조회할, 수정할, 삭제할 중 하나여야 합니다.".into()
         }
+        "ko.syntax.action_data_mutation_invalid" => {
+            "행동 결과는 생성한다, 수정한다, 삭제한다 중 하나여야 합니다.".into()
+        }
         "ko.syntax.field_list_required" => "필드 목록이 필요합니다.".into(),
         "ko.syntax.field_list_empty_name" => "빈 필드 이름은 사용할 수 없습니다.".into(),
         "ko.syntax.field_list_invalid" => "필드 목록 형식이 올바르지 않습니다.".into(),
@@ -249,6 +252,18 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             "화면 {}의 데이터 동작이 중복 선언되었습니다.",
             argument(diagnostic, "screen_id")
         ),
+        "semantic.action_data_mutation.duplicate" => format!(
+            "행동 {}의 데이터 모델 {}에 대한 {} 결과가 중복 선언되었습니다.",
+            argument(diagnostic, "action_id"),
+            argument(diagnostic, "model_id"),
+            argument(diagnostic, "mutation")
+        ),
+        "semantic.action_data_mutation.conflict" => format!(
+            "행동 {}은 데이터 모델 {}에 서로 양립할 수 없는 결과 {}를 동시에 선언할 수 없습니다.",
+            argument(diagnostic, "action_id"),
+            argument(diagnostic, "model_id"),
+            argument(diagnostic, "mutations")
+        ),
         "semantic.derivation.sum_requires_integer" => {
             "합계의 원본과 결과 필드는 모두 정수여야 합니다.".into()
         }
@@ -295,7 +310,7 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "semantic.lifecycle.model_creator_missing" => {
             let model_id = argument(diagnostic, "model_id");
             format!(
-                "데이터 모델 {model_id}{} 생성하는 화면이 없습니다.",
+                "데이터 모델 {model_id}{} 생성하는 화면 또는 행동 결과가 없습니다.",
                 object_marker(model_id)
             )
         }
@@ -373,6 +388,7 @@ fn argument<'a>(diagnostic: &'a Diagnostic, key: &str) -> &'a str {
 
 fn syntax_kind(kind: &str) -> &str {
     match kind {
+        "action_data_mutation" => "행동 데이터 결과",
         "sum_derivation" => "계산",
         "recalculation" => "재계산",
         "field_intent" => "필드 사용 의도",

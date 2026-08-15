@@ -162,6 +162,16 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     ));
                 }
             }
+            DeclarationAst::ActionDataMutation(value) => output.push_str(&format!(
+                "{} 실행되면 {} {}.\n",
+                marked(&value.action, "이", "가"),
+                marked(&value.model, "을", "를"),
+                match value.mutation {
+                    DataMutationKindAst::Create => "생성한다",
+                    DataMutationKindAst::Update => "수정한다",
+                    DataMutationKindAst::Delete => "삭제한다",
+                }
+            )),
             DeclarationAst::SumDerivation(value) => output.push_str(&format!(
                 "{}의 {} {}의 {}의 합계로 계산한다.\n",
                 surface(&value.target_model),
@@ -399,7 +409,7 @@ mod tests {
 
     #[test]
     fn formatting_is_idempotent() {
-        let source = "@모듈 승인(approval)\n상태(state)는 다음 값 중 하나다.\n  작성 중(draft)\n신청(request)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n신청의 금액은 0보다 커야 한다.\n관리자(manager)는 역할이다.\n변경(change)은 행동이다.\n관리자는 신청의 금액을 변경할 수 있다.\n";
+        let source = "@모듈 승인(approval)\n상태(state)는 다음 값 중 하나다.\n  작성 중(draft)\n신청(request)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n신청의 금액은 0보다 커야 한다.\n관리자(manager)는 역할이다.\n등록(register)은 행동이다.\n변경(change)은 행동이다.\n등록이 실행되면 신청을 생성한다.\n변경이 실행되면 신청을 수정한다.\n관리자는 신청의 금액을 변경할 수 있다.\n";
         let original = parse(source).document.unwrap();
         let original_module = semantic_module(&original);
         let first = format_document(&original).unwrap();

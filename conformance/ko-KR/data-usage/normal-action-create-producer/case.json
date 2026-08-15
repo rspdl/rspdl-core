@@ -1,0 +1,17 @@
+{
+  "spec_version": "0.2.0",
+  "locale": "ko-KR",
+  "category": "normal",
+  "expected_module": true,
+  "expected_diagnostics": [],
+  "expected_action_data_mutations": [
+    {
+      "action_id": "ordering.register_order",
+      "model_id": "ordering.order",
+      "mutation": "create",
+      "source_id": "<inline>",
+      "span": { "start": 169, "end": 222 }
+    }
+  ],
+  "expected_derivation": null
+}

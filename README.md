@@ -36,8 +36,10 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 
 - 한국어 module, enum, record field와 field constraint
 - 문장형 화면 생성·입력·조회·수정·삭제 선언과 field provenance 검증
+- 문장형 action 생성·수정·삭제 결과와 동일 action·model mutation 충돌 검증
 - `필드의 합계` 계산 dependency와 원본 변경 시 재계산 선언
 - 생산자 없는 필드 사용 오류와 미조회 입력 필드 안내
+- 화면 또는 action 생성 경로가 없는 모델의 조회·수정·삭제·계산 사용 오류
 - role, action과 조건 없는 allow 또는 deny policy
 - deterministic parser, formatter와 Canonical domain model
 - 공통 `Frontend` trait과 stable-ID Unlinked IR을 통한 교체 가능한 Locale frontend
@@ -80,6 +82,16 @@ cargo run -p rspdl-cli -- model examples/project-ownership.rspdl --scope 3 --jso
 cargo run -p rspdl-cli -- compile examples/field-provenance.rspdl --json
 cargo run -p rspdl-cli -- check examples/expense-approval.rspdl \
   --data crates/rspdl-cli/tests/fixtures/expense-approval-data.json --json
+```
+
+### 거부 예시
+
+생성·입력되지 않은 데이터를 조회·계산·수정·삭제하거나, 하나의 행동이 같은 데이터에 `수정`과 `삭제`를 동시에 결과로 내면 compilation error로 거부한다. 실행 가능한 전체 입력과 기대 진단은 [`examples/rejected`](examples/rejected/README.md)에 있다.
+
+```console
+cargo run -p rspdl-cli -- compile examples/rejected/unproduced-data-usage.rspdl --json
+cargo run -p rspdl-cli -- compile examples/rejected/unproduced-calculation.rspdl --json
+cargo run -p rspdl-cli -- compile examples/rejected/conflicting-action-results.rspdl --json
 ```
 
 `check`는 compile 또는 input 오류에 exit code `1`, 정책 충돌·미일치나 제약 위반 발견에 `2`, 발견 사항이 없으면 `0`을 반환합니다.
@@ -126,7 +138,7 @@ cargo build --workspace
 - [Product Vision](docs/product/vision.md): 누구의 어떤 고통을 왜 해결하는가
 - [PRD](docs/prd.md): 제품·언어 요구사항과 현재 구현 경계
 - [Data Lifecycle Modeling Gap](docs/problems/0001-data-lifecycle-modeling-gap.md): 데이터 존재 시점과 연산 공백
-- [Field Provenance and Sum Derivation](docs/rfcs/0005-field-provenance-and-sum-derivation.md): 화면 생산·소비와 합계 계산 문법
+- [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](docs/rfcs/0005-field-provenance-and-sum-derivation.md): 화면·행동의 생산·소비와 합계 계산 문법
 - [Policy Consistency Blind Spots](docs/problems/0002-policy-consistency-blind-spots.md): 충돌·누락·중첩·도달 불가
 - [Total Policy Condition Spaces and SMT-First Consistency Analysis](docs/rfcs/0006-total-policy-condition-space-analysis.md): 닫힌 vocabulary, 전체 조건 공간과 명시적 override의 SMT 분석 계약
 - [Finite Relational Rules and Bounded Model Finding](docs/rfcs/0007-finite-relational-model-finding.md): typed relation, 명시적 cardinality/compatibility와 가상 데이터 모델 탐색

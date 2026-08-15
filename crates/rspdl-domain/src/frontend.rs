@@ -1,7 +1,10 @@
 use serde::Serialize;
 
 use crate::TextRange;
-use crate::{Diagnostic, FieldIntentKind, PolicyEffect, RelationOperator, ScreenOperationKind};
+use crate::{
+    DataMutationKind, Diagnostic, FieldIntentKind, PolicyEffect, RelationOperator,
+    ScreenOperationKind,
+};
 
 /// Behavior contract implemented by every surface-language frontend.
 ///
@@ -138,6 +141,14 @@ pub struct UnlinkedScreen {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedActionDataMutation {
+    pub action: SurfaceRef,
+    pub model: SurfaceRef,
+    pub mutation: DataMutationKind,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedSumDerivation {
     pub target_model: SurfaceRef,
     pub target_field: SurfaceRef,
@@ -219,6 +230,7 @@ pub struct UnlinkedModule {
     pub relations: Vec<UnlinkedRelation>,
     pub relational_constraints: Vec<UnlinkedRelationalConstraint>,
     pub screens: Vec<UnlinkedScreen>,
+    pub action_data_mutations: Vec<UnlinkedActionDataMutation>,
     pub derivations: Vec<UnlinkedSumDerivation>,
     pub recalculations: Vec<UnlinkedRecalculation>,
     pub field_intents: Vec<UnlinkedFieldIntent>,

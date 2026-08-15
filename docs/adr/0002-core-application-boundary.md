@@ -66,4 +66,4 @@ target_spec: "0.2.0"
 - [RSPDL Language Product Requirements Document](../prd.md)
 - [RSPDL Compiler Architecture](../architecture.md)
 - [Rust와 한국어 우선 독립 Locale Frontend](0001-rust-korean-first-frontends.md)
-- [Field Provenance, Screen Usage, and Sum Derivation Grammar](../rfcs/0005-field-provenance-and-sum-derivation.md)
+- [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](../rfcs/0005-field-provenance-and-sum-derivation.md)

@@ -1,12 +1,13 @@
 use std::collections::BTreeSet;
 
 use rspdl_domain::{
-    Diagnostic, FieldIntentKind, Frontend, FrontendOutput, PolicyEffect, RelationOperator,
-    ScreenOperationKind, SurfaceRef, UnlinkedAction, UnlinkedConstraint, UnlinkedDataModel,
-    UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent,
-    UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
-    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
-    UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    DataMutationKind, Diagnostic, FieldIntentKind, Frontend, FrontendOutput, PolicyEffect,
+    RelationOperator, ScreenOperationKind, SurfaceRef, UnlinkedAction, UnlinkedActionDataMutation,
+    UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant,
+    UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand,
+    UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation,
+    UnlinkedTypeReference,
 };
 
 use crate::ast::*;
@@ -317,6 +318,7 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         relations: Vec::new(),
         relational_constraints: Vec::new(),
         screens: Vec::new(),
+        action_data_mutations: Vec::new(),
         derivations: Vec::new(),
         recalculations: Vec::new(),
         field_intents: Vec::new(),
@@ -473,6 +475,22 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                     operation: screen_operation(value.operation),
                     span: value.span,
                 });
+            }
+            DeclarationAst::ActionDataMutation(value) => {
+                let action = index.action_reference(&value.action, value.span, &mut diagnostics);
+                let model = index.model_reference(&value.model, value.span, &mut diagnostics);
+                module
+                    .action_data_mutations
+                    .push(UnlinkedActionDataMutation {
+                        action: required_reference(action, value.span),
+                        model: required_reference(model, value.span),
+                        mutation: match value.mutation {
+                            DataMutationKindAst::Create => DataMutationKind::Create,
+                            DataMutationKindAst::Update => DataMutationKind::Update,
+                            DataMutationKindAst::Delete => DataMutationKind::Delete,
+                        },
+                        span: value.span,
+                    });
             }
             DeclarationAst::SumDerivation(value) => {
                 let target_model =
@@ -748,6 +766,7 @@ mod tests {
 신청의 금액은 0보다 커야 한다.
 관리자(manager)는 역할이다.
 변경(change)은 행동이다.
+변경이 실행되면 신청을 수정한다.
 관리자는 신청의 금액을 변경할 수 있다.
 "#;
         let parsed = parse(source);
@@ -765,6 +784,12 @@ mod tests {
         ));
         assert_eq!(module.policies[0].role.id(), "manager");
         assert!(module.policies[0].declaration.id.is_none());
+        assert_eq!(module.action_data_mutations[0].action.id(), "change");
+        assert_eq!(module.action_data_mutations[0].model.id(), "request");
+        assert_eq!(
+            module.action_data_mutations[0].mutation,
+            DataMutationKind::Update
+        );
     }
 
     #[test]

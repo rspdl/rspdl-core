@@ -1,8 +1,9 @@
-use rspdl_compiler::compile_with_frontend;
+use rspdl_compiler::{Source, compile_source_with_frontend, compile_with_frontend};
 use rspdl_domain::{
-    Diagnostic, Frontend, FrontendOutput, RelationOperator, SurfaceRef, TextRange,
-    UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedField, UnlinkedLiteral,
-    UnlinkedModule, UnlinkedOperand, UnlinkedTypeReference,
+    DataMutationKind, Diagnostic, Frontend, FrontendOutput, RelationOperator, SurfaceRef,
+    TextRange, UnlinkedAction, UnlinkedActionDataMutation, UnlinkedConstraint, UnlinkedDataModel,
+    UnlinkedDeclaration, UnlinkedField, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand,
+    UnlinkedTypeReference,
 };
 
 struct TestFrontend;
@@ -33,6 +34,12 @@ impl Frontend for TestFrontend {
                 relations: Vec::new(),
                 relational_constraints: Vec::new(),
                 screens: Vec::new(),
+                action_data_mutations: vec![UnlinkedActionDataMutation {
+                    action: SurfaceRef::stable_id("create_item", span(70, 81)),
+                    model: SurfaceRef::stable_id("item", span(82, 86)),
+                    mutation: DataMutationKind::Create,
+                    span: span(70, 90),
+                }],
                 derivations: Vec::new(),
                 recalculations: Vec::new(),
                 field_intents: Vec::new(),
@@ -52,7 +59,9 @@ impl Frontend for TestFrontend {
                     span: span(30, 70),
                 }],
                 roles: Vec::new(),
-                actions: Vec::new(),
+                actions: vec![UnlinkedAction {
+                    declaration: declaration("Create item", "create_item", span(70, 81)),
+                }],
                 policies: Vec::new(),
             }),
             diagnostics: Vec::<Diagnostic>::new(),
@@ -94,4 +103,19 @@ fn compiler_preserves_frontend_reference_spans_in_diagnostics() {
         .find(|diagnostic| diagnostic.message_key == "semantic.model.not_found")
         .expect("missing model diagnostic");
     assert_eq!(diagnostic.span, span(40, 50));
+}
+
+#[test]
+fn compiler_preserves_action_mutation_source_provenance() {
+    let source_text = "x".repeat(90);
+    let compilation = compile_source_with_frontend(
+        &TestFrontend,
+        Source::new("contract-test.rspdl", source_text.as_str()),
+    );
+
+    assert!(compilation.diagnostics.is_empty());
+    let mutation = &compilation.action_data_mutation_provenance[0];
+    assert!(mutation.span.end <= source_text.len());
+    assert_eq!(mutation.source_id.as_str(), "contract-test.rspdl");
+    assert_eq!(mutation.span, span(70, 90));
 }

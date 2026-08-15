@@ -140,6 +140,7 @@ fn empty_module() -> SemanticModule {
         relations: Vec::new(),
         relational_constraints: Vec::new(),
         screens: Vec::new(),
+        action_data_mutations: Vec::new(),
         derivations: Vec::new(),
         field_intents: Vec::new(),
         constraints: Vec::new(),

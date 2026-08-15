@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use crate::{CanonicalId, CanonicalType, CanonicalValue, EnumType};
+use crate::{CanonicalId, CanonicalType, CanonicalValue, EnumType, SourceId, TextRange};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct EnumVariantDefinition {
@@ -97,6 +97,31 @@ pub struct ScreenDefinition {
     pub id: CanonicalId,
     pub name: String,
     pub operations: Vec<ScreenOperationDefinition>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataMutationKind {
+    Create,
+    Update,
+    Delete,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ActionDataMutationDefinition {
+    pub action_id: CanonicalId,
+    pub model_id: CanonicalId,
+    pub mutation: DataMutationKind,
+}
+
+/// Source sidecar for one resolved action data mutation.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ActionDataMutationProvenance {
+    pub action_id: CanonicalId,
+    pub model_id: CanonicalId,
+    pub mutation: DataMutationKind,
+    pub source_id: SourceId,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -197,6 +222,8 @@ pub struct SemanticModule {
     pub relational_constraints: Vec<RelationalConstraintDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub screens: Vec<ScreenDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub action_data_mutations: Vec<ActionDataMutationDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub derivations: Vec<DerivationDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

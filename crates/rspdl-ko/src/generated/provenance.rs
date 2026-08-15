@@ -24,6 +24,13 @@ pub(crate) struct GeneratedScreen {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct GeneratedActionDataMutation {
+    pub action: Capture,
+    pub model: Capture,
+    pub operation: Capture,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct GeneratedSumDerivation {
     pub target_model: Capture,
     pub target_field: Capture,
@@ -53,6 +60,17 @@ pub(crate) fn parse_screen(tokens: &[Token]) -> Result<GeneratedScreen, ParseErr
         screen_id: required_capture(&parsed, "screen_id"),
         model: required_capture(&parsed, "model"),
         fields: captures(&parsed, "field"),
+        operation: required_capture(&parsed, "operation"),
+    })
+}
+
+pub(crate) fn parse_action_data_mutation(
+    tokens: &[Token],
+) -> Result<GeneratedActionDataMutation, ParseError> {
+    let parsed = parse("action_data_mutation_statement", tokens)?;
+    Ok(GeneratedActionDataMutation {
+        action: required_capture(&parsed, "action"),
+        model: required_capture(&parsed, "model"),
         operation: required_capture(&parsed, "operation"),
     })
 }
@@ -219,7 +237,9 @@ fn comma_reference(tokens: &[Token], position: usize) -> Vec<TerminalMatch> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::{DeclarationAst, FieldIntentKindAst, ScreenOperationKindAst};
+    use crate::ast::{
+        DataMutationKindAst, DeclarationAst, FieldIntentKindAst, ScreenOperationKindAst,
+    };
     use crate::scanner::TokenKind;
     use crate::{Diagnostic, parse as parse_document, scan};
 
@@ -332,6 +352,34 @@ mod tests {
 
     #[test]
     fn generated_provenance_matches_handwritten_ast_captures() {
+        for (sentence, expected) in [
+            (
+                "주문 등록이 실행되면 주문을 생성한다.",
+                DataMutationKindAst::Create,
+            ),
+            (
+                "주문 변경이 실행되면 주문을 수정한다.",
+                DataMutationKindAst::Update,
+            ),
+            (
+                "주문 취소가 실행되면 주문을 삭제한다.",
+                DataMutationKindAst::Delete,
+            ),
+        ] {
+            let DeclarationAst::ActionDataMutation(handwritten) = oracle(sentence).unwrap() else {
+                panic!("oracle did not return an action data mutation")
+            };
+            let generated = parse_action_data_mutation(&sentence_tokens(sentence)).unwrap();
+            assert_eq!(generated.action.value, handwritten.action, "{sentence}");
+            assert_eq!(generated.model.value, handwritten.model, "{sentence}");
+            assert_eq!(
+                generated.operation.value,
+                data_mutation_word(expected),
+                "{sentence}"
+            );
+            assert_eq!(handwritten.mutation, expected, "{sentence}");
+        }
+
         let sum = "장바구니의 결제 예정 금액은 장바구니 항목의 금액의 합계로 계산한다.";
         let DeclarationAst::SumDerivation(handwritten) = oracle(sum).unwrap() else {
             panic!("oracle did not return derivation")
@@ -423,6 +471,11 @@ mod tests {
                 true,
             ),
             (
+                "주문 취소가 실행되면 주문을 조회한다.",
+                reject_action_data_mutation,
+                true,
+            ),
+            (
                 "항목의 합계는 항목의 금액의 합계로 계산한다",
                 reject_sum,
                 true,
@@ -497,6 +550,9 @@ mod tests {
     fn reject_screen(tokens: &[Token]) -> Result<(), ParseError> {
         parse_screen(tokens).map(|_| ())
     }
+    fn reject_action_data_mutation(tokens: &[Token]) -> Result<(), ParseError> {
+        parse_action_data_mutation(tokens).map(|_| ())
+    }
     fn reject_sum(tokens: &[Token]) -> Result<(), ParseError> {
         parse_sum_derivation(tokens).map(|_| ())
     }
@@ -514,6 +570,14 @@ mod tests {
             ScreenOperationKindAst::Input => "입력할",
             ScreenOperationKindAst::Update => "수정할",
             ScreenOperationKindAst::Delete => "삭제할",
+        }
+    }
+
+    fn data_mutation_word(mutation: DataMutationKindAst) -> &'static str {
+        match mutation {
+            DataMutationKindAst::Create => "생성한다",
+            DataMutationKindAst::Update => "수정한다",
+            DataMutationKindAst::Delete => "삭제한다",
         }
     }
 
