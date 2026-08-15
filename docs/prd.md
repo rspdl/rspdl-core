@@ -140,5 +140,5 @@ target_spec: "0.3.0"
 - [RSPDL Compiler Architecture](architecture.md)
 - [Core and Application Projection Boundary](adr/0002-core-application-boundary.md)
 - [Korean Domain Frontend Language Specification](rfcs/0004-natural-korean-domain-grammar.md)
-- [Field Provenance, Screen Usage, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)
+- [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)
 - [Total Policy Condition Spaces and SMT-First Consistency Analysis](rfcs/0006-total-policy-condition-space-analysis.md)

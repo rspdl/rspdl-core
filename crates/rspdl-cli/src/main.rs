@@ -4,8 +4,8 @@ use std::process::ExitCode;
 
 use rspdl_compiler::{
     CheckOptions, KoSource, ModelFindingOptions, ModelFindingReport, PolicyStatus,
-    RuntimeDiagnostic, WorkspaceCheckReport, check_ko, check_ko_files, compile_ko,
-    compile_ko_files, find_ko_model,
+    RuntimeDiagnostic, WorkspaceCheckReport, check_ko, check_ko_files, compile_ko_files,
+    compile_ko_source, find_ko_model,
 };
 use rspdl_domain::BoundedModelResult;
 use rspdl_ko::{Diagnostic, ParseOutput, format_document, parse, render_diagnostic};
@@ -210,7 +210,12 @@ fn compile_command(arguments: &[String]) -> Result<ExitCode, String> {
     let (paths, json) = source_arguments(arguments, true)?;
     let sources = read_sources(paths)?;
     if sources.len() == 1 {
-        let compilation = compile_ko(&sources[0].text);
+        let compilation = compile_ko_source(
+            sources
+                .into_iter()
+                .next()
+                .expect("one source should remain after the length check"),
+        );
         let has_errors = compilation.diagnostics.iter().any(Diagnostic::is_error);
         if json {
             print_json(&compilation)?;

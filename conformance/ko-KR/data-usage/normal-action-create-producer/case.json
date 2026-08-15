@@ -8,7 +8,9 @@
     {
       "action_id": "ordering.register_order",
       "model_id": "ordering.order",
-      "mutation": "create"
+      "mutation": "create",
+      "source_id": "<inline>",
+      "span": { "start": 169, "end": 222 }
     }
   ],
   "expected_derivation": null

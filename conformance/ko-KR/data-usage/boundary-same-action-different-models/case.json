@@ -8,12 +8,16 @@
     {
       "action_id": "ordering.cancel_order",
       "model_id": "ordering.log",
-      "mutation": "delete"
+      "mutation": "delete",
+      "source_id": "<inline>",
+      "span": { "start": 477, "end": 537 }
     },
     {
       "action_id": "ordering.cancel_order",
       "model_id": "ordering.order",
-      "mutation": "update"
+      "mutation": "update",
+      "source_id": "<inline>",
+      "span": { "start": 423, "end": 476 }
     }
   ],
   "expected_derivation": null

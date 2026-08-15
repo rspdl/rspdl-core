@@ -4,7 +4,7 @@ title: Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation
 type: rfc
 status: implemented
 created: 2026-08-03
-version: "0.2"
+version: "0.3"
 summary: Defines sentence-shaped screen operations, action data mutations, provenance checks, sum dependencies, and recalculation triggers.
 topics:
   - data-lifecycle
@@ -20,7 +20,7 @@ related:
   - rspdl-language-prd
 problem_refs:
   - data-lifecycle-modeling-gap
-last_updated: "2026-08-13"
+last_updated: "2026-08-15"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -81,7 +81,7 @@ target_spec: "0.2.0"
   recalculation = model-reference, "의", field-reference, ("이" | "가"), "바뀔", "때",
       model-reference, "의", field-reference, ("을" | "를"), "다시", "계산한다", "." ;
   ```
-- Canonical IR은 screen별 model/field operation, action별 model mutation, 합계 원본 field ID, 대상 field ID, 재계산 원본 field ID와 비표시 의도를 정렬해 보존한다.
+- Canonical IR은 screen별 model/field operation, action별 model mutation, 합계 원본 field ID, 대상 field ID, 재계산 원본 field ID와 비표시 의도를 정렬해 보존한다. `Compilation.action_data_mutation_provenance` sidecar는 각 resolved mutation의 action·model·mutation과 원본 `SourceId`, UTF-8 byte `TextRange`를 함께 노출한다.
 - 합계 원본과 대상은 현재 모두 정수 필드여야 한다.
 - `RSPDL-DATA-001`은 조회·수정·계산 입력 필드에 화면 입력 또는 선언된 producer/derivation graph에서 구조적으로 도달 가능한 계산 생산자가 없을 때 발생한다.
 - 구조적 도달 가능성은 선언된 계산 dependency의 고정점만 뜻하며 화면 실행 순서, 분기 또는 path별 데이터 availability를 추론하지 않는다.
@@ -98,6 +98,7 @@ target_spec: "0.2.0"
 - 현재 분석은 화면 선언 집합의 구조적 생산·소비 관계만 판정하며 화면 간 실행 순서와 분기를 모델링하지 않는다.
 - 화면 `create`와 행동 `create`는 순서와 무관한 구조적 model producer다. 화면 read/update/delete, 계산의 source·target model과 행동 update/delete는 producer가 필요한 consumer다.
 - 화면 ID는 행동 ID가 아니다. 같은 화면에서 수정·삭제 capability를 모두 제공하는 것만으로 행동 결과 충돌을 만들지 않는다.
+- action mutation의 source provenance는 진단과 downstream traceability를 위한 metadata이며 action·model·mutation semantic identity나 conflict key에는 참여하지 않는다.
 - 삭제 이후 조회·수정, 조건부 생성과 path별 availability는 성공으로 추측하지 않고 지원 범위 밖에 둔다.
 - 행동 결과의 조건, 실행 순서, field 단위 mutation과 read/derive 결과는 아직 지원하지 않는다.
 - 교차 모델 합계는 semantic dependency를 보존하지만 relation/join이 도입되기 전까지 실제 집계 레코드 범위를 실행하지 않는다.

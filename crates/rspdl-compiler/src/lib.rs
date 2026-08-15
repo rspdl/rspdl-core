@@ -6,10 +6,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use rspdl_domain::{
-    Atom, BooleanExpression, BoundedModelOptions, BoundedModelResult, CanonicalId, CanonicalType,
-    CanonicalValue, ConstraintOperand, ConstraintProblem, ConstraintSolver, Diagnostic, Frontend,
-    FrontendOutput, PolicyEffect, RelationOperator, SemanticModule, Severity, SolveOptions,
-    SolveResult, Term, TextRange, analyze, find_bounded_relational_model,
+    ActionDataMutationProvenance, Atom, BooleanExpression, BoundedModelOptions, BoundedModelResult,
+    CanonicalId, CanonicalType, CanonicalValue, ConstraintOperand, ConstraintProblem,
+    ConstraintSolver, Diagnostic, Frontend, FrontendOutput, PolicyEffect, RelationOperator,
+    SemanticModule, Severity, SolveOptions, SolveResult, SourceId, Term, TextRange,
+    analyze_with_source, find_bounded_relational_model,
 };
 use rspdl_ko::KoreanFrontend;
 use rspdl_solver_z3::Z3Solver;
@@ -19,6 +20,8 @@ use serde_json::{Map, Value};
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Compilation {
     pub module: Option<SemanticModule>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub action_data_mutation_provenance: Vec<ActionDataMutationProvenance>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -96,6 +99,8 @@ pub type KoSource = Source;
 pub struct FileCompilation {
     pub path: String,
     pub module: Option<SemanticModule>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub action_data_mutation_provenance: Vec<ActionDataMutationProvenance>,
     pub diagnostics: Vec<Diagnostic>,
     #[serde(skip)]
     declaration_span: TextRange,
@@ -127,6 +132,11 @@ impl WorkspaceCompilation {
 
 pub fn compile_ko(source: &str) -> Compilation {
     compile_with_frontend(&KoreanFrontend, source)
+}
+
+/// Compiles one Korean source while preserving its caller-supplied identity.
+pub fn compile_ko_source(source: Source) -> Compilation {
+    compile_source_with_frontend(&KoreanFrontend, source)
 }
 
 /// Compiles a Korean source and asks the Solver for a virtual finite data
@@ -203,20 +213,31 @@ fn model_finding_failure(
 
 /// Compiles any surface language that implements the shared frontend contract.
 pub fn compile_with_frontend(frontend: &dyn Frontend, source: &str) -> Compilation {
-    compile_frontend_output(frontend.lower_source(source)).0
+    compile_frontend_output(frontend.lower_source(source), SourceId::inline()).0
 }
 
-fn compile_frontend_output(output: FrontendOutput) -> (Compilation, TextRange) {
+/// Compiles one identified source through any conforming frontend.
+pub fn compile_source_with_frontend(frontend: &dyn Frontend, source: Source) -> Compilation {
+    let Source { path, text } = source;
+    compile_frontend_output(frontend.lower_source(&text), SourceId::new(path)).0
+}
+
+fn compile_frontend_output(
+    output: FrontendOutput,
+    source_id: SourceId,
+) -> (Compilation, TextRange) {
     let declaration_span = output
         .module
         .as_ref()
         .map_or(TextRange::default(), |module| module.declaration.span);
     let mut diagnostics = output.diagnostics;
+    let mut action_data_mutation_provenance = Vec::new();
     let module = if diagnostics.iter().any(Diagnostic::is_error) {
         None
     } else if let Some(module) = output.module {
-        let analyzed = analyze(module);
+        let analyzed = analyze_with_source(module, source_id);
         diagnostics.extend(analyzed.diagnostics);
+        action_data_mutation_provenance = analyzed.action_data_mutation_provenance;
         analyzed.module
     } else {
         None
@@ -225,6 +246,7 @@ fn compile_frontend_output(output: FrontendOutput) -> (Compilation, TextRange) {
     (
         Compilation {
             module,
+            action_data_mutation_provenance,
             diagnostics,
         },
         declaration_span,
@@ -244,11 +266,13 @@ pub fn compile_files_with_frontend(
     let mut files = sources
         .into_iter()
         .map(|source| {
+            let source_id = SourceId::new(source.path.clone());
             let (compilation, declaration_span) =
-                compile_frontend_output(frontend.lower_source(&source.text));
+                compile_frontend_output(frontend.lower_source(&source.text), source_id);
             FileCompilation {
                 path: source.path,
                 module: compilation.module,
+                action_data_mutation_provenance: compilation.action_data_mutation_provenance,
                 diagnostics: compilation.diagnostics,
                 declaration_span,
             }

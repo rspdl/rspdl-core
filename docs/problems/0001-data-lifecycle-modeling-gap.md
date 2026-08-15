@@ -68,5 +68,5 @@ owners:
 - [RSPDL Product Vision](../product/vision.md)
 - [RSPDL Product Requirements](../prd.md)
 - [Typed Domains and Logic Core](../rfcs/0002-typed-domains-and-logic-core.md)
-- [Field Provenance, Screen Usage, and Sum Derivation Grammar](../rfcs/0005-field-provenance-and-sum-derivation.md)
+- [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](../rfcs/0005-field-provenance-and-sum-derivation.md)
 - [Problem-driven Development](../guides/problem-driven-development.md)

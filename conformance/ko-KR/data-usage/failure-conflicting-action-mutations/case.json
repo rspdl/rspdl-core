@@ -12,7 +12,8 @@
         "action_id": "ordering.cancel_order",
         "model_id": "ordering.order",
         "mutations": "update,delete"
-      }
+      },
+      "span": { "start": 297, "end": 350 }
     }
   ],
   "expected_derivation": null

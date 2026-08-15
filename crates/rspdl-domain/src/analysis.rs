@@ -5,31 +5,39 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::{
-    ActionDataMutationDefinition, ActionDefinition, CanonicalId, CanonicalType, CanonicalValue,
-    ConstraintDefinition, ConstraintOperand, DataModelDefinition, DataMutationKind,
-    DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition, EnumType,
-    EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, ModelError, PolicyDefinition,
-    PolicyEffect, RelationDefinition, RelationOperator, RelationalConstraintDefinition,
-    RelationalConstraintKind, RoleDefinition, ScreenDefinition, ScreenOperationDefinition,
-    ScreenOperationKind, SemanticModule, Severity, SurfaceRef, TextRange,
-    UnlinkedActionDataMutation, UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration,
-    UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
+    ActionDataMutationDefinition, ActionDataMutationProvenance, ActionDefinition, CanonicalId,
+    CanonicalType, CanonicalValue, ConstraintDefinition, ConstraintOperand, DataModelDefinition,
+    DataMutationKind, DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition,
+    EnumType, EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, ModelError,
+    PolicyDefinition, PolicyEffect, RelationDefinition, RelationOperator,
+    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
+    ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SourceId, SurfaceRef,
+    TextRange, UnlinkedActionDataMutation, UnlinkedConstraint, UnlinkedDataModel,
+    UnlinkedDeclaration, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand,
+    UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
     UnlinkedRelationalConstraintKind, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AnalysisOutput {
     pub module: Option<SemanticModule>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub action_data_mutation_provenance: Vec<ActionDataMutationProvenance>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
 /// Links and analyzes unresolved semantic intent from any conforming frontend.
 pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
+    analyze_with_source(module, SourceId::inline())
+}
+
+/// Links and analyzes unresolved intent while retaining its source identity.
+pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> AnalysisOutput {
     let mut diagnostics = Vec::new();
     let Some(module_id) = canonical_required(&module.declaration, &mut diagnostics) else {
         return AnalysisOutput {
             module: None,
+            action_data_mutation_provenance: Vec::new(),
             diagnostics,
         };
     };
@@ -209,7 +217,13 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
         .map(|(definition, _)| definition)
         .collect();
 
-    let (screens, action_data_mutations, derivations, field_intents) = analyze_data_usage(
+    let DataUsageAnalysis {
+        screens,
+        action_data_mutations,
+        action_data_mutation_provenance,
+        derivations,
+        field_intents,
+    } = analyze_data_usage(
         module.screens,
         module.action_data_mutations,
         module.derivations,
@@ -218,6 +232,7 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
         &module_id,
         &models,
         &action_names,
+        &source_id,
         &mut top_level_ids,
         &mut diagnostics,
     );
@@ -255,6 +270,7 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
     if diagnostics.iter().any(Diagnostic::is_error) {
         return AnalysisOutput {
             module: None,
+            action_data_mutation_provenance: Vec::new(),
             diagnostics,
         };
     }
@@ -276,6 +292,7 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
             actions,
             policies,
         }),
+        action_data_mutation_provenance,
         diagnostics,
     }
 }
@@ -688,6 +705,15 @@ struct ResolvedDerivation {
     span: TextRange,
 }
 
+#[derive(Default)]
+struct DataUsageAnalysis {
+    screens: Vec<ScreenDefinition>,
+    action_data_mutations: Vec<ActionDataMutationDefinition>,
+    action_data_mutation_provenance: Vec<ActionDataMutationProvenance>,
+    derivations: Vec<DerivationDefinition>,
+    field_intents: Vec<FieldIntentDefinition>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn analyze_data_usage(
     screens: Vec<UnlinkedScreen>,
@@ -698,21 +724,17 @@ fn analyze_data_usage(
     module_id: &CanonicalId,
     models: &[DataModelDefinition],
     actions: &BTreeMap<String, CanonicalId>,
+    source_id: &SourceId,
     top_level_ids: &mut BTreeSet<CanonicalId>,
     diagnostics: &mut Vec<Diagnostic>,
-) -> (
-    Vec<ScreenDefinition>,
-    Vec<ActionDataMutationDefinition>,
-    Vec<DerivationDefinition>,
-    Vec<FieldIntentDefinition>,
-) {
+) -> DataUsageAnalysis {
     if screens.is_empty()
         && action_data_mutations.is_empty()
         && derivations.is_empty()
         && recalculations.is_empty()
         && field_intents.is_empty()
     {
-        return (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        return DataUsageAnalysis::default();
     }
 
     let mut screen_map = BTreeMap::<CanonicalId, ScreenDefinition>::new();
@@ -816,6 +838,7 @@ fn analyze_data_usage(
     }
 
     let mut action_data_mutation_definitions = Vec::new();
+    let mut action_data_mutation_provenance = Vec::new();
     let mut mutations_by_action_and_model =
         BTreeMap::<(CanonicalId, CanonicalId), BTreeMap<DataMutationKind, TextRange>>::new();
     for value in action_data_mutations {
@@ -872,9 +895,16 @@ fn analyze_data_usage(
             }
         }
         action_data_mutation_definitions.push(ActionDataMutationDefinition {
+            action_id: action_id.clone(),
+            model_id: model.id.clone(),
+            mutation: value.mutation,
+        });
+        action_data_mutation_provenance.push(ActionDataMutationProvenance {
             action_id,
             model_id: model.id.clone(),
             mutation: value.mutation,
+            source_id: source_id.clone(),
+            span: value.span,
         });
     }
 
@@ -1120,13 +1150,15 @@ fn analyze_data_usage(
     }
     derivation_definitions.sort_by(|left, right| left.target_field_id.cmp(&right.target_field_id));
     action_data_mutation_definitions.sort();
+    action_data_mutation_provenance.sort();
     intents.sort();
-    (
-        screen_definitions,
-        action_data_mutation_definitions,
-        derivation_definitions,
-        intents,
-    )
+    DataUsageAnalysis {
+        screens: screen_definitions,
+        action_data_mutations: action_data_mutation_definitions,
+        action_data_mutation_provenance,
+        derivations: derivation_definitions,
+        field_intents: intents,
+    }
 }
 
 const fn data_mutation_name(mutation: DataMutationKind) -> &'static str {

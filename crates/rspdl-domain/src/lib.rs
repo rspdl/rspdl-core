@@ -21,7 +21,7 @@ pub mod source;
 pub mod types;
 pub mod value;
 
-pub use analysis::{AnalysisOutput, analyze};
+pub use analysis::{AnalysisOutput, analyze, analyze_with_source};
 pub use diagnostic::{Diagnostic, Severity};
 pub use domain::{
     Backend, Cardinality, Domain, DomainCapabilities, EnumerationSupport, GroundMembership,
@@ -51,18 +51,19 @@ pub use relational_analysis::{
     VirtualFieldValue, VirtualRelationTuple, find_bounded_relational_model,
 };
 pub use semantic::{
-    ActionDataMutationDefinition, ActionDefinition, ConstraintDefinition, ConstraintOperand,
-    DataModelDefinition, DataMutationKind, DerivationDefinition, DerivationExpression,
-    EnumDefinition, EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, FieldIntentKind,
-    PolicyDefinition, PolicyEffect, RelationDefinition, RelationOperator,
-    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
-    ScreenOperationDefinition, ScreenOperationKind, SemanticModule,
+    ActionDataMutationDefinition, ActionDataMutationProvenance, ActionDefinition,
+    ConstraintDefinition, ConstraintOperand, DataModelDefinition, DataMutationKind,
+    DerivationDefinition, DerivationExpression, EnumDefinition, EnumVariantDefinition,
+    FieldDefinition, FieldIntentDefinition, FieldIntentKind, PolicyDefinition, PolicyEffect,
+    RelationDefinition, RelationOperator, RelationalConstraintDefinition, RelationalConstraintKind,
+    RoleDefinition, ScreenDefinition, ScreenOperationDefinition, ScreenOperationKind,
+    SemanticModule,
 };
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;
 pub use solver::{
     CanonicalModel, ConstraintProblem, ConstraintSolver, SolveOptions, SolveResult, VariableDomain,
 };
-pub use source::TextRange;
+pub use source::{SourceId, TextRange};
 pub use types::{BuiltinRefinement, CanonicalId, CanonicalType, EnumType, RefinementType};
 pub use value::{CanonicalInteger, CanonicalValue};

@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use crate::{CanonicalId, CanonicalType, CanonicalValue, EnumType};
+use crate::{CanonicalId, CanonicalType, CanonicalValue, EnumType, SourceId, TextRange};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct EnumVariantDefinition {
@@ -112,6 +112,16 @@ pub struct ActionDataMutationDefinition {
     pub action_id: CanonicalId,
     pub model_id: CanonicalId,
     pub mutation: DataMutationKind,
+}
+
+/// Source sidecar for one resolved action data mutation.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ActionDataMutationProvenance {
+    pub action_id: CanonicalId,
+    pub model_id: CanonicalId,
+    pub mutation: DataMutationKind,
+    pub source_id: SourceId,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

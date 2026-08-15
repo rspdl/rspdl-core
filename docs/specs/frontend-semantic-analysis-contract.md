@@ -3,7 +3,7 @@ id: frontend-semantic-analysis-contract
 title: Frontend and Semantic Analysis Contract
 type: spec
 status: implemented
-version: "6"
+version: "7"
 summary: Defines stable-ID Unlinked records, action data mutations, relations, rules, and the structured diagnostic boundary shared by frontends.
 topics:
   - compiler-frontend
@@ -19,7 +19,7 @@ related:
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-12"
+last_updated: "2026-08-15"
 owners:
   - rspdl-maintainers
 target_spec: "0.3.0"
@@ -41,7 +41,7 @@ Locale Source -> Locale AST -> Stable-ID UnlinkedModule -> Link/Type Check -> Se
 
 - Locale AST는 frontend 내부 타입이며 호환 계약이 아니다.
 - `UnlinkedModule`은 선언 ID, 표시 이름, stable-ID `SurfaceRef`, literal, source range와 의미 construct를 보존한다.
-- action의 데이터 결과는 action·model `SurfaceRef`, `create|update|delete` mutation과 source range를 가진 `UnlinkedActionDataMutation`으로 보존한다.
+- action의 데이터 결과는 action·model `SurfaceRef`, `create|update|delete` mutation과 source range를 가진 `UnlinkedActionDataMutation`으로 보존한다. Linking 뒤에는 source 위치를 semantic identity에 섞지 않고 `Compilation.action_data_mutation_provenance` sidecar에 resolved mutation, `SourceId`와 동일한 UTF-8 byte `TextRange`를 유지한다.
 - `SemanticModule`은 모든 참조와 타입이 해석된 Canonical IR이다.
 - frontend output은 신뢰하지 않는다. 공통 analyzer가 ID 문법, 참조 존재성, 타입과 교차 선언 invariant를 다시 검증한다.
 
@@ -64,9 +64,17 @@ pub struct SurfaceRef {
     pub id: String,
     pub span: TextRange,
 }
+
+pub struct ActionDataMutationProvenance {
+    pub action_id: CanonicalId,
+    pub model_id: CanonicalId,
+    pub mutation: DataMutationKind,
+    pub source_id: SourceId,
+    pub span: TextRange,
+}
 ```
 
-`rspdl-compiler::compile_with_frontend`와 `compile_files_with_frontend`는 구체 Locale 타입이 아니라 이 계약을 입력으로 받는다.
+`rspdl-compiler::compile_with_frontend`, `compile_source_with_frontend`와 `compile_files_with_frontend`는 구체 Locale 타입이 아니라 이 계약을 입력으로 받는다. 문자열만 받는 entry point는 결정적인 `<inline>` source ID를 사용하고, `Source`를 받는 single/workspace entry point는 caller가 제공한 path를 source ID로 보존한다. 성공한 `Compilation`은 `action_data_mutation_provenance[*].source_id`와 `span`으로 provenance를 노출한다.
 
 `Frontend::language_id`는 미래 Locale registry와 artifact provenance를 위한 식별 hook이다. 현재 compiler entry point는 호출자가 frontend 구현을 직접 주입하므로 compilation artifact나 진단에 이 값을 복사하지 않는다.
 
@@ -148,6 +156,7 @@ Constraint, policy와 relation meta-rule의 anonymous ID는 Locale display text�
 
 - frontend unit test는 source reference가 expected stable-ID `SurfaceRef`로 lowering되는지 검증한다.
 - analyzer test는 Locale source 없이 hand-authored `UnlinkedModule`만 사용한다.
+- compiler conformance는 action mutation의 `SourceId`와 UTF-8 byte `TextRange`가 `Compilation`까지 보존되는지 검사한다.
 - 동일한 stable ID와 의미를 가진 Locale별 fixture는 Canonical ID, semantic result와 `rule_id`, `message_key`, `arguments`가 같아야 한다.
 - 정상, 실패, 경계와 오탐 방지 fixture는 공통 analyzer를 통해 실행한다.
 - `rspdl-domain`과 solver backend는 Locale crate를 의존할 수 없다. Compiler의 runtime matcher는 Locale AST나 표시 이름이 아니라 해석된 `SemanticModule`만 검사해야 한다.

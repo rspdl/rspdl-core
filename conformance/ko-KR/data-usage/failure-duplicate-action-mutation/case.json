@@ -12,7 +12,8 @@
         "action_id": "ordering.change_order",
         "model_id": "ordering.order",
         "mutation": "update"
-      }
+      },
+      "span": { "start": 297, "end": 350 }
     }
   ],
   "expected_derivation": null

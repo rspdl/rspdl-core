@@ -138,7 +138,7 @@ cargo build --workspace
 - [Product Vision](docs/product/vision.md): 누구의 어떤 고통을 왜 해결하는가
 - [PRD](docs/prd.md): 제품·언어 요구사항과 현재 구현 경계
 - [Data Lifecycle Modeling Gap](docs/problems/0001-data-lifecycle-modeling-gap.md): 데이터 존재 시점과 연산 공백
-- [Field Provenance and Sum Derivation](docs/rfcs/0005-field-provenance-and-sum-derivation.md): 화면 생산·소비와 합계 계산 문법
+- [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](docs/rfcs/0005-field-provenance-and-sum-derivation.md): 화면·행동의 생산·소비와 합계 계산 문법
 - [Policy Consistency Blind Spots](docs/problems/0002-policy-consistency-blind-spots.md): 충돌·누락·중첩·도달 불가
 - [Total Policy Condition Spaces and SMT-First Consistency Analysis](docs/rfcs/0006-total-policy-condition-space-analysis.md): 닫힌 vocabulary, 전체 조건 공간과 명시적 override의 SMT 분석 계약
 - [Finite Relational Rules and Bounded Model Finding](docs/rfcs/0007-finite-relational-model-finding.md): typed relation, 명시적 cardinality/compatibility와 가상 데이터 모델 탐색

@@ -48,6 +48,8 @@ struct ExpectedActionDataMutation {
     action_id: String,
     model_id: String,
     mutation: String,
+    source_id: String,
+    span: ExpectedSpan,
 }
 
 #[test]
@@ -119,25 +121,24 @@ fn sentence_shaped_data_usage_conformance_suite() {
         );
 
         let action_data_mutations = compilation
-            .module
-            .as_ref()
-            .map(|module| {
-                module
-                    .action_data_mutations
-                    .iter()
-                    .map(|mutation| ExpectedActionDataMutation {
-                        action_id: mutation.action_id.to_string(),
-                        model_id: mutation.model_id.to_string(),
-                        mutation: match mutation.mutation {
-                            DataMutationKind::Create => "create",
-                            DataMutationKind::Update => "update",
-                            DataMutationKind::Delete => "delete",
-                        }
-                        .into(),
-                    })
-                    .collect::<Vec<_>>()
+            .action_data_mutation_provenance
+            .iter()
+            .map(|mutation| ExpectedActionDataMutation {
+                action_id: mutation.action_id.to_string(),
+                model_id: mutation.model_id.to_string(),
+                mutation: match mutation.mutation {
+                    DataMutationKind::Create => "create",
+                    DataMutationKind::Update => "update",
+                    DataMutationKind::Delete => "delete",
+                }
+                .into(),
+                source_id: mutation.source_id.to_string(),
+                span: ExpectedSpan {
+                    start: mutation.span.start,
+                    end: mutation.span.end,
+                },
             })
-            .unwrap_or_default();
+            .collect::<Vec<_>>();
         assert_eq!(
             action_data_mutations, case.expected_action_data_mutations,
             "case {name} action data mutations"
