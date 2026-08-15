@@ -107,13 +107,15 @@ fn compiler_preserves_frontend_reference_spans_in_diagnostics() {
 
 #[test]
 fn compiler_preserves_action_mutation_source_provenance() {
+    let source_text = "x".repeat(90);
     let compilation = compile_source_with_frontend(
         &TestFrontend,
-        Source::new("contract-test.rspdl", "custom surface text"),
+        Source::new("contract-test.rspdl", source_text.as_str()),
     );
 
     assert!(compilation.diagnostics.is_empty());
     let mutation = &compilation.action_data_mutation_provenance[0];
+    assert!(mutation.span.end <= source_text.len());
     assert_eq!(mutation.source_id.as_str(), "contract-test.rspdl");
     assert_eq!(mutation.span, span(70, 90));
 }
