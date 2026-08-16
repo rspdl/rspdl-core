@@ -16,7 +16,7 @@ related:
   - rspdl-compiler-architecture
 problem_refs:
   - downstream-analysis-integration-friction
-last_updated: "2026-08-16"
+last_updated: "2026-08-17"
 owners:
   - rspdl-maintainers
 ---
@@ -34,7 +34,9 @@ owners:
 
 최초 bootstrap에서는 `.release-please-manifest.json`을 비워 두고 `initial-version`을 `0.1.0`으로 고정한다. `bootstrap-sha`는 SDK 패키징 작업 직전의 `main` commit이므로 첫 Release PR에는 이번 공개 패키징 변경부터 포함된다. 첫 Release PR이 merge되면 Release Please가 manifest에 `0.1.0`을 기록하며, 이후에는 그 값을 마지막 배포 버전으로 사용한다.
 
-Build job에는 registry credential이 없고 publish job만 `id-token: write`를 가진다. npm의 여러 package publish는 원자적이지 않지만, root package를 마지막에 게시해 불완전한 version을 일반 설치 경로에 노출하지 않는다. 실패 시 GitHub Actions의 **Re-run failed jobs**만 사용한다. 그러면 같은 workflow run에 먼저 올라간 immutable artifact를 고정 이름으로 다시 소비하며, 성공한 build job을 재실행하거나 같은 version의 binary를 교체하지 않는다. 전체 workflow 재실행은 Release Please의 이미 생성된 release 상태와 artifact immutability를 우회하므로 지원하지 않는다. PyPI는 이미 게시된 wheel을 건너뛰고 napi-rs publisher도 이미 게시된 platform package를 건너뛴다.
+Build job에는 registry credential이 없고 publish job만 `id-token: write`를 가진다. npm의 여러 package publish는 원자적이지 않지만, root package를 마지막에 게시해 불완전한 version을 일반 설치 경로에 노출하지 않는다. 실패 시 우선 GitHub Actions의 **Re-run failed jobs**만 사용한다. 그러면 같은 workflow run에 먼저 올라간 immutable artifact를 고정 이름으로 다시 소비하며, 성공한 build job을 재실행하거나 같은 version의 binary를 교체하지 않는다. 게시 로직 자체를 수정해야 하는 부분 실패라면 `Release` workflow를 수동 실행하고 원래 release run ID를 `artifact_run_id`에 입력한다. `repair-npm` job은 그 run의 Node.js artifact를 다시 조립하고 registry에 없는 platform과 root version만 게시한다. PyPI는 이미 게시된 wheel을 건너뛰고 npm publish script도 이미 게시된 platform package를 건너뛴다.
+
+Windows artifact의 npm package는 `rspdl-native-windows-x64`라는 공개 이름으로 게시한다. Root package는 `rspdl-win32-x64-msvc` dependency key에 npm alias를 사용하므로 기존 native loader와 `npm install rspdl` 사용법은 바뀌지 않는다.
 
 `THIRD_PARTY_LICENSES.html`은 source-controlled release input이다. Verify workflow가 `cargo about generate --workspace --all-features --locked --fail` 결과와 일치하는지 검사한 뒤에만 merge하며, Python과 Node.js package build는 그 검증된 파일을 포함한다. Local packaging 전에 파일이 없다면 같은 명령으로 먼저 생성해야 한다.
 
@@ -65,7 +67,7 @@ npm은 Trusted Publisher를 설정할 package가 먼저 존재해야 한다. 현
 - `rspdl-linux-x64-gnu`
 - `rspdl-darwin-x64`
 - `rspdl-darwin-arm64`
-- `rspdl-win32-x64-msvc`
+- `rspdl-native-windows-x64`
 
 첫 release에만 이 이름들을 만들 수 있는 최소 범위의 npm token을 GitHub `npm` Environment의 `NPM_BOOTSTRAP_TOKEN` secret으로 둔다. Release PR merge가 다섯 package를 게시한 직후 npm 11.15 이상과 2FA가 설정된 maintainer session에서 각 package를 같은 publisher에 연결한다.
 
@@ -75,7 +77,7 @@ for package in \
   rspdl-linux-x64-gnu \
   rspdl-darwin-x64 \
   rspdl-darwin-arm64 \
-  rspdl-win32-x64-msvc
+  rspdl-native-windows-x64
 do
   npm trust github "$package" \
     --repo rspdl/rspdl-core \
