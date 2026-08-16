@@ -163,11 +163,11 @@ print(response["result"]["files"][0]["diagnostics"])
 Node.js 22 또는 24와 TypeScript:
 
 ```console
-npm install rspdl
+npm install rspdl-core
 ```
 
 ```typescript
-import { compile, type Source } from 'rspdl'
+import { compile, type Source } from 'rspdl-core'
 
 const source: Source = {
   path: 'inventory.rspdl',

@@ -22,14 +22,28 @@ function createPackageFixture() {
   const platforms = [
     {
       directory: 'darwin-arm64',
-      name: 'rspdl-darwin-arm64',
+      name: 'rspdl-core-darwin-arm64',
       os: ['darwin'],
       cpu: ['arm64'],
       main: 'rspdl.darwin-arm64.node',
     },
     {
+      directory: 'darwin-x64',
+      name: 'rspdl-core-darwin-x64',
+      os: ['darwin'],
+      cpu: ['x64'],
+      main: 'rspdl.darwin-x64.node',
+    },
+    {
+      directory: 'linux-x64-gnu',
+      name: 'rspdl-core-linux-x64-gnu',
+      os: ['linux'],
+      cpu: ['x64'],
+      main: 'rspdl.linux-x64-gnu.node',
+    },
+    {
       directory: 'win32-x64-msvc',
-      name: 'rspdl-win32-x64-msvc',
+      name: 'rspdl-core-win32-x64-msvc',
       os: ['win32'],
       cpu: ['x64'],
       main: 'rspdl.win32-x64-msvc.node',
@@ -40,7 +54,7 @@ function createPackageFixture() {
   )
 
   writeJson(join(packageRoot, 'package.json'), {
-    name: 'rspdl',
+    name: 'rspdl-core',
     version: '0.1.0',
     optionalDependencies,
   })
@@ -60,7 +74,7 @@ function createPackageFixture() {
   return packageRoot
 }
 
-test('aliases the Windows package without changing its runtime metadata', (context) => {
+test('maps generated packages to stable public names and aliases Windows', (context) => {
   const packageRoot = createPackageFixture()
   context.after(() => rmSync(packageRoot, { recursive: true, force: true }))
 
@@ -73,6 +87,18 @@ test('aliases the Windows package without changing its runtime metadata', (conte
   assert.equal(
     rootManifest.optionalDependencies['rspdl-win32-x64-msvc'],
     'npm:rspdl-native-windows-x64@0.1.0',
+  )
+  assert.equal(
+    rootManifest.optionalDependencies['rspdl-darwin-arm64'],
+    '0.1.0',
+  )
+  assert.equal(
+    rootManifest.optionalDependencies['rspdl-core-darwin-arm64'],
+    undefined,
+  )
+  assert.equal(
+    readJson(join(packageRoot, 'npm', 'darwin-arm64', 'package.json')).name,
+    'rspdl-darwin-arm64',
   )
   assert.equal(windowsManifest.name, 'rspdl-native-windows-x64')
   assert.equal(windowsManifest.main, 'rspdl.win32-x64-msvc.node')
@@ -94,7 +120,7 @@ test('skips published versions and publishes only missing platform packages', (c
   publishPlatformPackages(packageRoot, (args, options) => {
     commands.push({ args, cwd: options.cwd })
     if (args[0] === 'view') {
-      if (args[1] === 'rspdl-darwin-arm64@0.1.0') {
+      if (args[1] !== 'rspdl-native-windows-x64@0.1.0') {
         return { status: 0, stdout: '"0.1.0"\n', stderr: '' }
       }
       return { status: 1, stdout: '', stderr: 'npm error code E404' }

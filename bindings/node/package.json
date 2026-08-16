@@ -1,5 +1,5 @@
 {
-  "name": "rspdl",
+  "name": "rspdl-core",
   "version": "0.1.0",
   "description": "Node.js and TypeScript SDK for deterministic RSPDL planning analysis",
   "license": "Apache-2.0",

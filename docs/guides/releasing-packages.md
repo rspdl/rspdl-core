@@ -30,13 +30,13 @@ owners:
 1. Python과 Node.js의 Linux x64, macOS x64·arm64, Windows x64 artifact를 각각 빌드한다.
 2. 각 artifact를 해당 runner에서 import/load하고 SDK smoke test를 실행한다.
 3. 네 Python wheel을 PyPI에 게시한다.
-4. 네 npm platform package를 게시한 뒤 마지막으로 `rspdl` root package를 게시한다.
+4. 네 npm platform package를 게시한 뒤 마지막으로 `rspdl-core` root package를 게시한다.
 
 최초 bootstrap에서는 `.release-please-manifest.json`을 비워 두고 `initial-version`을 `0.1.0`으로 고정한다. `bootstrap-sha`는 SDK 패키징 작업 직전의 `main` commit이므로 첫 Release PR에는 이번 공개 패키징 변경부터 포함된다. 첫 Release PR이 merge되면 Release Please가 manifest에 `0.1.0`을 기록하며, 이후에는 그 값을 마지막 배포 버전으로 사용한다.
 
 Build job에는 registry credential이 없고 publish job만 `id-token: write`를 가진다. npm의 여러 package publish는 원자적이지 않지만, root package를 마지막에 게시해 불완전한 version을 일반 설치 경로에 노출하지 않는다. 실패 시 우선 GitHub Actions의 **Re-run failed jobs**만 사용한다. 그러면 같은 workflow run에 먼저 올라간 immutable artifact를 고정 이름으로 다시 소비하며, 성공한 build job을 재실행하거나 같은 version의 binary를 교체하지 않는다. 게시 로직 자체를 수정해야 하는 부분 실패라면 `Release` workflow를 수동 실행하고 원래 release run ID를 `artifact_run_id`에 입력한다. `repair-npm` job은 그 run의 Node.js artifact를 다시 조립하고 registry에 없는 platform과 root version만 게시한다. PyPI는 이미 게시된 wheel을 건너뛰고 npm publish script도 이미 게시된 platform package를 건너뛴다.
 
-Windows artifact의 npm package는 `rspdl-native-windows-x64`라는 공개 이름으로 게시한다. Root package는 `rspdl-win32-x64-msvc` dependency key에 npm alias를 사용하므로 기존 native loader와 `npm install rspdl` 사용법은 바뀌지 않는다.
+Windows artifact의 npm package는 `rspdl-native-windows-x64`라는 공개 이름으로 게시한다. `rspdl-core` root package는 기존 세 platform package를 그대로 재사용하고 `rspdl-win32-x64-msvc` dependency key에는 npm alias를 사용하므로 native loader를 바꾸지 않는다.
 
 `THIRD_PARTY_LICENSES.html`은 source-controlled release input이다. Verify workflow가 `cargo about generate --workspace --all-features --locked --fail` 결과와 일치하는지 검사한 뒤에만 merge하며, Python과 Node.js package build는 그 검증된 파일을 포함한다. Local packaging 전에 파일이 없다면 같은 명령으로 먼저 생성해야 한다.
 
@@ -61,9 +61,9 @@ Workflow는 API token 없이 `pypa/gh-action-pypi-publish`와 OIDC로 wheel만 �
 
 ## npm first-release bootstrap
 
-npm은 Trusted Publisher를 설정할 package가 먼저 존재해야 한다. 현재 `rspdl`과 다음 napi-rs platform package 이름이 비어 있는지 첫 release 직전에 다시 확인한다.
+npm은 Trusted Publisher를 설정할 package가 먼저 존재해야 한다. 현재 `rspdl-core`와 다음 napi-rs platform package 이름이 비어 있는지 첫 release 직전에 다시 확인한다.
 
-- `rspdl`
+- `rspdl-core`
 - `rspdl-linux-x64-gnu`
 - `rspdl-darwin-x64`
 - `rspdl-darwin-arm64`
@@ -73,7 +73,7 @@ npm은 Trusted Publisher를 설정할 package가 먼저 존재해야 한다. 현
 
 ```console
 for package in \
-  rspdl \
+  rspdl-core \
   rspdl-linux-x64-gnu \
   rspdl-darwin-x64 \
   rspdl-darwin-arm64 \
