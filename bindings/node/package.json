@@ -33,7 +33,7 @@
     }
   },
   "files": [
-    "index.js",
+    "native.cjs",
     "sdk.cjs",
     "sdk.mjs",
     "sdk.d.ts",

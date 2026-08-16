@@ -1,6 +1,6 @@
 'use strict'
 
-const native = require('./index.js')
+const native = require('./native.cjs')
 
 const WIRE_SCHEMA_VERSION = 1
 const SUPPORTED_LOCALE = 'ko-KR'
