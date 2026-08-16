@@ -35,7 +35,7 @@ def _encode(request: Mapping[str, Any]) -> str:
     return json.dumps(request, ensure_ascii=False, separators=(",", ":"))
 
 
-def compile(
+def compile(  # noqa: A001 - public SDK operation name
     sources: Sequence[Source],
     *,
     locale: str = SUPPORTED_LOCALE,
