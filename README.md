@@ -181,7 +181,7 @@ const response = await compile([source])
 console.log(response.result.files[0].diagnostics)
 ```
 
-두 package는 `compile`, runtime data를 검사하는 `check`, bounded virtual model을 찾는 `find_model`/`findModel`을 제공합니다. 문법·의미·runtime 진단과 model finding은 exception이 아니라 `result`에 보존되고, 지원하지 않는 schema/Locale 또는 잘못된 timeout/scope만 stable `RSPDL-SDK-*` 오류가 됩니다.
+두 package는 `compile`, runtime data를 검사하는 `check`, bounded virtual model을 찾는 `find_model`/`findModel`을 제공합니다. 문법·의미·runtime 진단과 model finding은 exception이 아니라 `result`에 보존됩니다. Native wire contract의 malformed JSON, 지원하지 않는 schema/Locale와 잘못된 SDK option은 stable `RSPDL-SDK-*` 오류가 됩니다.
 
 첫 배포 범위는 Linux x86_64 glibc, macOS 14 이상 x86_64·arm64, Windows x86_64입니다. Browser, Alpine/musl, Linux arm64, Bun, Deno와 PyPy는 아직 지원하지 않습니다. Python wheel은 CPython stable ABI로 3.11 이상을 지원합니다.
 

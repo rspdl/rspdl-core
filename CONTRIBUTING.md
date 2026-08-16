@@ -119,6 +119,11 @@ SDK package를 바꿨다면 Rust harness와 함께 해당 package smoke test도 
 ```console
 cargo test -p rspdl-sdk
 
+python -m pip install 'maturin>=1.14,<2'
+python -m maturin build --locked --out dist
+python -m pip install --force-reinstall --no-index --find-links dist rspdl
+python -m unittest discover -s bindings/python/tests -v
+
 cd bindings/node
 npm ci
 npm run build:debug

@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 import rspdl
 
@@ -8,6 +9,7 @@ VALID_SOURCE = """@모듈 재고(inventory)
 재고 항목(item)은 다음 필드들로 구성되어 있다.
     이름(name): 필수 문자열
 """
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
 class SdkTest(unittest.TestCase):
@@ -42,6 +44,27 @@ class SdkTest(unittest.TestCase):
 
         self.assertEqual(checked["schema_version"], 1)
         self.assertEqual(modeled["schema_version"], 1)
+
+    def test_scope_and_timeout_boundaries_raise_stable_errors(self) -> None:
+        source = {"path": "inventory.rspdl", "text": VALID_SOURCE}
+
+        for scope in (0, 33):
+            with self.subTest(scope=scope):
+                with self.assertRaisesRegex(RuntimeError, "RSPDL-SDK-004"):
+                    rspdl.find_model(source, scope_per_model=scope)
+
+        with self.assertRaisesRegex(RuntimeError, "RSPDL-SDK-004"):
+            rspdl.check([source], {"records": {}}, timeout_ms=0)
+
+    def test_unsupported_model_finding_is_not_reported_as_success(self) -> None:
+        source_text = (
+            REPOSITORY_ROOT / "examples" / "field-provenance.rspdl"
+        ).read_text(encoding="utf-8")
+        modeled = rspdl.find_model(
+            {"path": "field-provenance.rspdl", "text": source_text}
+        )
+
+        self.assertEqual(modeled["result"]["result"]["status"], "unsupported")
 
 
 if __name__ == "__main__":

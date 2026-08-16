@@ -61,10 +61,48 @@ export interface WorkspaceCheckReport {
   runtime_diagnostics: RuntimeDiagnostic[]
 }
 
+export interface ModelCompilation {
+  module: JsonObject | null
+  action_data_mutation_provenance?: JsonObject[]
+  diagnostics: Diagnostic[]
+}
+
+export type ModelFindingResult =
+  | {
+      status: 'sat'
+      scope_per_model: number
+      witness: JsonObject
+    }
+  | {
+      status: 'unsat_within_bound'
+      scope_per_model: number
+      core_rule_ids: string[]
+    }
+  | {
+      status: 'unknown'
+      scope_per_model: number
+      rule_id: string
+      message_key: string
+      reason: string
+    }
+  | {
+      status: 'unsupported'
+      scope_per_model: number
+      rule_id: string
+      message_key: string
+      constructs: string[]
+    }
+
+export interface ModelFindingFailure {
+  rule_id: string
+  message_key: string
+  reason: string
+}
+
 export interface ModelFindingReport {
-  compilation: JsonObject
-  result?: JsonObject
-  failure?: JsonObject
+  compilation: ModelCompilation
+  result?: ModelFindingResult
+  failure?: ModelFindingFailure
 }
 
 export interface SdkResponse<T> {

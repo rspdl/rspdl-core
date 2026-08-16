@@ -38,6 +38,26 @@ test('invalid SDK configuration rejects with a stable code', async () => {
   )
 })
 
+test('explicit null options reject with stable SDK option errors', async () => {
+  const source = { path: 'inventory.rspdl', text: validSource }
+
+  await assert.rejects(sdk.compile([source], null), /RSPDL-SDK-004.*options/)
+  await assert.rejects(sdk.compile([source], []), /RSPDL-SDK-004.*options/)
+  await assert.rejects(sdk.compile([source], 'invalid'), /RSPDL-SDK-004.*options/)
+  await assert.rejects(
+    sdk.compile([source], { locale: null }),
+    /RSPDL-SDK-004.*locale/,
+  )
+  await assert.rejects(
+    sdk.check([source], { records: {} }, { timeoutMs: null }),
+    /RSPDL-SDK-004.*timeoutMs/,
+  )
+  await assert.rejects(
+    sdk.findModel(source, { scopePerModel: null }),
+    /RSPDL-SDK-004.*scopePerModel/,
+  )
+})
+
 test('ESM, check and model entry points work', async () => {
   const esm = await import('../sdk.mjs')
   const source = { path: 'inventory.rspdl', text: validSource }

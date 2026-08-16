@@ -37,7 +37,11 @@ impl Task for JsonTask {
 }
 
 fn binding_error(error: SdkError) -> Error {
-    Error::new(Status::InvalidArg, format!("{}: {error}", error.code()))
+    let status = match &error {
+        SdkError::ResponseSerialization { .. } => Status::GenericFailure,
+        _ => Status::InvalidArg,
+    };
+    Error::new(status, format!("{}: {error}", error.code()))
 }
 
 #[napi(js_name = "compileJson")]

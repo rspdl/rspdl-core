@@ -34,7 +34,9 @@ owners:
 
 최초 bootstrap에서는 `.release-please-manifest.json`을 비워 두고 `initial-version`을 `0.1.0`으로 고정한다. `bootstrap-sha`는 SDK 패키징 작업 직전의 `main` commit이므로 첫 Release PR에는 이번 공개 패키징 변경부터 포함된다. 첫 Release PR이 merge되면 Release Please가 manifest에 `0.1.0`을 기록하며, 이후에는 그 값을 마지막 배포 버전으로 사용한다.
 
-Build job에는 registry credential이 없고 publish job만 `id-token: write`를 가진다. npm의 여러 package publish는 원자적이지 않지만, root package를 마지막에 게시해 불완전한 version을 일반 설치 경로에 노출하지 않는다. 실패한 release는 같은 source와 artifact로 재실행하며 이미 게시된 Python wheel은 건너뛴다. 같은 version의 binary를 다시 빌드해 교체하지 않는다.
+Build job에는 registry credential이 없고 publish job만 `id-token: write`를 가진다. npm의 여러 package publish는 원자적이지 않지만, root package를 마지막에 게시해 불완전한 version을 일반 설치 경로에 노출하지 않는다. 실패 시 GitHub Actions의 **Re-run failed jobs**만 사용한다. 그러면 같은 workflow run에 먼저 올라간 immutable artifact를 고정 이름으로 다시 소비하며, 성공한 build job을 재실행하거나 같은 version의 binary를 교체하지 않는다. 전체 workflow 재실행은 Release Please의 이미 생성된 release 상태와 artifact immutability를 우회하므로 지원하지 않는다. PyPI는 이미 게시된 wheel을 건너뛰고 napi-rs publisher도 이미 게시된 platform package를 건너뛴다.
+
+`THIRD_PARTY_LICENSES.html`은 source-controlled release input이다. Verify workflow가 `cargo about generate --workspace --all-features --locked --fail` 결과와 일치하는지 검사한 뒤에만 merge하며, Python과 Node.js package build는 그 검증된 파일을 포함한다. Local packaging 전에 파일이 없다면 같은 명령으로 먼저 생성해야 한다.
 
 ## GitHub one-time setup
 
@@ -99,3 +101,7 @@ done
 
 - [Python and Node.js SDK Distribution](../adr/0004-python-node-sdk-distribution.md)
 - [RSPDL Compiler Architecture](../architecture.md)
+- [Release workflow](../../.github/workflows/release.yml)
+- [Release metadata checker](../../scripts/check-release-metadata.py)
+- [Python package smoke tests](../../bindings/python/tests/test_sdk.py)
+- [Node.js package smoke tests](../../bindings/node/tests/sdk.test.cjs)

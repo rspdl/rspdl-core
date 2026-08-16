@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Verify knowledge, release metadata, formatting, lint, and tests
         run: ./scripts/check.sh
 
@@ -29,6 +31,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Audit Cargo dependency policy
         uses: EmbarkStudios/cargo-deny-action@b66acf5e9fe20f8aba065be86778a8a4c846f902 # v2
         with:
@@ -38,7 +42,13 @@ jobs:
       - name: Verify packaged third-party license report
         run: |
           cargo install cargo-about --locked --version 0.9.1 --features cli
-          cargo about generate -o /tmp/rspdl-third-party-licenses.html about.hbs
+          cargo about generate \
+            --workspace \
+            --all-features \
+            --locked \
+            --fail \
+            -o /tmp/rspdl-third-party-licenses.html \
+            about.hbs
           cmp THIRD_PARTY_LICENSES.html /tmp/rspdl-third-party-licenses.html
 
   node-sdk:
@@ -50,6 +60,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -60,10 +72,17 @@ jobs:
         run: npm ci
       - name: Build native addon
         run: npm run build:debug
-      - name: Test CommonJS, ESM, and TypeScript contracts
+      - name: Test Node.js 24 CommonJS, ESM, and TypeScript contracts
         run: npm test && npm run typecheck
+      - name: Set up the Node.js runtime floor
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22.13.0"
+          package-manager-cache: false
+      - name: Test the Node.js 22.13 runtime floor
+        run: npm test
       - name: Inspect npm package contents
-        run: npm run licenses && npm pack --dry-run --ignore-scripts
+        run: npm run licenses && npm run check:package
 
   python-sdk:
     name: Python SDK wheel smoke test
@@ -71,6 +90,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
@@ -83,6 +104,14 @@ jobs:
           manylinux: "2_28"
           args: --release --locked --compatibility pypi --out dist
       - name: Install and test built wheel
+        run: |
+          python -m pip install --no-index --find-links dist rspdl
+          python -m unittest discover -s bindings/python/tests -v
+      - name: Set up the newest supported Python runtime
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14"
+      - name: Test the abi3 wheel on Python 3.14
         run: |
           python -m pip install --no-index --find-links dist rspdl
           python -m unittest discover -s bindings/python/tests -v

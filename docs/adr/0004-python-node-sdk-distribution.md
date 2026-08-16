@@ -45,7 +45,7 @@ CLI subprocess wrapper는 구현은 작지만 프로세스 시작 비용, binary
 - `compile`과 `check`는 항상 source 배열을 받아 단일·복수 source에서 같은 workspace result shape을 반환한다.
 - `find_model`은 현재 compiler 계약에 맞춰 source 하나, scope와 timeout을 받는다.
 - source·semantic·runtime diagnostic과 model `UNKNOWN` 또는 `UNSUPPORTED`는 정상 response에 남긴다.
-- malformed JSON, unsupported schema/Locale와 invalid SDK option만 binding error다.
+- malformed JSON, unsupported schema/Locale와 invalid SDK option만 binding error로 분류한다.
 - response는 구조체와 정렬된 collection에서 직렬화하고 wrapper가 필드를 재작성하지 않는다.
 
 ### Python package

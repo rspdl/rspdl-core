@@ -8,7 +8,15 @@ const repositoryRoot = resolve(packageRoot, '..', '..')
 const licenseFiles = ['LICENSE', 'README.md', 'THIRD_PARTY_LICENSES.html']
 
 for (const name of licenseFiles) {
-  copyFileSync(resolve(repositoryRoot, name), resolve(packageRoot, name))
+  const source = resolve(repositoryRoot, name)
+  if (!existsSync(source)) {
+    const recovery =
+      name === 'THIRD_PARTY_LICENSES.html'
+        ? 'From the repository root, run cargo about generate --workspace --all-features --locked --fail -o THIRD_PARTY_LICENSES.html about.hbs before packaging.'
+        : `Restore ${name} from the source checkout before packaging.`
+    throw new Error(`Missing ${name}. ${recovery}`)
+  }
+  copyFileSync(source, resolve(packageRoot, name))
 }
 
 const platformPackages = resolve(packageRoot, 'npm')
@@ -23,7 +31,7 @@ if (existsSync(platformPackages)) {
 
     const manifestPath = resolve(platformRoot, 'package.json')
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-    manifest.files = [...new Set([...manifest.files, ...licenseFiles])]
+    manifest.files = [...new Set([...(manifest.files ?? []), ...licenseFiles])]
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
   }
 }
