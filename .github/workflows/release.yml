@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Release workflow run containing the Node.js artifacts to recover
+        required: true
+        type: string
 
 permissions: {}
 
@@ -14,6 +20,7 @@ concurrency:
 jobs:
   release-please:
     name: Prepare or create release
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -214,3 +221,57 @@ jobs:
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ env.NPM_BOOTSTRAP_TOKEN }}
+
+  repair-npm:
+    name: Repair npm release from existing artifacts
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    env:
+      NPM_CONFIG_PROVENANCE: "true"
+      NPM_BOOTSTRAP_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+    defaults:
+      run:
+        working-directory: bindings/node
+    steps:
+      - name: Check out current release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Node.js publishing runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install Trusted Publishing capable npm
+        run: npm install --global npm@11.15.0
+      - name: Install package tooling
+        run: npm ci
+      - name: Create platform package directories
+        run: npx napi create-npm-dirs
+      - name: Download native addons from the original release run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: node-*
+          path: bindings/node/artifacts
+          merge-multiple: true
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+      - name: Assemble and validate every platform package
+        run: npx napi artifacts
+      - name: Publish only missing platform and root packages
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ env.NPM_BOOTSTRAP_TOKEN }}
+        run: |
+          package_version=$(node --print "require('./package.json').version")
+          if npm view "rspdl@${package_version}" version --json >/dev/null 2>&1; then
+            echo "Skipping existing rspdl@${package_version}"
+            exit 0
+          fi
+          npm publish --access public
