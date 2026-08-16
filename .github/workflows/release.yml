@@ -1,0 +1,206 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Prepare or create release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Update Release PR or create GitHub release
+        id: release
+        uses: googleapis/release-please-action@8b8fd2cc23b2e18957157a9d923d75aa0c6f6ad5 # v4
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build-python:
+    name: Python wheel (${{ matrix.target }})
+    if: needs.release-please.outputs.release_created == 'true'
+    needs: release-please
+    runs-on: ${{ matrix.runner }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: "2_28"
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            manylinux: "off"
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            manylinux: "off"
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            manylinux: "off"
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - name: Build wheel
+        uses: PyO3/maturin-action@423a6347767a8b16e65c2a7a7042e4a921528da8 # v1
+        with:
+          maturin-version: v1.14.1
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --locked --compatibility pypi --out dist
+      - name: Install and test wheel
+        run: |
+          python -m pip install --no-index --find-links dist rspdl
+          python -m unittest discover -s bindings/python/tests -v
+      - name: Upload wheel
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: python-${{ matrix.target }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  build-node:
+    name: Node.js addon (${{ matrix.target }})
+    if: needs.release-please.outputs.release_created == 'true'
+    needs: release-please
+    runs-on: ${{ matrix.runner }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            build_args: --use-napi-cross
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            build_args: ""
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            build_args: ""
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            build_args: ""
+    defaults:
+      run:
+        working-directory: bindings/node
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: bindings/node/package-lock.json
+      - name: Install package tooling
+        run: npm ci
+      - name: Build native addon
+        run: npm run build -- --target ${{ matrix.target }} ${{ matrix.build_args }}
+        shell: bash
+      - name: Test native addon
+        run: npm test
+      - name: Type-check public API
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: npm run typecheck
+      - name: Upload native addon
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: node-${{ matrix.target }}
+          path: bindings/node/rspdl.*.node
+          if-no-files-found: error
+
+  publish-pypi:
+    name: Publish to PyPI
+    if: needs.release-please.outputs.release_created == 'true'
+    needs:
+      - release-please
+      - build-python
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: python-*
+          path: dist
+          merge-multiple: true
+      - name: Publish wheels with Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          skip-existing: true
+
+  publish-npm:
+    name: Publish to npm
+    if: needs.release-please.outputs.release_created == 'true'
+    needs:
+      - release-please
+      - build-node
+      - publish-pypi
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      NPM_CONFIG_PROVENANCE: "true"
+      NPM_BOOTSTRAP_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+    defaults:
+      run:
+        working-directory: bindings/node
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Node.js publishing runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install Trusted Publishing capable npm
+        run: npm install --global npm@11.15.0
+      - name: Install package tooling
+        run: npm ci
+      - name: Create platform package directories
+        run: npx napi create-npm-dirs
+      - name: Download native addons
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: node-*
+          path: bindings/node/artifacts
+          merge-multiple: true
+      - name: Assemble and validate every platform package
+        run: npx napi artifacts
+      - name: Add project and dependency licenses
+        run: npm run licenses
+      - name: Publish platform packages, then root package with Trusted Publishing
+        if: env.NPM_BOOTSTRAP_TOKEN == ''
+        run: npm publish --access public
+      - name: Bootstrap platform and root package names on the first release
+        if: env.NPM_BOOTSTRAP_TOKEN != ''
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ env.NPM_BOOTSTRAP_TOKEN }}

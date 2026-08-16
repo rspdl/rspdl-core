@@ -1,8 +1,10 @@
 [package]
 name = "rspdl-domain"
-version = "0.1.0"
+version.workspace = true
 description = "Locale-independent semantic domain for RSPDL"
 edition.workspace = true
+license.workspace = true
+publish = false
 repository.workspace = true
 rust-version.workspace = true
 

@@ -17,6 +17,9 @@ use rspdl_solver_z3::Z3Solver;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+/// Maximum per-model scope accepted by bounded model finding.
+pub const MAX_MODEL_SCOPE_PER_MODEL: usize = rspdl_domain::MAX_BOUNDED_SCOPE_PER_MODEL;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Compilation {
     pub module: Option<SemanticModule>,

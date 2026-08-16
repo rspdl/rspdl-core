@@ -452,15 +452,15 @@ fn strip_final_marker(
         return Ok((values, marker));
     }
     let last = values.last_mut().expect("values is not empty");
-    if let TokenKind::Word(word) = &mut last.kind {
-        if let Some((base, marker)) = markers.iter().find_map(|marker| {
+    if let TokenKind::Word(word) = &mut last.kind
+        && let Some((base, marker)) = markers.iter().find_map(|marker| {
             word.strip_suffix(marker)
                 .filter(|base| !base.is_empty())
                 .map(|base| (base.to_owned(), (*marker).to_owned()))
-        }) {
-            *word = base;
-            return Ok((values, marker));
-        }
+        })
+    {
+        *word = base;
+        return Ok((values, marker));
     }
     Err(Diagnostic::error(
         "RSPDL-KO-SYN-071",
@@ -1495,18 +1495,18 @@ impl<'a> BodyCursor<'a> {
                     return Err(self.error("ko.syntax.not_equal_shape_required"));
                 }
             }
-            if let Some(number) = value.strip_suffix("보다") {
-                if is_integer(number) {
-                    self.index += 1;
-                    let operator = match self.next_word() {
-                        Some("커야") => RelationOperatorAst::GreaterThan,
-                        Some("작아야") => RelationOperatorAst::LessThan,
-                        _ => {
-                            return Err(self.error("ko.syntax.integer_order_shape_required"));
-                        }
-                    };
-                    return Ok((operator, LiteralAst::Integer(number.to_owned())));
-                }
+            if let Some(number) = value.strip_suffix("보다")
+                && is_integer(number)
+            {
+                self.index += 1;
+                let operator = match self.next_word() {
+                    Some("커야") => RelationOperatorAst::GreaterThan,
+                    Some("작아야") => RelationOperatorAst::LessThan,
+                    _ => {
+                        return Err(self.error("ko.syntax.integer_order_shape_required"));
+                    }
+                };
+                return Ok((operator, LiteralAst::Integer(number.to_owned())));
             }
             if is_integer(value) {
                 let number = value.clone();
@@ -1623,7 +1623,7 @@ fn lint_marker(
     else {
         return;
     };
-    let expected = if (last as u32 - '가' as u32) % 28 == 0 {
+    let expected = if (last as u32 - '가' as u32).is_multiple_of(28) {
         vowel
     } else {
         consonant

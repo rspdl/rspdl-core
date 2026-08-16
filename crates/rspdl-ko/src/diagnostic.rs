@@ -419,7 +419,7 @@ fn object_marker(value: &str) -> &'static str {
         .last()
         .filter(|character| ('가'..='힣').contains(character))
     {
-        Some(last) if (last as u32 - '가' as u32) % 28 == 0 => "를",
+        Some(last) if (last as u32 - '가' as u32).is_multiple_of(28) => "를",
         Some(_) | None => "을",
     }
 }
@@ -430,7 +430,7 @@ fn subject_marker(value: &str) -> &'static str {
         .last()
         .filter(|character| ('가'..='힣').contains(character))
     {
-        Some(last) if (last as u32 - '가' as u32) % 28 == 0 => "가",
+        Some(last) if (last as u32 - '가' as u32).is_multiple_of(28) => "가",
         Some(_) | None => "이",
     }
 }

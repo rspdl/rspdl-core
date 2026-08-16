@@ -28,7 +28,10 @@ cargo test --workspace
 - `crates/rspdl-ko`: 한국어 scanner, parser, AST, lowering과 formatter
 - `crates/rspdl-compiler`: frontend와 backend를 연결하는 공개 compiler facade
 - `crates/rspdl-solver-z3`: Z3 기반 constraint solver
+- `crates/rspdl-sdk`: Python과 Node.js binding이 공유하는 versioned JSON facade
 - `crates/rspdl-cli`: 파일 입출력, 출력 형식과 exit code
+- `bindings/python`: PyO3 stable-ABI Python package
+- `bindings/node`: napi-rs Node.js package와 TypeScript declaration
 - `examples`: 사람이 읽고 직접 실행할 수 있는 RSPDL 예제
 - `docs/product`: 제품의 북극성과 사용자 약속
 - `docs/problems`: 반복되는 인과 원인을 기록한 Problem Topic
@@ -110,6 +113,20 @@ python3 .agents/skills/discover-rspdl-knowledge/scripts/knowledge_index.py build
 ```
 
 문서 또는 예제를 변경했다면 관련 명령을 직접 실행하고, 사용한 명령과 결과를 Pull Request에 적어 주세요.
+
+SDK package를 바꿨다면 Rust harness와 함께 해당 package smoke test도 실행합니다.
+
+```console
+cargo test -p rspdl-sdk
+
+cd bindings/node
+npm ci
+npm run build:debug
+npm test
+npm run typecheck
+```
+
+Python wheel build와 registry release 절차는 [Package Release Guide](docs/guides/releasing-packages.md)를 따릅니다. Package version은 직접 따로 올리지 않고 Release Please가 Cargo workspace, npm metadata와 changelog를 한 Release PR에서 함께 갱신하게 합니다.
 
 ## Pull Request 작성
 

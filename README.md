@@ -51,6 +51,7 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 - 단일 닫힌 enum decision point의 정적 gap, compatible overlap 및 allow/deny conflict 분석 API
 - 결정적 직접 runtime policy match와 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - JSON compilation 및 diagnostic 출력
+- 같은 versioned JSON contract를 사용하는 Python 3.11+와 Node.js 22/24 native SDK
 
 화면 간 순서와 분기, 삭제 이후 접근, 실제 relation data binding과 join 실행, 3항 이상 관계·임의 양화식, 일반 계산식, 조건부 정책의 한국어 문법·compiler 진단 연결, default·override와 unreachable 분석은 목표 범위이지만 아직 구현되지 않았습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
 
@@ -133,6 +134,57 @@ cargo build --workspace
 ./scripts/check.sh
 ```
 
+## Python과 TypeScript에서 사용하기
+
+RSPDL 분석 core는 Python과 Node.js에 같은 versioned JSON 결과를 제공합니다. 지원 플랫폼에서는 Rust, CMake 또는 Z3를 설치하지 않고 package manager만으로 미리 빌드된 native artifact를 설치합니다.
+
+Python 3.11 이상:
+
+```console
+pip install rspdl
+```
+
+```python
+import rspdl
+
+source = {
+    "path": "inventory.rspdl",
+    "text": """@모듈 재고(inventory)
+
+재고 항목(item)은 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열
+""",
+}
+
+response = rspdl.compile([source])
+print(response["result"]["files"][0]["diagnostics"])
+```
+
+Node.js 22 또는 24와 TypeScript:
+
+```console
+npm install rspdl
+```
+
+```typescript
+import { compile, type Source } from 'rspdl'
+
+const source: Source = {
+  path: 'inventory.rspdl',
+  text: `@모듈 재고(inventory)
+
+재고 항목(item)은 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열`,
+}
+
+const response = await compile([source])
+console.log(response.result.files[0].diagnostics)
+```
+
+두 package는 `compile`, runtime data를 검사하는 `check`, bounded virtual model을 찾는 `find_model`/`findModel`을 제공합니다. 문법·의미·runtime 진단과 model finding은 exception이 아니라 `result`에 보존되고, 지원하지 않는 schema/Locale 또는 잘못된 timeout/scope만 stable `RSPDL-SDK-*` 오류가 됩니다.
+
+첫 배포 범위는 Linux x86_64 glibc, macOS 14 이상 x86_64·arm64, Windows x86_64입니다. Browser, Alpine/musl, Linux arm64, Bun, Deno와 PyPy는 아직 지원하지 않습니다. Python wheel은 CPython stable ABI로 3.11 이상을 지원합니다.
+
 ## 문서 지도
 
 - [Product Vision](docs/product/vision.md): 누구의 어떤 고통을 왜 해결하는가
@@ -145,6 +197,8 @@ cargo build --workspace
 - [Problem-driven Development](docs/guides/problem-driven-development.md): 원인에서 코드와 증명까지 연결하는 기여 흐름
 - [Frontend and Semantic Analysis Contract](docs/specs/frontend-semantic-analysis-contract.md): 다른 표현 언어가 구현할 stable-ID IR과 진단 계약
 - [Knowledge Index](docs/index.md): RFC, ADR, architecture를 포함한 전체 문서 인덱스
+- [Python and Node.js SDK Distribution](docs/adr/0004-python-node-sdk-distribution.md): 공통 wire contract, native package와 version 결정
+- [Package Release Guide](docs/guides/releasing-packages.md): Release PR, registry Trusted Publishing과 첫 npm bootstrap 절차
 - [Contributing](CONTRIBUTING.md): 환경 설정, 테스트와 PR 기준
 
 기능을 제안하거나 구현할 때는 먼저 기존 Problem Topic을 연결하세요. 기존 원인으로 설명할 수 없을 때만 새 Problem Topic을 만듭니다. 자세한 절차는 [CONTRIBUTING.md](CONTRIBUTING.md)에 있습니다.
@@ -152,3 +206,5 @@ cargo build --workspace
 ## 프로젝트 상태
 
 RSPDL은 초기 단계의 실험적 오픈소스 프로젝트입니다. 문법과 public API는 `0.x` 동안 변경될 수 있습니다.
+
+Source와 공식 package는 [Apache License 2.0](LICENSE)으로 배포되며, binary package에는 [제3자 의존성 라이선스](THIRD_PARTY_LICENSES.html)가 함께 포함됩니다.

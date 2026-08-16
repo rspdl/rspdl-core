@@ -1,20 +1,15 @@
 [package]
-name = "rspdl-cli"
+name = "rspdl-sdk"
 version.workspace = true
-description = "Command-line interface for RSPDL"
+description = "Versioned JSON SDK facade for RSPDL language bindings"
 edition.workspace = true
 license.workspace = true
 publish = false
 repository.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "rspdl"
-path = "src/main.rs"
-
 [dependencies]
 rspdl-compiler = { path = "../rspdl-compiler" }
-rspdl-domain = { path = "../rspdl-domain" }
-rspdl-ko = { path = "../rspdl-ko" }
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true

@@ -1,7 +1,12 @@
 [package]
 name = "rspdl-solver-z3"
-version = "0.1.0"
+version.workspace = true
+description = "Z3 solver backend for RSPDL"
 edition.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+rust-version.workspace = true
 [dependencies]
 rspdl-domain = { path = "../rspdl-domain" }
 thiserror.workspace = true
