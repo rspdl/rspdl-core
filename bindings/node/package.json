@@ -1,0 +1,75 @@
+{
+  "name": "rspdl",
+  "version": "0.1.0",
+  "description": "Node.js and TypeScript SDK for deterministic RSPDL planning analysis",
+  "license": "Apache-2.0",
+  "author": "RSPDL maintainers",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rspdl/rspdl-core.git",
+    "directory": "bindings/node"
+  },
+  "bugs": {
+    "url": "https://github.com/rspdl/rspdl-core/issues"
+  },
+  "homepage": "https://github.com/rspdl/rspdl-core#readme",
+  "keywords": [
+    "rspdl",
+    "policy",
+    "planning",
+    "compiler",
+    "analysis",
+    "napi-rs"
+  ],
+  "type": "commonjs",
+  "main": "sdk.cjs",
+  "module": "sdk.mjs",
+  "types": "sdk.d.ts",
+  "exports": {
+    ".": {
+      "types": "./sdk.d.ts",
+      "import": "./sdk.mjs",
+      "require": "./sdk.cjs"
+    }
+  },
+  "files": [
+    "index.js",
+    "sdk.cjs",
+    "sdk.mjs",
+    "sdk.d.ts",
+    "rspdl.*.node",
+    "LICENSE",
+    "README.md",
+    "THIRD_PARTY_LICENSES.html"
+  ],
+  "engines": {
+    "node": "^22.13.0 || >=24.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "napi": {
+    "binaryName": "rspdl",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "test": "node --test tests/*.test.cjs",
+    "typecheck": "tsc --noEmit -p tests/tsconfig.json",
+    "licenses": "node scripts/prepare-licenses.mjs",
+    "check:package": "node scripts/check-package-contents.mjs",
+    "prepack": "npm run licenses",
+    "prepublishOnly": "npm run licenses && napi pre-publish -t npm"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.8.6",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,3 +1,12 @@
 /target/
 __pycache__/
 *.py[cod]
+/bindings/node/LICENSE
+/bindings/node/README.md
+/bindings/node/THIRD_PARTY_LICENSES.html
+/bindings/node/index.d.ts
+/bindings/node/index.js
+/bindings/node/artifacts/
+/bindings/node/node_modules/
+/bindings/node/npm/
+/bindings/node/rspdl.*.node

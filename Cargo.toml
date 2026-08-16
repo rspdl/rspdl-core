@@ -1,26 +1,35 @@
 [workspace]
 members = [
+    "bindings/node",
+    "bindings/python",
     "crates/rspdl-domain",
     "crates/rspdl-grammar-compiler",
     "crates/rspdl-solver-z3",
     "crates/rspdl-ko",
     "crates/rspdl-compiler",
     "crates/rspdl-cli",
+    "crates/rspdl-sdk",
 ]
 resolver = "3"
 
 [workspace.package]
 edition = "2024"
-repository = "https://github.com/rspdl/rspdl-domain"
-rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/rspdl/rspdl-core"
+rust-version = "1.88"
+version = "0.1.0"
 
 [workspace.dependencies]
 num-bigint = "0.4.6"
 num-prime = { version = "0.5.0", default-features = false }
 num-traits = "0.2.19"
+pyo3 = "0.29.2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.17"
+napi = { version = "3.12.1", default-features = false, features = ["napi8", "async"] }
+napi-build = "2.4.1"
+napi-derive = "3.6.3"
 z3 = { version = "0.20.1", features = ["vendored"] }
 
 [profile.dev.package.z3-sys]

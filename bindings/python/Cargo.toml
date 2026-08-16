@@ -1,0 +1,17 @@
+[package]
+name = "rspdl-python"
+version.workspace = true
+description = "Python native binding for RSPDL"
+edition.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { workspace = true, features = ["abi3-py311", "extension-module"] }
+rspdl-sdk = { path = "../../crates/rspdl-sdk" }

@@ -11,12 +11,15 @@ topics:
 related:
   - core-application-boundary
   - executable-frontend-grammar-compiler
+  - python-node-sdk-distribution
   - rust-korean-first-frontend
   - rspdl-compiler-architecture
+  - package-release-guide
   - problem-driven-development
   - rspdl-language-prd
   - rspdl-product-vision
   - data-lifecycle-modeling-gap
+  - downstream-analysis-integration-friction
   - frontend-grammar-implementation-drift
   - policy-consistency-blind-spots
   - controlled-korean-surface-grammar
@@ -26,7 +29,7 @@ related:
   - total-policy-condition-space-analysis
   - typed-domains-and-logic-core
   - frontend-semantic-analysis-contract
-last_updated: "2026-08-15"
+last_updated: "2026-08-16"
 owners:
   - rspdl-maintainers
 ---
@@ -39,12 +42,15 @@ owners:
 | --- | --- | --- | --- | --- | --- | --- |
 | `core-application-boundary` | `adr` | `active` | [Core와 Application Projection 경계](adr/0002-core-application-boundary.md) | Keeps compiler, IR, semantic analysis, and diagnostics in the RSPDL core while assigning view projections, filtering, and aggregation to applications. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `compiler-boundary`, `semantic-ir`, `application-projection`, `policy-tables` |
 | `executable-frontend-grammar-compiler` | `adr` | `accepted` | [실행 가능한 Frontend Grammar Compiler](adr/0003-executable-frontend-grammar-compiler.md) | Selects a small RSPDL-specific EBNF compiler and production-by-production differential migration instead of duplicating normative grammar in handwritten parsers. | `frontend-grammar-implementation-drift` | `executable-grammar`, `parser-generation`, `frontend-infrastructure`, `differential-testing` |
+| `python-node-sdk-distribution` | `adr` | `accepted` | [Python and Node.js SDK Distribution](adr/0004-python-node-sdk-distribution.md) | Selects a shared JSON SDK facade with PyO3 and napi-rs native packages plus OIDC-based coordinated releases. | `downstream-analysis-integration-friction` | `python`, `nodejs`, `sdk`, `native-bindings`, `package-release` |
 | `rust-korean-first-frontend` | `adr` | `accepted` | [Rust와 한국어 우선 독립 Locale Frontend](adr/0001-rust-korean-first-frontends.md) | Selects Rust, a Korean-first rollout, and independent deterministic frontends that lower surface names to a shared stable-ID Unlinked IR. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `rust`, `korean-first`, `controlled-language`, `locale-frontends`, `deterministic-parsing` |
-| `rspdl-compiler-architecture` | `architecture` | `proposed` | [RSPDL Compiler Architecture](architecture.md) | Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded relational model-finding path, dependency direction, and tests. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `frontend-grammar-implementation-drift` | `rust`, `compiler-architecture`, `ko-KR`, `semantic-ir`, `diagnostics`, `conformance` |
+| `rspdl-compiler-architecture` | `architecture` | `proposed` | [RSPDL Compiler Architecture](architecture.md) | Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded model finding, cross-language SDK distribution, dependency direction, and tests. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `frontend-grammar-implementation-drift`, `downstream-analysis-integration-friction` | `rust`, `compiler-architecture`, `ko-KR`, `semantic-ir`, `diagnostics`, `conformance` |
+| `package-release-guide` | `guide` | `active` | [Python and Node.js Package Release Guide](guides/releasing-packages.md) | Configures Release Please, PyPI and npm so a reviewed Release PR merge publishes tested native packages. | `downstream-analysis-integration-friction` | `release`, `pypi`, `npm`, `trusted-publishing`, `native-package` |
 | `problem-driven-development` | `guide` | `active` | [Problem-driven Development](guides/problem-driven-development.md) | Defines how contributors trace every product or language change from a durable causal problem through evidence and conformance tests. | - | `contribution-workflow`, `intent-traceability`, `problem-topic`, `definition-of-done` |
 | `rspdl-language-prd` | `prd` | `draft` | [RSPDL Product Requirements](prd.md) | Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `language-design`, `data-lifecycle`, `policy-analysis`, `semantic-ir`, `diagnostics`, `conformance` |
 | `rspdl-product-vision` | `prd` | `active` | [RSPDL Product Vision](product/vision.md) | Defines the product promise of moving policy and data decisions before implementation while preserving explicitly modeled intent. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `product-vision`, `planning-to-implementation`, `shift-left-validation`, `canonical-intent` |
 | `data-lifecycle-modeling-gap` | `problem` | `active` | [Data Lifecycle Modeling Gap](problems/0001-data-lifecycle-modeling-gap.md) | Planning artifacts often omit when data comes into existence, changes, disappears, and remains available to dependent behavior. | - | `data-lifecycle`, `state-transition`, `derivation`, `deletion-impact` |
+| `downstream-analysis-integration-friction` | `problem` | `active` | [Downstream Analysis Integration Friction](problems/0004-downstream-analysis-integration-friction.md) | Applications outside Rust must rebuild process, serialization, and release glue before they can consume the same RSPDL analysis contract. | - | `downstream-integration`, `language-sdk`, `package-distribution`, `analysis-contract` |
 | `frontend-grammar-implementation-drift` | `problem` | `active` | [Frontend Grammar Implementation Drift](problems/0003-frontend-grammar-implementation-drift.md) | Normative grammar and executable parsers are maintained separately, causing repeated implementation work and undetected drift as surface languages grow. | - | `frontend-development`, `executable-grammar`, `parser-maintenance`, `specification-drift`, `regression-safety` |
 | `policy-consistency-blind-spots` | `problem` | `active` | [Policy Consistency Blind Spots](problems/0002-policy-consistency-blind-spots.md) | Prose planning hides contradictory, uncovered, overlapping, and unreachable policy branches that become visible only during implementation. | - | `policy-conflict`, `policy-gap`, `condition-coverage`, `counterexample` |
 | `controlled-korean-surface-grammar` | `rfc` | `proposed` | [Controlled Korean Surface Grammar](rfcs/0001-controlled-korean-surface-grammar.md) | Proposes a deterministic Korean surface grammar that treats particles and endings as structural markers rather than morphology. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `frontend-grammar-implementation-drift` | `ko-KR`, `controlled-language`, `surface-grammar`, `cfg`, `parser`, `diagnostics` |

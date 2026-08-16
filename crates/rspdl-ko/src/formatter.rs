@@ -379,7 +379,7 @@ fn has_final_consonant(value: &str) -> bool {
         .chars()
         .last()
         .filter(|character| ('가'..='힣').contains(character))
-        .is_some_and(|character| (character as u32 - '가' as u32) % 28 != 0)
+        .is_some_and(|character| !(character as u32 - '가' as u32).is_multiple_of(28))
 }
 
 #[cfg(test)]

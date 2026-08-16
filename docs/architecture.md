@@ -3,8 +3,8 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "1.0"
-summary: Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded relational model-finding path, dependency direction, and tests.
+version: "1.1"
+summary: Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded model finding, cross-language SDK distribution, dependency direction, and tests.
 topics:
   - rust
   - compiler-architecture
@@ -24,11 +24,13 @@ related:
   - total-policy-condition-space-analysis
   - finite-relational-model-finding
   - executable-frontend-grammar-compiler
+  - python-node-sdk-distribution
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - frontend-grammar-implementation-drift
-last_updated: "2026-08-13"
+  - downstream-analysis-integration-friction
+last_updated: "2026-08-16"
 owners:
   - rspdl-maintainers
 target_spec: "0.3.0"
@@ -88,8 +90,13 @@ rspdl-domain/
 │   │   │   └── session.rs
 │   │   └── tests/
 │   ├── rspdl-solver-z3/
+│   ├── rspdl-sdk/
+│   │   └── src/
 │   └── rspdl-cli/
 │       └── src/
+├── bindings/
+│   ├── python/
+│   └── node/
 ├── schemas/
 │   ├── canonical-ir.schema.json
 │   └── diagnostic.schema.json
@@ -110,6 +117,9 @@ rspdl-domain/
 ```mermaid
 flowchart TD
     CLI["rspdl-cli"] --> COMPILER["rspdl-compiler"]
+    SDK["rspdl-sdk"] --> COMPILER
+    PY["Python / PyO3"] --> SDK
+    NODE["Node.js / napi-rs"] --> SDK
     COMPILER --> KO["rspdl-ko"]
     COMPILER --> DOMAIN["rspdl-domain"]
     COMPILER --> Z3["rspdl-solver-z3"]
@@ -127,6 +137,8 @@ flowchart TD
 - `rspdl-domain -> rspdl-ko`
 - `rspdl-ko -> rspdl-compiler`
 - `rspdl-ko -> future rspdl-en`
+- `rspdl-sdk -> rspdl-ko` 또는 `rspdl-domain` 직접 호출
+- language binding에 compiler 의미 규칙 복제
 - semantic rule에서 Locale token 또는 Locale message 직접 참조
 
 ## 구현된 compiler pipeline
@@ -278,6 +290,25 @@ pub struct FrontendOutput {
 
 `rspdl-compiler`의 `compile_with_frontend`와 `compile_files_with_frontend`가 이 trait을 통해 frontend를 주입받고 `rspdl-domain::analyze`를 호출한다. [Frontend and Semantic Analysis Contract](specs/frontend-semantic-analysis-contract.md)가 단계별 책임의 규범 계약이다.
 
+### `rspdl-sdk`
+
+Python과 Node.js가 공유하는 versioned JSON 경계를 소유한다.
+
+- source workspace, Locale, timeout과 bounded scope request validation
+- `compile`, `check`와 `find_model`의 공통 request/response envelope
+- package SemVer와 독립된 wire schema version
+- compiler diagnostic·finding·`UNKNOWN`을 성공 response 안에 보존하는 failure policy
+- 구조체 field와 정렬된 collection만 사용하는 결정적 serialization
+
+SDK는 문법, 의미 규칙, diagnostic rendering과 application projection을 소유하지 않는다. Binding은 JSON 문자열을 전달하고 language-native object로 parse할 뿐 결과 field를 다시 계산하지 않는다. 자세한 배포 계약은 [Python and Node.js SDK Distribution](adr/0004-python-node-sdk-distribution.md)을 따른다.
+
+### Python과 Node.js binding
+
+- Python binding은 PyO3 stable ABI extension을 호출하는 얇은 Python wrapper와 type hint를 제공한다.
+- Node.js binding은 napi-rs async task를 호출하는 ESM·CommonJS wrapper와 TypeScript declaration을 제공한다.
+- 두 binding은 unsupported schema·Locale 또는 잘못된 SDK option만 language exception으로 바꾼다.
+- Native package는 platform artifact, project license와 dependency license report를 함께 배포한다.
+
 ### `rspdl-cli`
 
 CLI는 파일 I/O, argument parsing, 출력 format과 exit code만 담당한다. 문법 또는 의미 규칙을 포함하지 않는다.
@@ -334,6 +365,14 @@ Parser가 recovery node를 만들면 해당 node는 원문 span과 recovery kind
 - diagnostic ordering
 - canonical serialization
 
+`rspdl-sdk`와 language binding은 같은 fixture로 다음을 테스트한다.
+
+- 정상 compile/check/model response와 wire schema version
+- compiler 오류와 finding을 binding exception으로 바꾸지 않음
+- malformed request, unsupported schema·Locale와 invalid option의 안정적인 SDK error code
+- source 입력 순서와 반복 실행에 독립적인 response JSON
+- Python wheel과 npm tarball을 빈 환경에 설치한 뒤 동일 분석 결과를 반환함
+
 ### Conformance tests
 
 구현 독립 fixture는 repository root의 `conformance/`에 둔다.
@@ -372,6 +411,8 @@ Golden file은 명세 계약이므로 단순 snapshot 갱신으로 승인하지 
 
 미래 `rspdl-en`이 추가되면 동일 의미의 `ko-KR`과 `en-US` fixture가 같은 Canonical IR을 생성하는지 비교한다.
 
+Python과 Node.js binding은 같은 wire request를 사용했을 때 response를 재구성하지 않고 `rspdl-sdk`가 직렬화한 동일 JSON을 반환해야 한다.
+
 ## 첫 vertical slice
 
 첫 구현은 전체 언어를 한 번에 만들지 않고 다음 end-to-end 경로를 완성한다.
@@ -400,6 +441,14 @@ Golden file은 명세 계약이므로 단순 snapshot 갱신으로 승인하지 
 - 공통 `Frontend` trait, `UnlinkedModule`과 Locale 독립 linker/analyzer
 - Z3 제약 반례와 직접 runtime 정책 match 실행
 - `parse`, `compile`, `check`, `format` CLI와 안정적인 JSON artifact
+
+[Python and Node.js SDK Distribution](adr/0004-python-node-sdk-distribution.md)은 다음 integration vertical slice를 구현한다.
+
+- `compile`, `check`와 bounded `find_model`의 versioned JSON facade
+- Python 3.11+ wheel과 Node.js 22·24 native package
+- Linux x86_64 glibc, macOS x86_64·arm64와 Windows x86_64 artifact
+- release-please Release PR과 PyPI/npm OIDC Trusted Publishing
+- dependency license gate와 binary package의 third-party license report
 
 [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)은 다음 후속 vertical slice를 구현한다.
 

@@ -1,0 +1,20 @@
+[package]
+name = "rspdl-node"
+version.workspace = true
+description = "Node.js native binding for RSPDL"
+edition.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi.workspace = true
+napi-derive.workspace = true
+rspdl-sdk = { path = "../../crates/rspdl-sdk" }
+
+[build-dependencies]
+napi-build.workspace = true
