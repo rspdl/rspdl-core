@@ -270,8 +270,8 @@ jobs:
           NODE_AUTH_TOKEN: ${{ env.NPM_BOOTSTRAP_TOKEN }}
         run: |
           package_version=$(node --print "require('./package.json').version")
-          if npm view "rspdl@${package_version}" version --json >/dev/null 2>&1; then
-            echo "Skipping existing rspdl@${package_version}"
+          if npm view "rspdl-core@${package_version}" version --json >/dev/null 2>&1; then
+            echo "Skipping existing rspdl-core@${package_version}"
             exit 0
           fi
           npm publish --access public

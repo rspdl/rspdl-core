@@ -16,7 +16,7 @@ const required = [
   'LICENSE',
   'README.md',
   'THIRD_PARTY_LICENSES.html',
-  'index.js',
+  'native.cjs',
   'package.json',
   'sdk.cjs',
   'sdk.d.ts',

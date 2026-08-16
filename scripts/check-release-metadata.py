@@ -56,9 +56,11 @@ require(python_project["urls"]["Repository"] == REPOSITORY, "Python repository m
 
 node = read_json(ROOT / "bindings/node/package.json")
 lock = read_json(ROOT / "bindings/node/package-lock.json")
-require(node["name"] == "rspdl", "npm package name must be rspdl")
+require(node["name"] == "rspdl-core", "npm package name must be rspdl-core")
 require(node["version"] == version, "npm and Cargo versions differ")
+require(lock["name"] == node["name"], "npm lockfile package name differs")
 require(lock["version"] == version, "npm lockfile version differs")
+require(lock["packages"][""]["name"] == node["name"], "npm root lock entry package name differs")
 require(lock["packages"][""]["version"] == version, "npm root lock entry version differs")
 require(node["license"] == "Apache-2.0", "Node.js package license drifted")
 require(node["repository"]["url"] == f"git+{REPOSITORY}.git", "Node.js repository metadata drifted")

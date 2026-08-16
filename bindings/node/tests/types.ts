@@ -4,7 +4,7 @@ import rspdl, {
   findModel,
   type Source,
   type WorkspaceCompilation,
-} from 'rspdl'
+} from 'rspdl-core'
 
 const source: Source = { path: 'inventory.rspdl', text: '@모듈 재고(inventory)' }
 const compilation: Promise<{ schema_version: 1; result: WorkspaceCompilation }> = compile([source])

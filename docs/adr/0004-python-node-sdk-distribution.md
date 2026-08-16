@@ -16,7 +16,7 @@ related:
   - core-application-boundary
 problem_refs:
   - downstream-analysis-integration-friction
-last_updated: "2026-08-16"
+last_updated: "2026-08-17"
 owners:
   - rspdl-maintainers
 ---
@@ -56,7 +56,7 @@ PyPI package 이름은 `rspdl`이다. PyO3의 CPython stable ABI를 사용해 Py
 
 ### Node.js package
 
-npm package 이름은 `rspdl`이다. napi-rs와 Node-API를 사용하고 TypeScript declaration, ESM과 CommonJS entry point를 제공한다. 공개 분석 함수는 event loop를 막지 않는 Promise를 반환한다.
+npm root package 이름은 GitHub repository와 같은 `rspdl-core`다. napi-rs와 Node-API를 사용하고 TypeScript declaration, ESM과 CommonJS entry point를 제공한다. 공개 분석 함수는 event loop를 막지 않는 Promise를 반환한다.
 
 첫 지원 runtime은 Node.js 22와 24이며 플랫폼은 Python package와 같다. OS·CPU별 native optional package를 먼저 만들고 root package가 설치 환경에 맞는 artifact를 선택한다.
 

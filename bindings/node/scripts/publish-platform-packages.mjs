@@ -11,9 +11,28 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const defaultPackageRoot = resolve(scriptDirectory, '..')
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
-export const platformPackageAliases = [
+export const platformPackages = [
+  {
+    directory: 'darwin-arm64',
+    generatedName: 'rspdl-core-darwin-arm64',
+    dependencyName: 'rspdl-darwin-arm64',
+    publishedName: 'rspdl-darwin-arm64',
+  },
+  {
+    directory: 'darwin-x64',
+    generatedName: 'rspdl-core-darwin-x64',
+    dependencyName: 'rspdl-darwin-x64',
+    publishedName: 'rspdl-darwin-x64',
+  },
+  {
+    directory: 'linux-x64-gnu',
+    generatedName: 'rspdl-core-linux-x64-gnu',
+    dependencyName: 'rspdl-linux-x64-gnu',
+    publishedName: 'rspdl-linux-x64-gnu',
+  },
   {
     directory: 'win32-x64-msvc',
+    generatedName: 'rspdl-core-win32-x64-msvc',
     dependencyName: 'rspdl-win32-x64-msvc',
     publishedName: 'rspdl-native-windows-x64',
   },
@@ -38,6 +57,9 @@ export function applyPlatformPackageAliases(packageRoot = defaultPackageRoot) {
   const rootManifest = readJson(rootManifestPath)
   assertNonEmptyString(rootManifest.name, 'Root package name')
   assertNonEmptyString(rootManifest.version, 'Root package version')
+  if (rootManifest.name !== 'rspdl-core') {
+    throw new Error(`Unexpected root package name: ${rootManifest.name}`)
+  }
 
   if (
     rootManifest.optionalDependencies === undefined
@@ -52,17 +74,17 @@ export function applyPlatformPackageAliases(packageRoot = defaultPackageRoot) {
     throw new Error('Root optionalDependencies must be an object')
   }
 
-  for (const alias of platformPackageAliases) {
+  for (const platform of platformPackages) {
     const platformManifestPath = join(
       packageRoot,
       'npm',
-      alias.directory,
+      platform.directory,
       'package.json',
     )
     const platformManifest = readJson(platformManifestPath)
     const allowedNames = new Set([
-      alias.dependencyName,
-      alias.publishedName,
+      platform.generatedName,
+      platform.publishedName,
     ])
 
     if (!allowedNames.has(platformManifest.name)) {
@@ -72,13 +94,16 @@ export function applyPlatformPackageAliases(packageRoot = defaultPackageRoot) {
     }
     if (platformManifest.version !== rootManifest.version) {
       throw new Error(
-        `Version mismatch for ${alias.dependencyName}: expected ${rootManifest.version}, got ${platformManifest.version}`,
+        `Version mismatch for ${platform.dependencyName}: expected ${rootManifest.version}, got ${platformManifest.version}`,
       )
     }
 
-    platformManifest.name = alias.publishedName
-    rootManifest.optionalDependencies[alias.dependencyName] =
-      `npm:${alias.publishedName}@${rootManifest.version}`
+    platformManifest.name = platform.publishedName
+    delete rootManifest.optionalDependencies[platform.generatedName]
+    rootManifest.optionalDependencies[platform.dependencyName] =
+      platform.dependencyName === platform.publishedName
+        ? rootManifest.version
+        : `npm:${platform.publishedName}@${rootManifest.version}`
     writeJson(platformManifestPath, platformManifest)
   }
 
