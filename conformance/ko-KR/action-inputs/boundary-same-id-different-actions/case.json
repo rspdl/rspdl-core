@@ -1,0 +1,25 @@
+{
+  "spec_version": "0.3.0",
+  "locale": "ko-KR",
+  "category": "boundary",
+  "expected_module": true,
+  "expected_diagnostics": [],
+  "expected_inputs": [
+    {
+      "action_id": "ordering.receive_order",
+      "id": "ordering.receive_order.status",
+      "local_id": "status",
+      "name": "요청 상태",
+      "kind": "value",
+      "target": "enum(ordering.order_status)"
+    },
+    {
+      "action_id": "ordering.cancel_order",
+      "id": "ordering.cancel_order.status",
+      "local_id": "status",
+      "name": "요청 상태",
+      "kind": "value",
+      "target": "enum(ordering.order_status)"
+    }
+  ]
+}

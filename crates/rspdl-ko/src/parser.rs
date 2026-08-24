@@ -112,6 +112,9 @@ pub fn parse(source: &str) -> ParseOutput {
                     })
                 })
             }
+            Some(DeclarationKind::ActionInput) => {
+                parse_action_input(line, body, &mut diagnostics).map(DeclarationAst::ActionInput)
+            }
             Some(DeclarationKind::Policy) => {
                 parse_policy(line, body, &mut diagnostics).map(DeclarationAst::Policy)
             }
@@ -191,6 +194,7 @@ enum DeclarationKind {
     Constraint,
     Role,
     Action,
+    ActionInput,
     Policy,
 }
 
@@ -210,6 +214,7 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
         _ if is_data_model_header(line) => Some(DeclarationKind::DataModel),
         _ if is_role_sentence(line) => Some(DeclarationKind::Role),
         _ if is_action_sentence(line) => Some(DeclarationKind::Action),
+        _ if is_action_input_sentence(line) => Some(DeclarationKind::ActionInput),
         _ if is_relation_sentence(line) => Some(DeclarationKind::Relation),
         _ if is_nonempty_sentence(line) => Some(DeclarationKind::RelationalConstraint(
             RelationalConstraintDeclarationKind::NonEmpty,
@@ -552,6 +557,10 @@ fn is_role_sentence(line: &Line) -> bool {
 
 fn is_action_sentence(line: &Line) -> bool {
     sentence_words_end_with(line, &["행동이다"])
+}
+
+fn is_action_input_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["입력받는다"])
 }
 
 fn is_relation_sentence(line: &Line) -> bool {
@@ -897,6 +906,63 @@ fn parse_action_data_mutation(
         action,
         model,
         mutation,
+        span: line.span,
+    })
+}
+
+fn parse_action_input(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<ActionInputAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "action_input")?;
+    let tokens = sentence_tokens(line)?;
+    let mut cursor = BodyCursor::new(tokens, line.span);
+    let (action, action_marker) = cursor.marked_ref(&["은", "는"])?;
+    let is_existing_model = cursor.consume_word("기존");
+    let (input_type_name, input_type_marker) = cursor.marked_ref(&["을", "를"])?;
+    let kind = if is_existing_model {
+        ActionInputKindAst::ExistingModel {
+            model: input_type_name.clone(),
+        }
+    } else {
+        ActionInputKindAst::Value {
+            value_type: type_reference_from_name(&input_type_name, line.span)?,
+        }
+    };
+    let id_index = tokens
+        .iter()
+        .enumerate()
+        .skip(cursor.index)
+        .find_map(|(index, token)| matches!(token.kind, TokenKind::CanonicalId(_)).then_some(index))
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-064",
+                "ko.syntax.action_input_stable_id_required",
+                line.span,
+            )
+        })?;
+    let declaration = parse_name_with_id_tokens(tokens, cursor.index, id_index, line.span)?;
+    cursor.index = id_index + 1;
+    match cursor.next_word() {
+        Some("로" | "으로") => {}
+        _ => return Err(cursor.error("ko.syntax.action_input_name_marker_required")),
+    }
+    cursor.expect_word("입력받는다")?;
+    cursor.expect_end()?;
+    lint_marker(&action, &action_marker, "은", "는", line.span, diagnostics);
+    lint_marker(
+        &input_type_name,
+        &input_type_marker,
+        "을",
+        "를",
+        line.span,
+        diagnostics,
+    );
+    Ok(ActionInputAst {
+        action,
+        declaration,
+        kind,
         span: line.span,
     })
 }
@@ -1403,17 +1469,20 @@ fn parse_type_reference(line: &Line, start: usize) -> Result<TypeReferenceAst, D
             }
         }
     }
-    let name = parts.join(" ");
-    match name.as_str() {
+    type_reference_from_name(&parts.join(" "), line.span)
+}
+
+fn type_reference_from_name(name: &str, span: Span) -> Result<TypeReferenceAst, Diagnostic> {
+    match name {
         "문자열" => Ok(TypeReferenceAst::String),
         "정수" => Ok(TypeReferenceAst::Integer),
         "불리언" => Ok(TypeReferenceAst::Boolean),
         "" => Err(Diagnostic::error(
             "RSPDL-KO-SYN-011",
             "ko.syntax.field_type_required",
-            line.span,
+            span,
         )),
-        _ => Ok(TypeReferenceAst::Named(name)),
+        _ => Ok(TypeReferenceAst::Named(name.to_owned())),
     }
 }
 
@@ -1598,6 +1667,16 @@ impl<'a> BodyCursor<'a> {
             self.index += 1;
         }
         value
+    }
+
+    fn consume_word(&mut self, expected: &str) -> bool {
+        if matches!(self.tokens.get(self.index).map(|token| &token.kind), Some(TokenKind::Word(value)) if value == expected)
+        {
+            self.index += 1;
+            true
+        } else {
+            false
+        }
     }
 
     fn expect_end(&self) -> Result<(), Diagnostic> {

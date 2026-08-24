@@ -218,6 +218,24 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     "는"
                 }
             )),
+            DeclarationAst::ActionInput(value) => {
+                let input_type = match &value.kind {
+                    ActionInputKindAst::ExistingModel { model } => {
+                        format!("기존 {}", marked(model, "을", "를"))
+                    }
+                    ActionInputKindAst::Value { value_type } => {
+                        marked(&type_reference(value_type), "을", "를")
+                    }
+                };
+                output.push_str(&format!(
+                    "{} {} {}({}){} 입력받는다.\n",
+                    marked(&value.action, "은", "는"),
+                    input_type,
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    directional_marker(&value.declaration.name),
+                ));
+            }
             DeclarationAst::Policy(value) => {
                 let role = marked(&value.role, "은", "는");
                 let field = marked(&value.field, "을", "를");
@@ -236,6 +254,15 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
         }
     }
     Ok(output)
+}
+
+fn type_reference(value: &TypeReferenceAst) -> String {
+    match value {
+        TypeReferenceAst::String => "문자열".to_owned(),
+        TypeReferenceAst::Integer => "정수".to_owned(),
+        TypeReferenceAst::Boolean => "불리언".to_owned(),
+        TypeReferenceAst::Named(value) => surface(value),
+    }
 }
 
 fn reference_list(references: &[String]) -> String {
@@ -313,15 +340,6 @@ fn constraint(expression: &ConstraintExpressionAst) -> Result<String, FormatErro
         _ => Err(FormatError::unsupported_constraint(
             "Korean v0.1 문법은 제약의 왼쪽 피연산자로 필드만 지원합니다.",
         )),
-    }
-}
-
-fn type_reference(value: &TypeReferenceAst) -> String {
-    match value {
-        TypeReferenceAst::String => "문자열".into(),
-        TypeReferenceAst::Integer => "정수".into(),
-        TypeReferenceAst::Boolean => "불리언".into(),
-        TypeReferenceAst::Named(value) => surface(value),
     }
 }
 
@@ -430,7 +448,7 @@ mod tests {
 
     #[test]
     fn formatting_is_idempotent() {
-        let source = "@모듈 승인(approval)\n상태(state)는 다음 값 중 하나다.\n  작성 중(draft)\n신청(request)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n신청의 금액은 0보다 커야 한다.\n관리자(manager)는 역할이다.\n등록(register)은 행동이다.\n변경(change)은 행동이다.\n등록이 실행되면 신청을 생성한다.\n변경이 실행되면 신청을 수정한다.\n관리자는 신청의 금액을 변경할 수 있다.\n";
+        let source = "@모듈 승인(approval)\n상태(state)는 다음 값 중 하나다.\n  작성 중(draft)\n신청(request)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n신청의 금액은 0보다 커야 한다.\n관리자(manager)는 역할이다.\n등록(register)은 행동이다.\n변경(change)은 행동이다.\n등록은 기존 신청을 대상 신청(request)으로 입력받는다.\n등록은 문자열을 요청 메모(note)로 입력받는다.\n등록이 실행되면 신청을 생성한다.\n변경이 실행되면 신청을 수정한다.\n관리자는 신청의 금액을 변경할 수 있다.\n";
         let original = parse(source).document.unwrap();
         let original_module = semantic_module(&original);
         let first = format_document(&original).unwrap();

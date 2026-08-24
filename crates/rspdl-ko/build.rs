@@ -34,6 +34,7 @@ fn compile_grammar(grammar_path: &std::path::Path, output_dir: &std::path::Path)
     let source = fs::read_to_string(grammar_path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", grammar_path.display()));
     let compiled = GrammarCompiler::new([
+        "action_input_type",
         "annotated_decl",
         "canonical_id",
         "comma_ref",

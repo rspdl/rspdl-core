@@ -210,7 +210,26 @@ pub struct RoleDefinition {
 pub struct ActionDefinition {
     pub id: CanonicalId,
     pub name: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<ActionInputDefinition>,
     pub span: TextRange,
+}
+
+/// One typed, explicitly named input declared by an action.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ActionInputDefinition {
+    pub id: CanonicalId,
+    pub local_id: CanonicalId,
+    pub name: String,
+    pub kind: ActionInputKind,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
+pub enum ActionInputKind {
+    ExistingModel { model_id: CanonicalId },
+    Value { value_type: CanonicalType },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

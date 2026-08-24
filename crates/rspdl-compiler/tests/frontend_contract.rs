@@ -64,6 +64,7 @@ impl Frontend for TestFrontend {
                 roles: Vec::new(),
                 actions: vec![UnlinkedAction {
                     declaration: declaration("Create item", "create_item", span(70, 81)),
+                    inputs: Vec::new(),
                     span: span(70, 81),
                 }],
                 policies: Vec::new(),

@@ -200,6 +200,21 @@ pub struct ActionAst {
     pub span: Span,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ActionInputKindAst {
+    ExistingModel { model: String },
+    Value { value_type: TypeReferenceAst },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ActionInputAst {
+    pub action: String,
+    pub declaration: NamedIdAst,
+    pub kind: ActionInputKindAst,
+    pub span: Span,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyEffectAst {
@@ -233,6 +248,7 @@ pub enum DeclarationAst {
     Constraint(ConstraintAst),
     Role(RoleAst),
     Action(ActionAst),
+    ActionInput(ActionInputAst),
     Policy(PolicyAst),
 }
 

@@ -211,8 +211,24 @@ pub struct UnlinkedRole {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UnlinkedActionInputKind {
+    ExistingModel { model: SurfaceRef },
+    Value { value_type: UnlinkedTypeReference },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedActionInput {
+    pub declaration: UnlinkedDeclaration,
+    pub kind: UnlinkedActionInputKind,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedAction {
     pub declaration: UnlinkedDeclaration,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<UnlinkedActionInput>,
     pub span: TextRange,
 }
 

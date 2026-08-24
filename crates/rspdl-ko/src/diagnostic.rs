@@ -46,6 +46,12 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "ko.syntax.action_data_mutation_invalid" => {
             "행동 결과는 생성한다, 수정한다, 삭제한다 중 하나여야 합니다.".into()
         }
+        "ko.syntax.action_input_stable_id_required" => {
+            "행동 입력의 표시 이름 뒤에 stable ID가 필요합니다.".into()
+        }
+        "ko.syntax.action_input_name_marker_required" => {
+            "행동 입력 이름과 stable ID 뒤에는 로 또는 으로가 필요합니다.".into()
+        }
         "ko.syntax.field_list_required" => "필드 목록이 필요합니다.".into(),
         "ko.syntax.field_list_empty_name" => "빈 필드 이름은 사용할 수 없습니다.".into(),
         "ko.syntax.field_list_invalid" => "필드 목록 형식이 올바르지 않습니다.".into(),
@@ -263,6 +269,10 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "action_id"),
             argument(diagnostic, "model_id"),
             argument(diagnostic, "mutations")
+        ),
+        "semantic.action_input.duplicate_id" => format!(
+            "같은 행동에서 입력 stable ID {}가 중복 선언되었습니다.",
+            argument(diagnostic, "id")
         ),
         "semantic.derivation.sum_requires_integer" => {
             "합계의 원본과 결과 필드는 모두 정수여야 합니다.".into()

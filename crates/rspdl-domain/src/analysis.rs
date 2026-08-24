@@ -5,17 +5,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::{
-    ActionDataMutationDefinition, ActionDataMutationProvenance, ActionDefinition, CanonicalId,
-    CanonicalType, CanonicalValue, ConstraintDefinition, ConstraintOperand, DataModelDefinition,
-    DataMutationKind, DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition,
-    EnumType, EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, ModelError,
-    PolicyDefinition, PolicyEffect, RecalculationDefinition, RelationDefinition, RelationOperator,
+    ActionDataMutationDefinition, ActionDataMutationProvenance, ActionDefinition,
+    ActionInputDefinition, ActionInputKind, CanonicalId, CanonicalType, CanonicalValue,
+    ConstraintDefinition, ConstraintOperand, DataModelDefinition, DataMutationKind,
+    DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition, EnumType,
+    EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, ModelError, PolicyDefinition,
+    PolicyEffect, RecalculationDefinition, RelationDefinition, RelationOperator,
     RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
     ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SourceId, SurfaceRef,
-    TextRange, UnlinkedActionDataMutation, UnlinkedConstraint, UnlinkedDataModel,
-    UnlinkedDeclaration, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand,
-    UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
-    UnlinkedRelationalConstraintKind, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind, UnlinkedConstraint,
+    UnlinkedDataModel, UnlinkedDeclaration, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule,
+    UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation,
+    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedScreen,
+    UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -143,6 +145,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
 
     let mut actions = Vec::new();
     let mut action_names = BTreeMap::new();
+    let mut pending_action_inputs = BTreeMap::new();
     for value in module.actions {
         let Some(id) = canonical_member(&value.declaration, &module_id, &mut diagnostics) else {
             continue;
@@ -160,10 +163,12 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
             duplicate_name("action", &value.declaration, &mut diagnostics);
         }
         actions.push(ActionDefinition {
-            id,
+            id: id.clone(),
             name: value.declaration.name,
+            inputs: Vec::new(),
             span: value.span,
         });
+        pending_action_inputs.insert(id, value.inputs);
     }
 
     let enum_by_name = enums
@@ -187,6 +192,68 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         .iter()
         .map(|model| (model.name.clone(), model.clone()))
         .collect::<BTreeMap<_, _>>();
+    for action in &mut actions {
+        let Some(inputs) = pending_action_inputs.remove(&action.id) else {
+            continue;
+        };
+        let mut seen = BTreeSet::new();
+        for input in inputs {
+            let Some(local_id) = canonical_required(&input.declaration, &mut diagnostics) else {
+                continue;
+            };
+            if !seen.insert(local_id.clone()) {
+                diagnostics.push(
+                    link_error("semantic.action_input.duplicate_id", input.declaration.span)
+                        .with_argument("id", local_id.as_str()),
+                );
+                continue;
+            }
+            let id = match CanonicalId::new(format!("{}.{}", action.id, local_id)) {
+                Ok(id) => id,
+                Err(error) => {
+                    diagnostics.push(model_error("RSPDL-LINK-003", error, input.declaration.span));
+                    continue;
+                }
+            };
+            let kind = match input.kind {
+                UnlinkedActionInputKind::ExistingModel { model } => {
+                    resolve_model(&models_by_name, &model, &mut diagnostics).map(|model| {
+                        ActionInputKind::ExistingModel {
+                            model_id: model.id.clone(),
+                        }
+                    })
+                }
+                UnlinkedActionInputKind::Value { value_type } => match value_type {
+                    UnlinkedTypeReference::String => Some(ActionInputKind::Value {
+                        value_type: CanonicalType::String,
+                    }),
+                    UnlinkedTypeReference::Integer => Some(ActionInputKind::Value {
+                        value_type: CanonicalType::Integer,
+                    }),
+                    UnlinkedTypeReference::Boolean => Some(ActionInputKind::Value {
+                        value_type: CanonicalType::Boolean,
+                    }),
+                    UnlinkedTypeReference::Named(reference) => {
+                        resolve_enum(enum_by_name.values(), &reference, &mut diagnostics).map(
+                            |definition| ActionInputKind::Value {
+                                value_type: CanonicalType::Enum(definition.enum_type.clone()),
+                            },
+                        )
+                    }
+                },
+            };
+            if let Some(kind) = kind {
+                action.inputs.push(ActionInputDefinition {
+                    id,
+                    local_id,
+                    name: input.declaration.name,
+                    kind,
+                    span: input.span,
+                });
+            }
+        }
+        action.inputs.sort_by(|left, right| left.id.cmp(&right.id));
+    }
 
     let mut relations = Vec::new();
     let mut relation_names = BTreeSet::new();

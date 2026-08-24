@@ -1,10 +1,10 @@
 use rspdl_domain::{
     DataMutationKind, FieldIntentKind, PolicyEffect, RelationOperator, ScreenOperationKind,
-    SurfaceRef, TextRange, UnlinkedAction, UnlinkedActionDataMutation, UnlinkedConstraint,
-    UnlinkedDataModel, UnlinkedDeclaration, UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral,
-    UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRelation,
-    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
-    UnlinkedTypeReference, analyze,
+    SurfaceRef, TextRange, UnlinkedAction, UnlinkedActionDataMutation, UnlinkedActionInput,
+    UnlinkedActionInputKind, UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration,
+    UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand,
+    UnlinkedPolicy, UnlinkedRelation, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedTypeReference, analyze,
 };
 
 fn span() -> TextRange {
@@ -62,6 +62,7 @@ fn policy_module(labels: [&str; 5]) -> UnlinkedModule {
     });
     module.actions.push(UnlinkedAction {
         declaration: declaration(action_name, Some("change")),
+        inputs: Vec::new(),
         span: span(),
     });
     module.constraints.push(UnlinkedConstraint {
@@ -85,6 +86,50 @@ fn policy_module(labels: [&str; 5]) -> UnlinkedModule {
         span: span(),
     });
     module
+}
+
+#[test]
+fn action_input_ids_are_scoped_by_action_in_the_shared_analyzer() {
+    let mut module = empty_module("주문");
+    module.models.push(UnlinkedDataModel {
+        declaration: declaration("주문", Some("order")),
+        fields: vec![UnlinkedField {
+            declaration: declaration("상태", Some("status")),
+            required: true,
+            value_type: UnlinkedTypeReference::String,
+            span: span(),
+        }],
+        span: span(),
+    });
+    for (name, id) in [("접수", "receive"), ("취소", "cancel")] {
+        module.actions.push(UnlinkedAction {
+            declaration: declaration(name, Some(id)),
+            inputs: vec![UnlinkedActionInput {
+                declaration: declaration("대상", Some("target")),
+                kind: UnlinkedActionInputKind::ExistingModel {
+                    model: reference("order"),
+                },
+                span: span(),
+            }],
+            span: span(),
+        });
+    }
+
+    let analyzed = analyze(module);
+    assert!(
+        analyzed.diagnostics.is_empty(),
+        "{:?}",
+        analyzed.diagnostics
+    );
+    let module = analyzed.module.unwrap();
+    assert_eq!(
+        module.actions[0].inputs[0].id.as_str(),
+        "expense.receive.target"
+    );
+    assert_eq!(
+        module.actions[1].inputs[0].id.as_str(),
+        "expense.cancel.target"
+    );
 }
 
 #[test]
@@ -400,6 +445,7 @@ fn action_data_mutations_require_a_structural_model_producer() {
         });
         module.actions.push(UnlinkedAction {
             declaration: declaration("처리", Some("process")),
+            inputs: Vec::new(),
             span: span(),
         });
         module
@@ -426,6 +472,7 @@ fn same_action_cannot_update_and_delete_the_same_model() {
     let mut module = data_usage_module(true, true);
     module.actions.push(UnlinkedAction {
         declaration: declaration("취소", Some("cancel")),
+        inputs: Vec::new(),
         span: span(),
     });
     for mutation in [DataMutationKind::Update, DataMutationKind::Delete] {
@@ -455,6 +502,7 @@ fn duplicate_action_data_mutation_is_rejected() {
     let mut module = data_usage_module(true, true);
     module.actions.push(UnlinkedAction {
         declaration: declaration("변경", Some("change")),
+        inputs: Vec::new(),
         span: span(),
     });
     for _ in 0..2 {
@@ -486,6 +534,7 @@ fn different_actions_may_update_and_delete_the_same_model() {
     ] {
         module.actions.push(UnlinkedAction {
             declaration: declaration(name, Some(id)),
+            inputs: Vec::new(),
             span: span(),
         });
         module

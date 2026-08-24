@@ -1,13 +1,13 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rspdl_domain::{
     DataMutationKind, Diagnostic, FieldIntentKind, Frontend, FrontendOutput, PolicyEffect,
     RelationOperator, ScreenOperationKind, SurfaceRef, UnlinkedAction, UnlinkedActionDataMutation,
-    UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant,
-    UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand,
-    UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
-    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation,
-    UnlinkedTypeReference,
+    UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint, UnlinkedDataModel,
+    UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent,
+    UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
+    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
+    UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 use crate::ast::*;
@@ -311,6 +311,7 @@ impl Frontend for KoreanFrontend {
 pub fn lower(document: &DocumentAst) -> LowerOutput {
     let index = StableIdIndex::new(document);
     let mut diagnostics = Vec::new();
+    let mut action_inputs = lower_action_inputs(document, &index, &mut diagnostics);
     let mut module = UnlinkedModule {
         declaration: declaration(&document.module.declaration, true),
         span: document.module.span,
@@ -620,8 +621,12 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
             }),
             DeclarationAst::Action(value) => module.actions.push(UnlinkedAction {
                 declaration: declaration(&value.declaration, true),
+                inputs: action_inputs
+                    .remove(&value.declaration.id)
+                    .unwrap_or_default(),
                 span: value.span,
             }),
+            DeclarationAst::ActionInput(_) => {}
             DeclarationAst::Policy(value) => {
                 let role = index.role_reference(&value.role, value.span, &mut diagnostics);
                 let model = index.model_reference(&value.model, value.span, &mut diagnostics);
@@ -655,6 +660,43 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         module,
         diagnostics,
     }
+}
+
+fn lower_action_inputs(
+    document: &DocumentAst,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> BTreeMap<String, Vec<UnlinkedActionInput>> {
+    let mut inputs = BTreeMap::<String, Vec<UnlinkedActionInput>>::new();
+    for item in &document.declarations {
+        let DeclarationAst::ActionInput(value) = item else {
+            continue;
+        };
+        let action = required_reference(
+            index.action_reference(&value.action, value.span, diagnostics),
+            value.span,
+        );
+        let kind = match &value.kind {
+            ActionInputKindAst::ExistingModel { model } => UnlinkedActionInputKind::ExistingModel {
+                model: required_reference(
+                    index.model_reference(model, value.span, diagnostics),
+                    value.span,
+                ),
+            },
+            ActionInputKindAst::Value { value_type } => UnlinkedActionInputKind::Value {
+                value_type: type_reference(value_type, value.span, index, diagnostics),
+            },
+        };
+        inputs
+            .entry(action.id().to_owned())
+            .or_default()
+            .push(UnlinkedActionInput {
+                declaration: declaration(&value.declaration, true),
+                kind,
+                span: value.span,
+            });
+    }
+    inputs
 }
 
 fn relation_references(

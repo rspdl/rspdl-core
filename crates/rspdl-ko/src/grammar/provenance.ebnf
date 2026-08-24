@@ -27,6 +27,17 @@ pub action_data_mutation_statement =
     "."
     ;
 
+pub action_input_statement =
+    action: @marked_ref("은", "는")
+    ["기존"]
+    input_type: @action_input_type("을", "를")
+    input_name: @surface_name()
+    input_id: @canonical_id()
+    ("로" | "으로")
+    "입력받는다"
+    "."
+    ;
+
 pub sum_derivation_statement =
     target_model: @marked_ref("의")
     target_field: @marked_ref("은", "는")

@@ -54,6 +54,8 @@ target_spec: "0.4.0"
 
 첫 slice는 한 action invocation의 pre-state에서 하나의 output record를 생성한다. field producer는 typed action input, input record의 field, constant 및 명시적 pre-state snapshot만 지원한다. 목표 의미의 trigger는 `Action`과 명시적으로 선언된 `Event`를 구분하지만 첫 slice는 `Action`만 lower한다.
 
+2026-08-25 현재 구현된 범위는 이 slice의 선행 조건인 stable-ID typed action input뿐이다. existing-model input과 enum·scalar input은 Korean frontend, common linker와 source-backed Canonical IR까지 연결되어 있다. outcome record, Create/Skip, producer, snapshot, template과 `RSPDL-PROD-*`/`RSPDL-POLICY-*` 진단은 아직 구현하지 않았다.
+
 - action은 stable-ID typed input을 선언한다. existing record input은 action 직전에 존재해야 한다.
 - output record는 하나 이상의 typed field를 가진다. output field와 output relation slot은 target과 producer span을 가진 binding으로만 채운다.
 - 조건은 단일 닫힌 enum input의 independent branch이고, branch는 `생성` 또는 명시적 `생성하지 않음`을 선택한다.
