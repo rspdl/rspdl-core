@@ -4,7 +4,7 @@ title: Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation
 type: rfc
 status: implemented
 created: 2026-08-03
-version: "0.3"
+version: "0.4"
 summary: Defines sentence-shaped screen operations, action data mutations, provenance checks, sum dependencies, and recalculation triggers.
 topics:
   - data-lifecycle
@@ -20,7 +20,8 @@ related:
   - rspdl-language-prd
 problem_refs:
   - data-lifecycle-modeling-gap
-last_updated: "2026-08-15"
+  - semantic-source-provenance-loss
+last_updated: "2026-08-24"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -81,7 +82,7 @@ target_spec: "0.2.0"
   recalculation = model-reference, "의", field-reference, ("이" | "가"), "바뀔", "때",
       model-reference, "의", field-reference, ("을" | "를"), "다시", "계산한다", "." ;
   ```
-- Canonical IR은 screen별 model/field operation, action별 model mutation, 합계 원본 field ID, 대상 field ID, 재계산 원본 field ID와 비표시 의도를 정렬해 보존한다. `Compilation.action_data_mutation_provenance` sidecar는 각 resolved mutation의 action·model·mutation과 원본 `SourceId`, UTF-8 byte `TextRange`를 함께 노출한다.
+- Canonical IR은 screen별 model/field operation, action별 model mutation, 합계 원본 field ID, 대상 field ID, 재계산 원본 field ID와 비표시 의도를 정렬해 보존한다. 각 source-backed record는 자기 문장의 UTF-8 byte `TextRange`를 가지며, 재계산은 source·target field ID와 문장 span을 가진 별도 record로도 보존한다. 기존 `Compilation.action_data_mutation_provenance` sidecar는 resolved mutation의 `SourceId`를 함께 노출한다.
 - 합계 원본과 대상은 현재 모두 정수 필드여야 한다.
 - `RSPDL-DATA-001`은 조회·수정·계산 입력 필드에 화면 입력 또는 선언된 producer/derivation graph에서 구조적으로 도달 가능한 계산 생산자가 없을 때 발생한다.
 - 구조적 도달 가능성은 선언된 계산 dependency의 고정점만 뜻하며 화면 실행 순서, 분기 또는 path별 데이터 availability를 추론하지 않는다.

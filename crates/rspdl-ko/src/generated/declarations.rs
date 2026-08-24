@@ -36,6 +36,7 @@ pub(crate) struct GeneratedField {
     pub declaration: GeneratedNamedId,
     pub required: bool,
     pub value_type: TypeReferenceAst,
+    pub span: Span,
 }
 
 pub(crate) fn parse_module_header(tokens: &[Token]) -> Result<GeneratedNamedId, ParseError> {
@@ -70,6 +71,11 @@ pub(crate) fn parse_field_item(tokens: &[Token]) -> Result<GeneratedField, Parse
         declaration: named_id(&parsed),
         required,
         value_type,
+        span: tokens
+            .first()
+            .map(|token| token.span)
+            .unwrap_or_default()
+            .join(tokens.last().map(|token| token.span).unwrap_or_default()),
     })
 }
 
@@ -83,6 +89,7 @@ pub(crate) fn field_ast(field: GeneratedField) -> FieldAst {
         },
         required: field.required,
         value_type: field.value_type,
+        span: field.span,
     }
 }
 
@@ -251,6 +258,7 @@ mod tests {
         let DeclarationAst::Enum(EnumAst {
             declaration,
             values,
+            ..
         }) = &document.declarations[0]
         else {
             panic!("enum")
@@ -274,6 +282,7 @@ mod tests {
         let DeclarationAst::DataModel(DataModelAst {
             declaration,
             fields,
+            ..
         }) = &document.declarations[1]
         else {
             panic!("model")

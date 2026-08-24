@@ -1,0 +1,5 @@
+@모듈 블록 위치(block_locations)
+
+문서(document)는 다음 필드들로 구성되어 있다.
+    제목(title): 필수 문자열
+    본문(body): 선택 문자열

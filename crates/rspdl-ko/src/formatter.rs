@@ -384,18 +384,39 @@ fn has_final_consonant(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use rspdl_domain::{SemanticModule, analyze};
+    use rspdl_domain::analyze;
+    use serde_json::Value;
 
     use crate::{lower, parse};
 
     use super::*;
 
-    fn semantic_module(document: &DocumentAst) -> SemanticModule {
+    fn semantic_module(document: &DocumentAst) -> Value {
         let lowered = lower(document);
         let analyzed = analyze(lowered.module.expect("parsed document should lower"));
-        analyzed
+        let module = analyzed
             .module
-            .unwrap_or_else(|| panic!("{:?}", analyzed.diagnostics))
+            .unwrap_or_else(|| panic!("{:?}", analyzed.diagnostics));
+        let mut value = serde_json::to_value(module).unwrap();
+        remove_source_spans(&mut value);
+        value
+    }
+
+    fn remove_source_spans(value: &mut Value) {
+        match value {
+            Value::Object(object) => {
+                object.remove("span");
+                for value in object.values_mut() {
+                    remove_source_spans(value);
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    remove_source_spans(value);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn assert_only_module_uses_annotation(source: &str) {

@@ -9,7 +9,7 @@ use crate::{
     CanonicalType, CanonicalValue, ConstraintDefinition, ConstraintOperand, DataModelDefinition,
     DataMutationKind, DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition,
     EnumType, EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, ModelError,
-    PolicyDefinition, PolicyEffect, RelationDefinition, RelationOperator,
+    PolicyDefinition, PolicyEffect, RecalculationDefinition, RelationDefinition, RelationOperator,
     RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
     ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SourceId, SurfaceRef,
     TextRange, UnlinkedActionDataMutation, UnlinkedConstraint, UnlinkedDataModel,
@@ -34,6 +34,7 @@ pub fn analyze(module: UnlinkedModule) -> AnalysisOutput {
 /// Links and analyzes unresolved intent while retaining its source identity.
 pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> AnalysisOutput {
     let mut diagnostics = Vec::new();
+    let module_span = module.span;
     let Some(module_id) = canonical_required(&module.declaration, &mut diagnostics) else {
         return AnalysisOutput {
             module: None,
@@ -95,6 +96,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
                 id: full_id,
                 local_id,
                 name: variant.declaration.name,
+                span: variant.span,
             });
         }
         match EnumType::new(
@@ -106,6 +108,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
                 name: value.declaration.name,
                 enum_type,
                 variants,
+                span: value.span,
             }),
             Err(error) => {
                 diagnostics.push(model_error("RSPDL-LINK-003", error, value.declaration.span))
@@ -134,6 +137,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         roles.push(RoleDefinition {
             id,
             name: value.declaration.name,
+            span: value.span,
         });
     }
 
@@ -158,6 +162,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         actions.push(ActionDefinition {
             id,
             name: value.declaration.name,
+            span: value.span,
         });
     }
 
@@ -222,6 +227,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         action_data_mutations,
         action_data_mutation_provenance,
         derivations,
+        recalculations,
         field_intents,
     } = analyze_data_usage(
         module.screens,
@@ -279,6 +285,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         module: Some(SemanticModule {
             id: module_id,
             name: module.declaration.name,
+            span: module_span,
             enums,
             models,
             relations,
@@ -286,6 +293,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
             screens,
             action_data_mutations,
             derivations,
+            recalculations,
             field_intents,
             constraints,
             roles,
@@ -339,6 +347,7 @@ fn link_relation(
         id,
         name: value.declaration.name,
         parameter_model_ids,
+        span: value.span,
     });
 }
 
@@ -398,7 +407,11 @@ fn link_relational_constraint(
     };
     let id = canonical_member(&declaration, module_id, diagnostics)?;
     duplicate_id(&id, declaration.span, top_level_ids, diagnostics);
-    Some(RelationalConstraintDefinition { id, constraint })
+    Some(RelationalConstraintDefinition {
+        id,
+        constraint,
+        span: value.span,
+    })
 }
 
 fn require_binary_cardinality(
@@ -599,12 +612,14 @@ fn lower_model(
             name: field.declaration.name,
             required: field.required,
             value_type,
+            span: field.span,
         });
     }
     models.push(DataModelDefinition {
         id,
         name: value.declaration.name,
         fields,
+        span: value.span,
     });
 }
 
@@ -662,6 +677,7 @@ fn link_constraint(
         left,
         operator: value.operator,
         right,
+        span: value.span,
     })
 }
 
@@ -696,6 +712,7 @@ fn link_policy(
         field_id: field.id.clone(),
         action_id,
         effect: value.effect,
+        span: value.span,
     })
 }
 
@@ -711,6 +728,7 @@ struct DataUsageAnalysis {
     action_data_mutations: Vec<ActionDataMutationDefinition>,
     action_data_mutation_provenance: Vec<ActionDataMutationProvenance>,
     derivations: Vec<DerivationDefinition>,
+    recalculations: Vec<RecalculationDefinition>,
     field_intents: Vec<FieldIntentDefinition>,
 }
 
@@ -777,6 +795,7 @@ fn analyze_data_usage(
                     id: screen_id.clone(),
                     name: screen.declaration.name.clone(),
                     operations: Vec::new(),
+                    span: screen.span,
                 },
             );
         }
@@ -813,11 +832,16 @@ fn analyze_data_usage(
             kind: screen.operation,
             model_id: model.id.clone(),
             field_ids,
+            span: screen.span,
         };
         let definition = screen_map
             .get_mut(&screen_id)
             .expect("screen was inserted above");
-        if definition.operations.contains(&operation) {
+        if definition.operations.iter().any(|existing| {
+            existing.kind == operation.kind
+                && existing.model_id == operation.model_id
+                && existing.field_ids == operation.field_ids
+        }) {
             diagnostics.push(
                 data_diagnostic(
                     "RSPDL-DATA-004",
@@ -898,6 +922,7 @@ fn analyze_data_usage(
             action_id: action_id.clone(),
             model_id: model.id.clone(),
             mutation: value.mutation,
+            span: value.span,
         });
         action_data_mutation_provenance.push(ActionDataMutationProvenance {
             action_id,
@@ -982,6 +1007,7 @@ fn analyze_data_usage(
     }
 
     let mut refreshes = BTreeMap::<CanonicalId, Vec<(CanonicalId, TextRange)>>::new();
+    let mut recalculation_definitions = Vec::new();
     for recalculation in recalculations {
         let Some(target_model) = find_model(models, &recalculation.target_model, diagnostics)
         else {
@@ -1005,6 +1031,11 @@ fn analyze_data_usage(
             .entry(target_field.id.clone())
             .or_default()
             .push((source_field.id.clone(), recalculation.span));
+        recalculation_definitions.push(RecalculationDefinition {
+            source_field_id: source_field.id.clone(),
+            target_field_id: target_field.id.clone(),
+            span: recalculation.span,
+        });
     }
 
     let mut derivation_definitions = Vec::new();
@@ -1046,6 +1077,7 @@ fn analyze_data_usage(
                 source_field_id: derivation.source_field_id.clone(),
             },
             recalculate_when_changed_field_ids: vec![derivation.source_field_id.clone()],
+            span: derivation.span,
         });
     }
     for (target, declarations) in refreshes {
@@ -1072,6 +1104,7 @@ fn analyze_data_usage(
         let definition = FieldIntentDefinition {
             field_id: field.id.clone(),
             intent: intent.intent,
+            span: intent.span,
         };
         if let Some(existing) = intents
             .iter()
@@ -1146,17 +1179,36 @@ fn analyze_data_usage(
 
     let mut screen_definitions = screen_map.into_values().collect::<Vec<_>>();
     for screen in &mut screen_definitions {
-        screen.operations.sort();
+        screen.operations.sort_by(|left, right| {
+            (&left.kind, &left.model_id, &left.field_ids).cmp(&(
+                &right.kind,
+                &right.model_id,
+                &right.field_ids,
+            ))
+        });
     }
     derivation_definitions.sort_by(|left, right| left.target_field_id.cmp(&right.target_field_id));
-    action_data_mutation_definitions.sort();
+    recalculation_definitions.sort_by(|left, right| {
+        (&left.target_field_id, &left.source_field_id)
+            .cmp(&(&right.target_field_id, &right.source_field_id))
+    });
+    action_data_mutation_definitions.sort_by(|left, right| {
+        (&left.action_id, &left.model_id, &left.mutation).cmp(&(
+            &right.action_id,
+            &right.model_id,
+            &right.mutation,
+        ))
+    });
     action_data_mutation_provenance.sort();
-    intents.sort();
+    intents.sort_by(|left, right| {
+        (&left.field_id, &left.intent).cmp(&(&right.field_id, &right.intent))
+    });
     DataUsageAnalysis {
         screens: screen_definitions,
         action_data_mutations: action_data_mutation_definitions,
         action_data_mutation_provenance,
         derivations: derivation_definitions,
+        recalculations: recalculation_definitions,
         field_intents: intents,
     }
 }

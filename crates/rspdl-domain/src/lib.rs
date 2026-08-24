@@ -55,9 +55,9 @@ pub use semantic::{
     ConstraintDefinition, ConstraintOperand, DataModelDefinition, DataMutationKind,
     DerivationDefinition, DerivationExpression, EnumDefinition, EnumVariantDefinition,
     FieldDefinition, FieldIntentDefinition, FieldIntentKind, PolicyDefinition, PolicyEffect,
-    RelationDefinition, RelationOperator, RelationalConstraintDefinition, RelationalConstraintKind,
-    RoleDefinition, ScreenDefinition, ScreenOperationDefinition, ScreenOperationKind,
-    SemanticModule,
+    RecalculationDefinition, RelationDefinition, RelationOperator, RelationalConstraintDefinition,
+    RelationalConstraintKind, RoleDefinition, ScreenDefinition, ScreenOperationDefinition,
+    ScreenOperationKind, SemanticModule,
 };
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;

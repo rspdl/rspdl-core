@@ -3,7 +3,7 @@ id: frontend-semantic-analysis-contract
 title: Frontend and Semantic Analysis Contract
 type: spec
 status: implemented
-version: "7"
+version: "8"
 summary: Defines stable-ID Unlinked records, action data mutations, relations, rules, and the structured diagnostic boundary shared by frontends.
 topics:
   - compiler-frontend
@@ -19,7 +19,8 @@ related:
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-15"
+  - semantic-source-provenance-loss
+last_updated: "2026-08-24"
 owners:
   - rspdl-maintainers
 target_spec: "0.3.0"
@@ -41,8 +42,9 @@ Locale Source -> Locale AST -> Stable-ID UnlinkedModule -> Link/Type Check -> Se
 
 - Locale AST는 frontend 내부 타입이며 호환 계약이 아니다.
 - `UnlinkedModule`은 선언 ID, 표시 이름, stable-ID `SurfaceRef`, literal, source range와 의미 construct를 보존한다.
-- action의 데이터 결과는 action·model `SurfaceRef`, `create|update|delete` mutation과 source range를 가진 `UnlinkedActionDataMutation`으로 보존한다. Linking 뒤에는 source 위치를 semantic identity에 섞지 않고 `Compilation.action_data_mutation_provenance` sidecar에 resolved mutation, `SourceId`와 동일한 UTF-8 byte `TextRange`를 유지한다.
-- `SemanticModule`은 모든 참조와 타입이 해석된 Canonical IR이다.
+- action의 데이터 결과는 action·model `SurfaceRef`, `create|update|delete` mutation과 source range를 가진 `UnlinkedActionDataMutation`으로 보존한다. Linking 뒤에는 `ActionDataMutationDefinition.span`과 기존 `Compilation.action_data_mutation_provenance` sidecar가 같은 UTF-8 byte `TextRange`를 유지한다.
+- `SemanticModule`은 모든 참조와 타입이 해석된 Canonical IR이며 source-backed record마다 선언 또는 규칙의 `span`을 보존한다. 여러 문장을 병합하는 screen은 최초 문장을, 각 operation은 자기 문장을 가리킨다.
+- 재계산 dependency는 기존 `DerivationDefinition.recalculate_when_changed_field_ids`와 함께 source-backed `RecalculationDefinition`으로 보존한다.
 - frontend output은 신뢰하지 않는다. 공통 analyzer가 ID 문법, 참조 존재성, 타입과 교차 선언 invariant를 다시 검증한다.
 
 ## Rust interface
@@ -70,6 +72,12 @@ pub struct ActionDataMutationProvenance {
     pub model_id: CanonicalId,
     pub mutation: DataMutationKind,
     pub source_id: SourceId,
+    pub span: TextRange,
+}
+
+pub struct RecalculationDefinition {
+    pub source_field_id: CanonicalId,
+    pub target_field_id: CanonicalId,
     pub span: TextRange,
 }
 ```
@@ -114,7 +122,7 @@ Frontend가 소유하지 않는다.
 3. enum, field, constraint, policy와 relation signature를 검사한다.
    빈 `UnlinkedDataModel`은 `RSPDL-DATA-007`로 거부하고, relation cardinality 규칙에 명시된 anchor model이 relation의 첫 parameter와 같은지 검사한다.
 4. 해석된 의미만 사용해 anonymous rule ID를 생성한다.
-5. Canonical `SemanticModule`을 구성한다.
+5. Canonical `SemanticModule`을 구성하고 source-backed record의 span을 semantic identity와 분리해 보존한다.
 6. data lifecycle, 동일 action 결과의 mutation compatibility, relation compatibility와 policy 의미 규칙을 실행한다.
 
 오류가 있으면 부분 `SemanticModule`을 성공으로 반환하지 않으며 structured diagnostic을 반환한다.
@@ -157,6 +165,7 @@ Constraint, policy와 relation meta-rule의 anonymous ID는 Locale display text�
 - frontend unit test는 source reference가 expected stable-ID `SurfaceRef`로 lowering되는지 검증한다.
 - analyzer test는 Locale source 없이 hand-authored `UnlinkedModule`만 사용한다.
 - compiler conformance는 action mutation의 `SourceId`와 UTF-8 byte `TextRange`가 `Compilation`까지 보존되는지 검사한다.
+- source provenance conformance는 각 record의 span으로 원문을 UTF-8 slice할 수 있는지, multi-file span이 containing file 기준인지, 위치 변화가 generated ID를 바꾸지 않는지 검사한다.
 - 동일한 stable ID와 의미를 가진 Locale별 fixture는 Canonical ID, semantic result와 `rule_id`, `message_key`, `arguments`가 같아야 한다.
 - 정상, 실패, 경계와 오탐 방지 fixture는 공통 analyzer를 통해 실행한다.
 - `rspdl-domain`과 solver backend는 Locale crate를 의존할 수 없다. Compiler의 runtime matcher는 Locale AST나 표시 이름이 아니라 해석된 `SemanticModule`만 검사해야 한다.

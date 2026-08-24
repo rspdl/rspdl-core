@@ -1,0 +1,9 @@
+{
+  "spec_version": "0.3.0",
+  "locale": "ko-KR",
+  "category": "normal",
+  "expected_policy_slices": [
+    "검토자는 문서의 제목을 조회할 수 있다.",
+    "검토자는 문서의 제목을 수정할 수 있다."
+  ]
+}

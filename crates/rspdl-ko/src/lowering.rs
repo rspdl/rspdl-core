@@ -313,6 +313,7 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
     let mut diagnostics = Vec::new();
     let mut module = UnlinkedModule {
         declaration: declaration(&document.module.declaration, true),
+        span: document.module.span,
         enums: Vec::new(),
         models: Vec::new(),
         relations: Vec::new(),
@@ -337,8 +338,10 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                     .iter()
                     .map(|variant| UnlinkedEnumVariant {
                         declaration: declaration(&variant.declaration, true),
+                        span: variant.span,
                     })
                     .collect(),
+                span: value.span,
             }),
             DeclarationAst::DataModel(value) => module.models.push(UnlinkedDataModel {
                 declaration: declaration(&value.declaration, true),
@@ -354,8 +357,10 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                             &index,
                             &mut diagnostics,
                         ),
+                        span: field.span,
                     })
                     .collect(),
+                span: value.span,
             }),
             DeclarationAst::Relation(value) => {
                 let parameter_models = value
@@ -611,9 +616,11 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
             }
             DeclarationAst::Role(value) => module.roles.push(UnlinkedRole {
                 declaration: declaration(&value.declaration, true),
+                span: value.span,
             }),
             DeclarationAst::Action(value) => module.actions.push(UnlinkedAction {
                 declaration: declaration(&value.declaration, true),
+                span: value.span,
             }),
             DeclarationAst::Policy(value) => {
                 let role = index.role_reference(&value.role, value.span, &mut diagnostics);

@@ -4,7 +4,7 @@ title: RSPDL Product Requirements
 type: prd
 status: draft
 created: 2026-07-26
-version: "1.0"
+version: "1.1"
 summary: Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context.
 topics:
   - language-design
@@ -23,7 +23,8 @@ related:
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-12"
+  - semantic-source-provenance-loss
+last_updated: "2026-08-24"
 owners:
   - rspdl-maintainers
 target_spec: "0.3.0"
@@ -59,6 +60,7 @@ target_spec: "0.3.0"
   - `INTENT-001`: 모든 선언과 참조는 번역 가능한 표시 이름과 안정적인 machine ID를 분리한다.
   - `INTENT-002`: 권한, 데이터, 정책과 플로우를 하나의 Semantic Graph에서 연결한다.
   - `INTENT-003`: data, role, resource, action, predicate와 effect를 포함한 모든 의미 vocabulary는 typed stable ID로 먼저 선언하며, frontend나 analyzer가 알려지지 않은 단어를 새 의미로 추측하지 않는다.
+  - `INTENT-004`: source-backed Canonical Semantic IR record는 해당 선언을 다시 찾을 수 있는 UTF-8 byte source span을 보존하며, 위치를 semantic identity, generated ID·semantic hash, duplicate key 또는 의미 정렬 근거로 사용하지 않는다.
   - `DATA-001`: 데이터의 생성, 조회, 수정, 삭제와 파생 연산을 존재 상태 및 전이와 연결할 수 있어야 한다.
   - `DATA-002`: 생성 전 사용, 삭제 후 사용, 끊어진 참조와 가용하지 않은 입력의 파생을 진단해야 한다.
   - `DATA-003`: record model을 entity sort로 사용하는 typed relation과 endpoint 참조 무결성을 표현하고, 실제 record 없이 bounded virtual model을 탐색할 수 있어야 한다.
@@ -103,6 +105,7 @@ target_spec: "0.3.0"
   - 하나 이상의 field를 가진 record model, 문장형 unary/binary typed relation과 `nonempty`, `required`, `unique`, `exclusive`, `exhaustive`, compatible `coexistent` 규칙
   - 모델별 finite scope에서 typed attribute constraint, endpoint integrity와 relation meta-rule을 grounding하는 bounded model finder, virtual entity/field/relation witness와 bound 한정 UNSAT rule evidence
   - 공통 `Frontend` trait, stable-ID Unlinked IR과 Locale 독립 linking, type checking 및 data usage analyzer
+  - module, 선언, 규칙, screen operation과 recalculation을 포함한 source-backed Semantic IR record의 file-relative source span
   - runtime request별 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - 아직 구현하지 않은 요구사항은 다음과 같다.
   - 화면 간 순서·분기, 삭제 이후 접근과 path별 데이터 availability
