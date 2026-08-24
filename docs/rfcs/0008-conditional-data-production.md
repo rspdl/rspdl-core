@@ -24,7 +24,7 @@ problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss
-last_updated: "2026-08-24"
+last_updated: "2026-08-25"
 owners:
   - rspdl-maintainers
 target_spec: "0.4.0"
@@ -54,7 +54,7 @@ target_spec: "0.4.0"
 
 첫 slice는 한 action invocation의 pre-state에서 하나의 output record를 생성한다. field producer는 typed action input, input record의 field, constant 및 명시적 pre-state snapshot만 지원한다. 목표 의미의 trigger는 `Action`과 명시적으로 선언된 `Event`를 구분하지만 첫 slice는 `Action`만 lower한다.
 
-2026-08-25 현재 구현된 범위는 이 slice의 선행 조건인 stable-ID typed action input뿐이다. existing-model input과 enum·scalar input은 Korean frontend, common linker와 source-backed Canonical IR까지 연결되어 있다. outcome record, Create/Skip, producer, snapshot, template과 `RSPDL-PROD-*`/`RSPDL-POLICY-*` 진단은 아직 구현하지 않았다.
+2026-08-25 현재 구현된 범위는 stable-ID typed action input과 direct enum conditional creation decision이다. Korean frontend와 common analyzer는 action+output production을 만들고 ExactlyOne `Create`/`Skip`, enum coverage, same-variant conflict 및 Create path의 required output field producer gap을 검사한다. field/relation producer, snapshot, template은 아직 구현하지 않았다.
 
 - action은 stable-ID typed input을 선언한다. existing record input은 action 직전에 존재해야 한다.
 - output record는 하나 이상의 typed field를 가진다. output field와 output relation slot은 target과 producer span을 가진 binding으로만 채운다.
@@ -64,6 +64,17 @@ target_spec: "0.4.0"
 - template placeholder는 output field ID만 보존하고 type을 검사한다.
 
 일반 산술, 반올림·세금·환율·외부 가격표, 다수 대상 fan-out·deduplication, 실제 relation JSON binding, delivery retry·UI navigation·external side effect, source-order priority는 지원하지 않는다. lower할 수 없는 의미는 empty value나 success가 아니라 `unsupported` 또는 `unknown`이다.
+
+## 구현된 Korean 정규 문형
+
+다음 두 문형만 현재 parser가 lower한다. branch는 stable ID, action, direct action input, enum variant, output model과 결정을 한 문장에 모두 쓴다. `하나 생성한다`는 ExactlyOne `Create`, `생성하지 않는다`는 `Skip`이다. variant marker는 받침이면 `이면`, 받침이 없으면 `라면`을 쓴다.
+
+```rspdl
+접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.
+보류 상태 알림 미생성(on_hold_notice_skip)은 점검 요청 전달의 요청 상태가 보류됨이면 점검 요청 전달 알림을 생성하지 않는다.
+```
+
+annotation과 block은 허용하지 않으며, source order는 priority가 아니다. 아래 비정규 예시는 설계 목표를 설명할 뿐 현재 정규 문법이 아니다.
 
 ## 문장형 비정규 설계 예시
 

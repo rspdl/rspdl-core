@@ -1,0 +1,1 @@
+{"spec_version":"0.4.0","locale":"ko-KR","category":"normal","expected_module":true,"expected_diagnostics":[],"expected_branches":[["conditional.held_skip","conditional.status.held","skip"],["conditional.received_create","conditional.status.received","create"]]}

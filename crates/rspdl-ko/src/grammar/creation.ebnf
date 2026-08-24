@@ -1,0 +1,17 @@
+# Conditional creation is a single sentence with no implicit priority or block.
+# The handwritten parser remains authoritative while this grammar is a tested
+# executable shadow for the exact Create and Skip surface forms.
+pub creation_branch_statement =
+    branch_name: @surface_name()
+    branch_id: @canonical_id()
+    ("은" | "는")
+    action: @marked_ref("의")
+    input: @marked_ref("이", "가")
+    variant: @marked_ref("이면", "라면")
+    output_model: @marked_ref("을", "를")
+    decision: (
+        "하나" "생성한다"
+      | "생성하지" "않는다"
+    )
+    "."
+    ;

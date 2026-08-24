@@ -217,6 +217,27 @@ pub struct ActionInputAst {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub enum CreationDecisionAst {
+    Create,
+    Skip,
+}
+
+/// A single explicit enum branch that conditionally creates one output model.
+/// The condition is intentionally limited to one direct action input and one
+/// enum variant; broader predicates have no Korean surface in this slice.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CreationBranchAst {
+    pub declaration: NamedIdAst,
+    pub action: String,
+    pub input: String,
+    pub variant: String,
+    pub output_model: String,
+    pub decision: CreationDecisionAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PolicyEffectAst {
     Allow,
     Deny,
@@ -249,6 +270,7 @@ pub enum DeclarationAst {
     Role(RoleAst),
     Action(ActionAst),
     ActionInput(ActionInputAst),
+    CreationBranch(CreationBranchAst),
     Policy(PolicyAst),
 }
 

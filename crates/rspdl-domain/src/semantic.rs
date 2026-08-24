@@ -232,6 +232,38 @@ pub enum ActionInputKind {
     Value { value_type: CanonicalType },
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CreationDecision {
+    Create,
+    Skip,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductionCardinality {
+    ExactlyOne,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CreationBranchDefinition {
+    pub id: CanonicalId,
+    pub variant_id: CanonicalId,
+    pub decision: CreationDecision,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ConditionalProductionDefinition {
+    pub id: CanonicalId,
+    pub action_id: CanonicalId,
+    pub output_model_id: CanonicalId,
+    pub instance_cardinality: ProductionCardinality,
+    pub decision_input_id: CanonicalId,
+    pub branches: Vec<CreationBranchDefinition>,
+    pub span: TextRange,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyEffect {
@@ -276,5 +308,7 @@ pub struct SemanticModule {
     pub constraints: Vec<ConstraintDefinition>,
     pub roles: Vec<RoleDefinition>,
     pub actions: Vec<ActionDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conditional_productions: Vec<ConditionalProductionDefinition>,
     pub policies: Vec<PolicyDefinition>,
 }

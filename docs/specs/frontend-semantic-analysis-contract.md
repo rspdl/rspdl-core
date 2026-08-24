@@ -3,7 +3,7 @@ id: frontend-semantic-analysis-contract
 title: Frontend and Semantic Analysis Contract
 type: spec
 status: implemented
-version: "8"
+version: "9"
 summary: Defines stable-ID Unlinked records, action data mutations, relations, rules, and the structured diagnostic boundary shared by frontends.
 topics:
   - compiler-frontend
@@ -20,7 +20,7 @@ problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss
-last_updated: "2026-08-24"
+last_updated: "2026-08-25"
 owners:
   - rspdl-maintainers
 target_spec: "0.3.0"
@@ -43,6 +43,8 @@ Locale Source -> Locale AST -> Stable-ID UnlinkedModule -> Link/Type Check -> Se
 - Locale AST는 frontend 내부 타입이며 호환 계약이 아니다.
 - `UnlinkedModule`은 선언 ID, 표시 이름, stable-ID `SurfaceRef`, literal, source range와 의미 construct를 보존한다.
 - action의 데이터 결과는 action·model `SurfaceRef`, `create|update|delete` mutation과 source range를 가진 `UnlinkedActionDataMutation`으로 보존한다. Linking 뒤에는 `ActionDataMutationDefinition.span`과 기존 `Compilation.action_data_mutation_provenance` sidecar가 같은 UTF-8 byte `TextRange`를 유지한다.
+- conditional creation branch는 explicit declaration ID, action/input/variant/output `SurfaceRef`, `Create|Skip`과 span을 가진 `UnlinkedCreationBranch`로 보존한다. frontend는 action의 direct input과 그 enum 안의 variant만 표시 이름에서 stable ID로 연결한다.
+- analyzer는 `(action_id, output_model_id)`별 `ConditionalProductionDefinition`을 만들고 `ExactlyOne` instance cardinality, `decision_input_id`와 canonically sorted branch를 보존한다. enum coverage/conflict와 Create path required-field producer gap은 core가 판정한다.
 - `SemanticModule`은 모든 참조와 타입이 해석된 Canonical IR이며 source-backed record마다 선언 또는 규칙의 `span`을 보존한다. 여러 문장을 병합하는 screen은 최초 문장을, 각 operation은 자기 문장을 가리킨다.
 - 재계산 dependency는 기존 `DerivationDefinition.recalculate_when_changed_field_ids`와 함께 source-backed `RecalculationDefinition`으로 보존한다.
 - frontend output은 신뢰하지 않는다. 공통 analyzer가 ID 문법, 참조 존재성, 타입과 교차 선언 invariant를 다시 검증한다.
@@ -152,10 +154,11 @@ Runtime input과 backend 실행 진단은 source `span` 대신 JSON `path`를 �
 
 ## Canonical generated IDs
 
-Constraint, policy와 relation meta-rule의 anonymous ID는 Locale display text나 source 위치를 사용하지 않는다. Analyzer가 frontend에서 받은 reference stable ID를 Canonical ID로 연결한 뒤 다음 semantic identity에 FNV-1a 64-bit를 적용한다.
+Constraint, policy, conditional production과 relation meta-rule의 anonymous ID는 Locale display text나 source 위치를 사용하지 않는다. Analyzer가 frontend에서 받은 reference stable ID를 Canonical ID로 연결한 뒤 다음 semantic identity에 FNV-1a 64-bit를 적용한다.
 
 - constraint: `model-id NUL operand NUL operator NUL operand`
 - policy: `role-id NUL model-id NUL field-id NUL action-id NUL effect`
+- conditional production: `action-id NUL output-model-id`
 - relation meta-rule: normalized kind 뒤에 model ID 하나 또는 정렬·중복 제거된 relation ID 목록
 
 따라서 같은 stable ID와 의미를 사용하는 서로 다른 Locale frontend는 같은 anonymous ID를 만든다.
@@ -165,6 +168,7 @@ Constraint, policy와 relation meta-rule의 anonymous ID는 Locale display text�
 - frontend unit test는 source reference가 expected stable-ID `SurfaceRef`로 lowering되는지 검증한다.
 - analyzer test는 Locale source 없이 hand-authored `UnlinkedModule`만 사용한다.
 - compiler conformance는 action mutation의 `SourceId`와 UTF-8 byte `TextRange`가 `Compilation`까지 보존되는지 검사한다.
+- conditional-production conformance는 normal/failure/boundary/false-positive Create/Skip cases, exact structured diagnostics와 source-order 독립 semantic projection을 검사한다.
 - source provenance conformance는 각 record의 span으로 원문을 UTF-8 slice할 수 있는지, multi-file span이 containing file 기준인지, 위치 변화가 generated ID를 바꾸지 않는지 검사한다.
 - 동일한 stable ID와 의미를 가진 Locale별 fixture는 Canonical ID, semantic result와 `rule_id`, `message_key`, `arguments`가 같아야 한다.
 - 정상, 실패, 경계와 오탐 방지 fixture는 공통 analyzer를 통해 실행한다.

@@ -7,17 +7,18 @@ use serde::Serialize;
 use crate::{
     ActionDataMutationDefinition, ActionDataMutationProvenance, ActionDefinition,
     ActionInputDefinition, ActionInputKind, CanonicalId, CanonicalType, CanonicalValue,
-    ConstraintDefinition, ConstraintOperand, DataModelDefinition, DataMutationKind,
+    ConditionalProductionDefinition, ConstraintDefinition, ConstraintOperand,
+    CreationBranchDefinition, CreationDecision, DataModelDefinition, DataMutationKind,
     DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition, EnumType,
     EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, ModelError, PolicyDefinition,
-    PolicyEffect, RecalculationDefinition, RelationDefinition, RelationOperator,
-    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
-    ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SourceId, SurfaceRef,
-    TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind, UnlinkedConstraint,
-    UnlinkedDataModel, UnlinkedDeclaration, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule,
-    UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation,
-    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedScreen,
-    UnlinkedSumDerivation, UnlinkedTypeReference,
+    PolicyEffect, ProductionCardinality, RecalculationDefinition, RelationDefinition,
+    RelationOperator, RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition,
+    ScreenDefinition, ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity,
+    SourceId, SurfaceRef, TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind,
+    UnlinkedConstraint, UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration,
+    UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
+    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -255,6 +256,17 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         action.inputs.sort_by(|left, right| left.id.cmp(&right.id));
     }
 
+    let conditional_productions = analyze_conditional_productions(
+        module.creation_branches,
+        &module_id,
+        &actions,
+        &action_names,
+        &models_by_name,
+        &enums,
+        &mut top_level_ids,
+        &mut diagnostics,
+    );
+
     let mut relations = Vec::new();
     let mut relation_names = BTreeSet::new();
     for value in module.relations {
@@ -365,6 +377,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
             constraints,
             roles,
             actions,
+            conditional_productions,
             policies,
         }),
         action_data_mutation_provenance,
@@ -781,6 +794,353 @@ fn link_policy(
         effect: value.effect,
         span: value.span,
     })
+}
+
+#[derive(Clone)]
+struct ResolvedCreationBranch {
+    id: CanonicalId,
+    input_id: CanonicalId,
+    variant_id: CanonicalId,
+    decision: CreationDecision,
+    span: TextRange,
+}
+
+/// Lowers the first conditional-production slice: one closed enum action input
+/// partitions creation of exactly one output record. The production span is
+/// retained from the canonically first branch ID, never source order or span.
+#[allow(clippy::too_many_arguments)]
+fn analyze_conditional_productions(
+    values: Vec<UnlinkedCreationBranch>,
+    module_id: &CanonicalId,
+    actions: &[ActionDefinition],
+    action_names: &BTreeMap<String, CanonicalId>,
+    models: &BTreeMap<String, DataModelDefinition>,
+    enums: &[EnumDefinition],
+    top_level_ids: &mut BTreeSet<CanonicalId>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<ConditionalProductionDefinition> {
+    let mut branches_by_production =
+        BTreeMap::<(CanonicalId, CanonicalId), Vec<ResolvedCreationBranch>>::new();
+
+    for value in values {
+        let Some(branch_id) = canonical_member(&value.declaration, module_id, diagnostics) else {
+            continue;
+        };
+        duplicate_id(
+            &branch_id,
+            value.declaration.span,
+            top_level_ids,
+            diagnostics,
+        );
+        let Some(action_id) = resolve_named_id("action", action_names, &value.action, diagnostics)
+        else {
+            continue;
+        };
+        let Some(output_model) = resolve_model(models, &value.output_model, diagnostics) else {
+            continue;
+        };
+        let Some(action) = actions.iter().find(|action| action.id == action_id) else {
+            // `action_names` was built from the same linked declarations. This
+            // guard keeps a malformed frontend from producing a partial node.
+            continue;
+        };
+        let Some((input, enum_type)) = resolve_creation_decision_input(
+            action,
+            &value.input,
+            &action_id,
+            &output_model.id,
+            value.span,
+            diagnostics,
+        ) else {
+            continue;
+        };
+        let Some(variant_id) = resolve_creation_variant(
+            enums,
+            enum_type,
+            &value.variant,
+            &action_id,
+            &output_model.id,
+            &input.id,
+            diagnostics,
+        ) else {
+            continue;
+        };
+
+        branches_by_production
+            .entry((action_id, output_model.id.clone()))
+            .or_default()
+            .push(ResolvedCreationBranch {
+                id: branch_id,
+                input_id: input.id.clone(),
+                variant_id,
+                decision: value.decision,
+                span: value.span,
+            });
+    }
+
+    let mut productions = Vec::new();
+    for ((action_id, output_model_id), mut branches) in branches_by_production {
+        branches.sort_by(|left, right| {
+            (&left.id, &left.variant_id, &left.decision).cmp(&(
+                &right.id,
+                &right.variant_id,
+                &right.decision,
+            ))
+        });
+        let representative_span = branches
+            .first()
+            .expect("a production group always has a branch")
+            .span;
+        let production_id = generated_production_id(module_id, &action_id, &output_model_id)
+            .expect("generated production IDs are always canonical");
+        duplicate_id(
+            &production_id,
+            representative_span,
+            top_level_ids,
+            diagnostics,
+        );
+
+        let decision_input_ids = branches
+            .iter()
+            .map(|branch| branch.input_id.clone())
+            .collect::<BTreeSet<_>>();
+        if decision_input_ids.len() != 1 {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-PROD-007",
+                    "semantic.creation_production.mixed_decision_inputs",
+                    representative_span,
+                )
+                .with_argument("production_id", &production_id)
+                .with_argument("action_id", &action_id)
+                .with_argument("output_model_id", &output_model_id)
+                .with_argument("input_ids", joined_ids_set(&decision_input_ids)),
+            );
+            continue;
+        }
+        let decision_input_id = decision_input_ids
+            .into_iter()
+            .next()
+            .expect("one decision input was checked above");
+        let enum_type = actions
+            .iter()
+            .find(|action| action.id == action_id)
+            .and_then(|action| {
+                action
+                    .inputs
+                    .iter()
+                    .find(|input| input.id == decision_input_id)
+            })
+            .and_then(|input| match &input.kind {
+                ActionInputKind::Value {
+                    value_type: CanonicalType::Enum(enum_type),
+                } => Some(enum_type),
+                ActionInputKind::ExistingModel { .. } | ActionInputKind::Value { .. } => None,
+            })
+            .expect("only enum decision inputs reach a production");
+
+        let branch_ids_by_variant = branches.iter().fold(
+            BTreeMap::<CanonicalId, Vec<CanonicalId>>::new(),
+            |mut grouped, branch| {
+                grouped
+                    .entry(branch.variant_id.clone())
+                    .or_default()
+                    .push(branch.id.clone());
+                grouped
+            },
+        );
+        for (variant_id, branch_ids) in &branch_ids_by_variant {
+            if branch_ids.len() > 1 {
+                let conflict_span = branches
+                    .iter()
+                    .find(|branch| branch.id == branch_ids[0])
+                    .expect("a grouped branch ID came from this production")
+                    .span;
+                diagnostics.push(
+                    Diagnostic::error(
+                        "RSPDL-POLICY-007",
+                        "semantic.creation_production.variant_conflict",
+                        conflict_span,
+                    )
+                    .with_argument("production_id", &production_id)
+                    .with_argument("action_id", &action_id)
+                    .with_argument("output_model_id", &output_model_id)
+                    .with_argument("input_id", &decision_input_id)
+                    .with_argument("variant_id", variant_id)
+                    .with_argument("branch_ids", joined_ids_csv(branch_ids)),
+                );
+            }
+        }
+        let covered_variant_ids = branch_ids_by_variant
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let missing_variant_ids = enum_type
+            .variants()
+            .difference(&covered_variant_ids)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !missing_variant_ids.is_empty() {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-POLICY-008",
+                    "semantic.creation_production.variant_coverage_missing",
+                    representative_span,
+                )
+                .with_argument("production_id", &production_id)
+                .with_argument("action_id", &action_id)
+                .with_argument("output_model_id", &output_model_id)
+                .with_argument("input_id", &decision_input_id)
+                .with_argument("missing_variant_ids", joined_ids_csv(&missing_variant_ids)),
+            );
+        }
+
+        let create_branch_ids = branches
+            .iter()
+            .filter(|branch| branch.decision == CreationDecision::Create)
+            .map(|branch| branch.id.clone())
+            .collect::<Vec<_>>();
+        if !create_branch_ids.is_empty() {
+            let output_model = models
+                .values()
+                .find(|model| model.id == output_model_id)
+                .expect("production output was linked above");
+            let payload_span = branches
+                .iter()
+                .find(|branch| branch.decision == CreationDecision::Create)
+                .expect("a create branch was checked above")
+                .span;
+            for field in output_model.fields.iter().filter(|field| field.required) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "RSPDL-PROD-003",
+                        "semantic.creation_production.required_field_producer_missing",
+                        payload_span,
+                    )
+                    .with_argument("production_id", &production_id)
+                    .with_argument("action_id", &action_id)
+                    .with_argument("output_model_id", &output_model_id)
+                    .with_argument("field_id", &field.id)
+                    .with_argument("create_branch_ids", joined_ids_csv(&create_branch_ids)),
+                );
+            }
+        }
+
+        productions.push(ConditionalProductionDefinition {
+            id: production_id,
+            action_id,
+            output_model_id,
+            instance_cardinality: ProductionCardinality::ExactlyOne,
+            decision_input_id,
+            branches: branches
+                .into_iter()
+                .map(|branch| CreationBranchDefinition {
+                    id: branch.id,
+                    variant_id: branch.variant_id,
+                    decision: branch.decision,
+                    span: branch.span,
+                })
+                .collect(),
+            span: representative_span,
+        });
+    }
+    productions.sort_by(|left, right| {
+        (&left.action_id, &left.output_model_id, &left.id).cmp(&(
+            &right.action_id,
+            &right.output_model_id,
+            &right.id,
+        ))
+    });
+    productions
+}
+
+fn resolve_creation_decision_input<'a>(
+    action: &'a ActionDefinition,
+    reference: &SurfaceRef,
+    action_id: &CanonicalId,
+    output_model_id: &CanonicalId,
+    span: TextRange,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(&'a ActionInputDefinition, &'a EnumType)> {
+    if !validate_reference(reference, "RSPDL-PROD-002", diagnostics) {
+        return None;
+    }
+    let Some(input) = action
+        .inputs
+        .iter()
+        .find(|input| member_reference_matches(&input.id, &input.local_id, reference))
+    else {
+        diagnostics.push(
+            Diagnostic::error(
+                "RSPDL-PROD-002",
+                "semantic.creation_branch.decision_input_not_found",
+                reference.span(),
+            )
+            .with_argument("action_id", action_id)
+            .with_argument("output_model_id", output_model_id)
+            .with_argument("reference", reference.id()),
+        );
+        return None;
+    };
+    match &input.kind {
+        ActionInputKind::Value {
+            value_type: CanonicalType::Enum(enum_type),
+        } => Some((input, enum_type)),
+        ActionInputKind::ExistingModel { .. } | ActionInputKind::Value { .. } => {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-PROD-002",
+                    "semantic.creation_branch.decision_input_requires_enum",
+                    span,
+                )
+                .with_argument("action_id", action_id)
+                .with_argument("output_model_id", output_model_id)
+                .with_argument("input_id", &input.id),
+            );
+            None
+        }
+    }
+}
+
+fn resolve_creation_variant(
+    enums: &[EnumDefinition],
+    enum_type: &EnumType,
+    reference: &SurfaceRef,
+    action_id: &CanonicalId,
+    output_model_id: &CanonicalId,
+    input_id: &CanonicalId,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<CanonicalId> {
+    if !validate_reference(reference, "RSPDL-PROD-002", diagnostics) {
+        return None;
+    }
+    let variant = enums
+        .iter()
+        .find(|definition| definition.id == *enum_type.id())
+        .and_then(|definition| {
+            definition
+                .variants
+                .iter()
+                .find(|variant| member_reference_matches(&variant.id, &variant.local_id, reference))
+        });
+    match variant {
+        Some(variant) => Some(variant.id.clone()),
+        None => {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-PROD-002",
+                    "semantic.creation_branch.variant_not_in_decision_enum",
+                    reference.span(),
+                )
+                .with_argument("action_id", action_id)
+                .with_argument("output_model_id", output_model_id)
+                .with_argument("input_id", input_id)
+                .with_argument("enum_id", enum_type.id())
+                .with_argument("reference", reference.id()),
+            );
+            None
+        }
+    }
 }
 
 struct ResolvedDerivation {
@@ -1735,6 +2095,17 @@ fn generated_policy_id(
     )
 }
 
+fn generated_production_id(
+    module_id: &CanonicalId,
+    action_id: &CanonicalId,
+    output_model_id: &CanonicalId,
+) -> Result<CanonicalId, ModelError> {
+    CanonicalId::new(format!(
+        "{module_id}.{}",
+        generated_id("production", &format!("{action_id}\0{output_model_id}"))
+    ))
+}
+
 fn generated_relational_constraint_id(constraint: &RelationalConstraintKind) -> String {
     let identity = match constraint {
         RelationalConstraintKind::NonEmpty { model_id } => format!("nonempty\0{model_id}"),
@@ -1758,6 +2129,17 @@ fn joined_ids(ids: &[CanonicalId]) -> String {
         .map(CanonicalId::as_str)
         .collect::<Vec<_>>()
         .join("\0")
+}
+
+fn joined_ids_set(ids: &BTreeSet<CanonicalId>) -> String {
+    joined_ids_csv(&ids.iter().cloned().collect::<Vec<_>>())
+}
+
+fn joined_ids_csv(ids: &[CanonicalId]) -> String {
+    ids.iter()
+        .map(CanonicalId::as_str)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn generated_id(kind: &str, identity: &str) -> String {

@@ -1,10 +1,11 @@
 use rspdl_domain::{
-    DataMutationKind, FieldIntentKind, PolicyEffect, RelationOperator, ScreenOperationKind,
-    SurfaceRef, TextRange, UnlinkedAction, UnlinkedActionDataMutation, UnlinkedActionInput,
-    UnlinkedActionInputKind, UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration,
-    UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand,
-    UnlinkedPolicy, UnlinkedRelation, UnlinkedRelationalConstraint,
-    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedTypeReference, analyze,
+    CreationDecision, DataMutationKind, FieldIntentKind, PolicyEffect, RelationOperator,
+    ScreenOperationKind, SurfaceRef, TextRange, UnlinkedAction, UnlinkedActionDataMutation,
+    UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint, UnlinkedCreationBranch,
+    UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField,
+    UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
+    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
+    UnlinkedScreen, UnlinkedTypeReference, analyze,
 };
 
 fn span() -> TextRange {
@@ -39,6 +40,7 @@ fn empty_module(name: &str) -> UnlinkedModule {
         constraints: Vec::new(),
         roles: Vec::new(),
         actions: Vec::new(),
+        creation_branches: Vec::new(),
         policies: Vec::new(),
     }
 }
@@ -86,6 +88,471 @@ fn policy_module(labels: [&str; 5]) -> UnlinkedModule {
         span: span(),
     });
     module
+}
+
+fn enum_decision_input(id: &str) -> UnlinkedActionInput {
+    UnlinkedActionInput {
+        declaration: declaration("Status", Some(id)),
+        kind: UnlinkedActionInputKind::Value {
+            value_type: UnlinkedTypeReference::Named(reference("status")),
+        },
+        span: span(),
+    }
+}
+
+fn creation_branch(
+    id: &str,
+    input: &str,
+    variant: &str,
+    decision: CreationDecision,
+) -> UnlinkedCreationBranch {
+    creation_branch_at(id, input, variant, decision, span())
+}
+
+fn creation_branch_at(
+    id: &str,
+    input: &str,
+    variant: &str,
+    decision: CreationDecision,
+    branch_span: TextRange,
+) -> UnlinkedCreationBranch {
+    UnlinkedCreationBranch {
+        declaration: UnlinkedDeclaration {
+            name: "Creation branch".into(),
+            id: Some(id.into()),
+            span: branch_span,
+        },
+        action: SurfaceRef::stable_id("publish", branch_span),
+        input: SurfaceRef::stable_id(input, branch_span),
+        variant: SurfaceRef::stable_id(variant, branch_span),
+        output_model: SurfaceRef::stable_id("notice", branch_span),
+        decision,
+        span: branch_span,
+    }
+}
+
+fn conditional_creation_module(
+    output_required: bool,
+    inputs: Vec<UnlinkedActionInput>,
+    branches: Vec<UnlinkedCreationBranch>,
+) -> UnlinkedModule {
+    let mut module = empty_module("Conditional notice");
+    module.enums.push(UnlinkedEnum {
+        declaration: declaration("Status", Some("status")),
+        variants: vec![
+            UnlinkedEnumVariant {
+                declaration: declaration("Draft", Some("draft")),
+                span: span(),
+            },
+            UnlinkedEnumVariant {
+                declaration: declaration("Published", Some("published")),
+                span: span(),
+            },
+        ],
+        span: span(),
+    });
+    module.models.push(UnlinkedDataModel {
+        declaration: declaration("Notice", Some("notice")),
+        fields: vec![UnlinkedField {
+            declaration: declaration("Body", Some("body")),
+            required: output_required,
+            value_type: UnlinkedTypeReference::String,
+            span: span(),
+        }],
+        span: span(),
+    });
+    module.actions.push(UnlinkedAction {
+        declaration: declaration("Publish", Some("publish")),
+        inputs,
+        span: span(),
+    });
+    module.creation_branches = branches;
+    module
+}
+
+type DiagnosticProjection = Vec<(String, String, Vec<(String, String)>)>;
+
+fn diagnostic_projection(output: &rspdl_domain::AnalysisOutput) -> DiagnosticProjection {
+    output
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.rule_id.clone(),
+                diagnostic.message_key.clone(),
+                diagnostic
+                    .arguments
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn conditional_creation_branches_lower_to_an_exhaustive_optional_production() {
+    let output = analyze(conditional_creation_module(
+        false,
+        vec![enum_decision_input("status")],
+        vec![
+            creation_branch("draft_skip", "status", "draft", CreationDecision::Skip),
+            creation_branch(
+                "published_create",
+                "expense.publish.status",
+                "published",
+                CreationDecision::Create,
+            ),
+        ],
+    ));
+
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    let module = output.module.expect("valid production should lower");
+    let production = &module.conditional_productions[0];
+    assert_eq!(production.action_id.as_str(), "expense.publish");
+    assert_eq!(production.output_model_id.as_str(), "expense.notice");
+    assert_eq!(
+        production.instance_cardinality,
+        rspdl_domain::ProductionCardinality::ExactlyOne
+    );
+    assert_eq!(
+        production.decision_input_id.as_str(),
+        "expense.publish.status"
+    );
+    assert_eq!(
+        production
+            .branches
+            .iter()
+            .map(|branch| (
+                branch.id.as_str(),
+                branch.variant_id.as_str(),
+                branch.decision,
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "expense.draft_skip",
+                "expense.status.draft",
+                CreationDecision::Skip
+            ),
+            (
+                "expense.published_create",
+                "expense.status.published",
+                CreationDecision::Create,
+            ),
+        ]
+    );
+}
+
+#[test]
+fn conditional_creation_reports_sorted_missing_enum_coverage() {
+    let output = analyze(conditional_creation_module(
+        false,
+        vec![enum_decision_input("status")],
+        vec![creation_branch(
+            "draft_skip",
+            "status",
+            "draft",
+            CreationDecision::Skip,
+        )],
+    ));
+
+    assert!(output.module.is_none());
+    let diagnostic = output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.rule_id == "RSPDL-POLICY-008")
+        .expect("missing enum variant should be diagnosed");
+    assert_eq!(
+        diagnostic.message_key,
+        "semantic.creation_production.variant_coverage_missing"
+    );
+    assert_eq!(
+        diagnostic.argument("production_id"),
+        Some("expense.production_4f5995e84eac40dc")
+    );
+    assert_eq!(diagnostic.argument("action_id"), Some("expense.publish"));
+    assert_eq!(
+        diagnostic.argument("output_model_id"),
+        Some("expense.notice")
+    );
+    assert_eq!(
+        diagnostic.argument("input_id"),
+        Some("expense.publish.status")
+    );
+    assert_eq!(
+        diagnostic.argument("missing_variant_ids"),
+        Some("expense.status.published")
+    );
+}
+
+#[test]
+fn conditional_creation_reports_conflicting_branches_for_the_same_variant() {
+    let output = analyze(conditional_creation_module(
+        false,
+        vec![enum_decision_input("status")],
+        vec![
+            creation_branch("draft_first", "status", "draft", CreationDecision::Skip),
+            creation_branch("draft_second", "status", "draft", CreationDecision::Skip),
+            creation_branch(
+                "published_skip",
+                "status",
+                "published",
+                CreationDecision::Skip,
+            ),
+        ],
+    ));
+
+    assert!(output.module.is_none());
+    let diagnostic = output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.rule_id == "RSPDL-POLICY-007")
+        .expect("duplicate effective branch should be diagnosed");
+    assert_eq!(
+        diagnostic.argument("branch_ids"),
+        Some("expense.draft_first,expense.draft_second")
+    );
+    assert_eq!(
+        diagnostic.argument("variant_id"),
+        Some("expense.status.draft")
+    );
+}
+
+#[test]
+fn conditional_creation_reports_required_output_field_gap_only_for_create_paths() {
+    let output = analyze(conditional_creation_module(
+        true,
+        vec![enum_decision_input("status")],
+        vec![
+            creation_branch("draft_create", "status", "draft", CreationDecision::Create),
+            creation_branch(
+                "published_skip",
+                "status",
+                "published",
+                CreationDecision::Skip,
+            ),
+        ],
+    ));
+
+    assert!(output.module.is_none());
+    let diagnostic = output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-003")
+        .expect("required output field must have a create-path producer");
+    assert_eq!(diagnostic.argument("field_id"), Some("expense.notice.body"));
+    assert_eq!(
+        diagnostic.argument("create_branch_ids"),
+        Some("expense.draft_create")
+    );
+}
+
+#[test]
+fn conditional_creation_with_only_skip_paths_has_no_payload_gap() {
+    let output = analyze(conditional_creation_module(
+        true,
+        vec![enum_decision_input("status")],
+        vec![
+            creation_branch("draft_skip", "status", "draft", CreationDecision::Skip),
+            creation_branch(
+                "published_skip",
+                "status",
+                "published",
+                CreationDecision::Skip,
+            ),
+        ],
+    ));
+
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    assert!(output.module.is_some());
+}
+
+#[test]
+fn conditional_creation_rejects_scalar_and_existing_model_decision_inputs() {
+    let scalar = analyze(conditional_creation_module(
+        false,
+        vec![UnlinkedActionInput {
+            declaration: declaration("Status", Some("status")),
+            kind: UnlinkedActionInputKind::Value {
+                value_type: UnlinkedTypeReference::String,
+            },
+            span: span(),
+        }],
+        vec![creation_branch(
+            "draft_skip",
+            "status",
+            "draft",
+            CreationDecision::Skip,
+        )],
+    ));
+    assert!(scalar.module.is_none());
+    assert!(scalar.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-002"
+            && diagnostic.message_key == "semantic.creation_branch.decision_input_requires_enum"
+            && diagnostic.argument("input_id") == Some("expense.publish.status")
+    }));
+
+    let existing = analyze(conditional_creation_module(
+        false,
+        vec![UnlinkedActionInput {
+            declaration: declaration("Status", Some("status")),
+            kind: UnlinkedActionInputKind::ExistingModel {
+                model: reference("notice"),
+            },
+            span: span(),
+        }],
+        vec![creation_branch(
+            "draft_skip",
+            "status",
+            "draft",
+            CreationDecision::Skip,
+        )],
+    ));
+    assert!(existing.module.is_none());
+    assert!(existing.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-002"
+            && diagnostic.message_key == "semantic.creation_branch.decision_input_requires_enum"
+            && diagnostic.argument("input_id") == Some("expense.publish.status")
+    }));
+}
+
+#[test]
+fn conditional_creation_rejects_variants_outside_the_input_enum_and_duplicate_branch_ids() {
+    let foreign_variant = analyze(conditional_creation_module(
+        false,
+        vec![enum_decision_input("status")],
+        vec![creation_branch(
+            "invalid_variant",
+            "status",
+            "missing",
+            CreationDecision::Skip,
+        )],
+    ));
+    assert!(foreign_variant.module.is_none());
+    assert!(foreign_variant.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-002"
+            && diagnostic.message_key == "semantic.creation_branch.variant_not_in_decision_enum"
+            && diagnostic.argument("enum_id") == Some("expense.status")
+            && diagnostic.argument("reference") == Some("missing")
+    }));
+
+    let duplicate_id = analyze(conditional_creation_module(
+        false,
+        vec![enum_decision_input("status")],
+        vec![
+            creation_branch("same_branch", "status", "draft", CreationDecision::Skip),
+            creation_branch("same_branch", "status", "published", CreationDecision::Skip),
+        ],
+    ));
+    assert!(duplicate_id.module.is_none());
+    assert!(duplicate_id.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-LINK-003"
+            && diagnostic.message_key == "semantic.declaration.duplicate_id"
+            && diagnostic.argument("id") == Some("expense.same_branch")
+    }));
+}
+
+#[test]
+fn conditional_creation_rejects_mixed_decision_inputs_in_one_production() {
+    let output = analyze(conditional_creation_module(
+        false,
+        vec![
+            enum_decision_input("status"),
+            enum_decision_input("status_alt"),
+        ],
+        vec![
+            creation_branch("draft_skip", "status", "draft", CreationDecision::Skip),
+            creation_branch(
+                "published_skip",
+                "status_alt",
+                "published",
+                CreationDecision::Skip,
+            ),
+        ],
+    ));
+
+    assert!(output.module.is_none());
+    let diagnostic = output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-007")
+        .expect("one production must use one direct decision input");
+    assert_eq!(
+        diagnostic.argument("input_ids"),
+        Some("expense.publish.status,expense.publish.status_alt")
+    );
+}
+
+#[test]
+fn conditional_creation_is_canonical_when_branches_are_reordered() {
+    let draft = creation_branch_at(
+        "draft_skip",
+        "status",
+        "draft",
+        CreationDecision::Skip,
+        TextRange {
+            start: 100,
+            end: 120,
+        },
+    );
+    let published = creation_branch_at(
+        "published_create",
+        "status",
+        "published",
+        CreationDecision::Create,
+        TextRange { start: 30, end: 50 },
+    );
+    let first = analyze(conditional_creation_module(
+        false,
+        vec![enum_decision_input("status")],
+        vec![published.clone(), draft.clone()],
+    ));
+    let second = analyze(conditional_creation_module(
+        false,
+        vec![enum_decision_input("status")],
+        vec![draft, published],
+    ));
+
+    assert_eq!(
+        diagnostic_projection(&first),
+        diagnostic_projection(&second)
+    );
+    let first = first.module.expect("reordered branches remain valid");
+    let second = second.module.expect("reordered branches remain valid");
+    let projection = |module: &rspdl_domain::SemanticModule| {
+        module
+            .conditional_productions
+            .iter()
+            .map(|production| {
+                (
+                    production.id.as_str().to_owned(),
+                    production.action_id.as_str().to_owned(),
+                    production.output_model_id.as_str().to_owned(),
+                    production.decision_input_id.as_str().to_owned(),
+                    production
+                        .branches
+                        .iter()
+                        .map(|branch| {
+                            (
+                                branch.id.as_str().to_owned(),
+                                branch.variant_id.as_str().to_owned(),
+                                branch.decision,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(projection(&first), projection(&second));
+    assert_eq!(
+        first.conditional_productions[0].span,
+        TextRange {
+            start: 100,
+            end: 120
+        }
+    );
 }
 
 #[test]

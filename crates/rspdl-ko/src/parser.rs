@@ -115,6 +115,10 @@ pub fn parse(source: &str) -> ParseOutput {
             Some(DeclarationKind::ActionInput) => {
                 parse_action_input(line, body, &mut diagnostics).map(DeclarationAst::ActionInput)
             }
+            Some(DeclarationKind::CreationBranch) => {
+                parse_creation_branch(line, body, &mut diagnostics)
+                    .map(DeclarationAst::CreationBranch)
+            }
             Some(DeclarationKind::Policy) => {
                 parse_policy(line, body, &mut diagnostics).map(DeclarationAst::Policy)
             }
@@ -195,6 +199,7 @@ enum DeclarationKind {
     Role,
     Action,
     ActionInput,
+    CreationBranch,
     Policy,
 }
 
@@ -215,6 +220,7 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
         _ if is_role_sentence(line) => Some(DeclarationKind::Role),
         _ if is_action_sentence(line) => Some(DeclarationKind::Action),
         _ if is_action_input_sentence(line) => Some(DeclarationKind::ActionInput),
+        _ if is_creation_branch_sentence(line) => Some(DeclarationKind::CreationBranch),
         _ if is_relation_sentence(line) => Some(DeclarationKind::Relation),
         _ if is_nonempty_sentence(line) => Some(DeclarationKind::RelationalConstraint(
             RelationalConstraintDeclarationKind::NonEmpty,
@@ -561,6 +567,16 @@ fn is_action_sentence(line: &Line) -> bool {
 
 fn is_action_input_sentence(line: &Line) -> bool {
     sentence_words_end_with(line, &["입력받는다"])
+}
+
+fn is_creation_branch_sentence(line: &Line) -> bool {
+    let ends_with_creation = last_sentence_word(line, 0) == Some("생성한다")
+        || (last_sentence_word(line, 0) == Some("않는다")
+            && last_sentence_word(line, 1) == Some("생성하지"));
+    ends_with_creation
+        && line.tokens.iter().any(|token| {
+            matches!(&token.kind, TokenKind::Word(word) if matches!(word.as_str(), "이면" | "라면") || word.ends_with("이면") || word.ends_with("라면"))
+        })
 }
 
 fn is_relation_sentence(line: &Line) -> bool {
@@ -965,6 +981,126 @@ fn parse_action_input(
         kind,
         span: line.span,
     })
+}
+
+fn parse_creation_branch(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<CreationBranchAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "creation_branch")?;
+    let tokens = sentence_tokens(line)?;
+    let id_index = tokens
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-072",
+                "ko.syntax.creation_branch_stable_id_required",
+                line.span,
+            )
+        })?;
+    let declaration = parse_name_with_id_tokens(tokens, 0, id_index, line.span)?;
+    let mut cursor = BodyCursor::new(&tokens[id_index + 1..], line.span);
+    let topic_marker = cursor
+        .next_word()
+        .filter(|marker| matches!(*marker, "은" | "는"));
+    let Some(topic_marker) = topic_marker else {
+        return Err(creation_branch_error(
+            &cursor,
+            "RSPDL-KO-SYN-073",
+            "ko.syntax.creation_branch_topic_marker_required",
+        ));
+    };
+    let (action, _) = creation_branch_marked_ref(
+        &mut cursor,
+        &["의"],
+        "ko.syntax.creation_branch_condition_marker_invalid",
+    )?;
+    let (input, input_marker) = creation_branch_marked_ref(
+        &mut cursor,
+        &["이", "가"],
+        "ko.syntax.creation_branch_condition_marker_invalid",
+    )?;
+    let (variant, variant_marker) = creation_branch_marked_ref(
+        &mut cursor,
+        &["이면", "라면"],
+        "ko.syntax.creation_branch_condition_marker_invalid",
+    )?;
+    let (output_model, output_marker) = creation_branch_marked_ref(
+        &mut cursor,
+        &["을", "를"],
+        "ko.syntax.creation_branch_result_marker_invalid",
+    )?;
+    let decision = match (cursor.next_word(), cursor.next_word()) {
+        (Some("하나"), Some("생성한다")) => CreationDecisionAst::Create,
+        (Some("생성하지"), Some("않는다")) => CreationDecisionAst::Skip,
+        _ => {
+            return Err(creation_branch_error(
+                &cursor,
+                "RSPDL-KO-SYN-076",
+                "ko.syntax.creation_branch_result_invalid",
+            ));
+        }
+    };
+    cursor.expect_end()?;
+    lint_marker(
+        &declaration.name,
+        topic_marker,
+        "은",
+        "는",
+        line.span,
+        diagnostics,
+    );
+    lint_marker(&input, &input_marker, "이", "가", line.span, diagnostics);
+    lint_marker(
+        &variant,
+        &variant_marker,
+        "이면",
+        "라면",
+        line.span,
+        diagnostics,
+    );
+    lint_marker(
+        &output_model,
+        &output_marker,
+        "을",
+        "를",
+        line.span,
+        diagnostics,
+    );
+    Ok(CreationBranchAst {
+        declaration,
+        action,
+        input,
+        variant,
+        output_model,
+        decision,
+        span: line.span,
+    })
+}
+
+fn creation_branch_marked_ref(
+    cursor: &mut BodyCursor<'_>,
+    markers: &[&str],
+    message_key: &'static str,
+) -> Result<(String, String), Diagnostic> {
+    cursor
+        .marked_ref(markers)
+        .map_err(|_| creation_branch_error(cursor, "RSPDL-KO-SYN-074", message_key))
+}
+
+fn creation_branch_error(
+    cursor: &BodyCursor<'_>,
+    rule_id: &'static str,
+    message_key: &'static str,
+) -> Diagnostic {
+    let span = cursor
+        .tokens
+        .get(cursor.index)
+        .map(|token| token.span)
+        .unwrap_or(cursor.span);
+    Diagnostic::error(rule_id, message_key, span)
 }
 
 fn parse_field_list(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnostic> {
@@ -1953,6 +2089,83 @@ mod tests {
                     )
                 })
         );
+    }
+
+    #[test]
+    fn parses_exact_conditional_creation_sentences_and_rejects_invalid_shapes() {
+        let source = r#"@모듈 알림(notifications)
+상태(status)는 다음 값 중 하나다.
+    접수됨(received)
+    보류됨(on_hold)
+점검 요청 전달 알림(notice)은 다음 필드들로 구성되어 있다.
+    내용(content): 선택 문자열
+점검 요청 전달(assign_request)은 행동이다.
+점검 요청 전달은 상태를 요청 상태(request_status)로 입력받는다.
+접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.
+보류 상태 알림 미생성(on_hold_notice_skip)은 점검 요청 전달의 요청 상태가 보류됨이면 점검 요청 전달 알림을 생성하지 않는다.
+"#;
+        let output = parse(source);
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let branches = output
+            .document
+            .unwrap()
+            .declarations
+            .into_iter()
+            .filter_map(|declaration| match declaration {
+                DeclarationAst::CreationBranch(value) => Some(value),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(branches.len(), 2);
+        assert_eq!(branches[0].declaration.id, "received_notice_create");
+        assert_eq!(branches[0].action, "점검 요청 전달");
+        assert_eq!(branches[0].input, "요청 상태");
+        assert_eq!(branches[0].variant, "접수됨");
+        assert_eq!(branches[0].output_model, "점검 요청 전달 알림");
+        assert_eq!(branches[0].decision, CreationDecisionAst::Create);
+        assert_eq!(branches[1].decision, CreationDecisionAst::Skip);
+
+        for (line, rule_id, message_key) in [
+            (
+                "접수 상태 알림 생성은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.",
+                "RSPDL-KO-SYN-072",
+                "ko.syntax.creation_branch_stable_id_required",
+            ),
+            (
+                "접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 두 개 생성한다.",
+                "RSPDL-KO-SYN-076",
+                "ko.syntax.creation_branch_result_invalid",
+            ),
+        ] {
+            let output = parse(&format!("@모듈 알림(notifications)\n{line}\n"));
+            assert!(
+                output.diagnostics.iter().any(|diagnostic| {
+                    diagnostic.rule_id == rule_id && diagnostic.message_key == message_key
+                }),
+                "{line}: {:?}",
+                output.diagnostics
+            );
+        }
+
+        let invalid_id = parse(
+            "@모듈 알림(notifications)\n접수 상태 알림 생성(bad-id)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.\n",
+        );
+        assert!(invalid_id.diagnostics.is_empty());
+        let DeclarationAst::CreationBranch(branch) = &invalid_id.document.unwrap().declarations[0]
+        else {
+            panic!("invalid stable ID shape still belongs to the common linker")
+        };
+        assert_eq!(branch.declaration.id, "bad-id");
+
+        let block = format!(
+            "@모듈 알림(notifications)\n{}\n    금지된 블록\n",
+            "접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다."
+        );
+        assert!(parse(&block).diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-KO-SYN-063"
+                && diagnostic.message_key == "ko.syntax.sentence_block_forbidden"
+                && diagnostic.argument("kind") == Some("creation_branch")
+        }));
     }
 
     #[test]

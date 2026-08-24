@@ -52,6 +52,21 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "ko.syntax.action_input_name_marker_required" => {
             "행동 입력 이름과 stable ID 뒤에는 로 또는 으로가 필요합니다.".into()
         }
+        "ko.syntax.creation_branch_stable_id_required" => {
+            "조건부 생성 branch의 표시 이름 뒤에 stable ID가 필요합니다.".into()
+        }
+        "ko.syntax.creation_branch_topic_marker_required" => {
+            "조건부 생성 branch 이름 뒤에는 은 또는 는이 필요합니다.".into()
+        }
+        "ko.syntax.creation_branch_result_invalid" => {
+            "조건부 생성 결과는 하나 생성한다 또는 생성하지 않는다여야 합니다.".into()
+        }
+        "ko.syntax.creation_branch_condition_marker_invalid" => {
+            "조건부 생성 조건은 행동의 입력이 enum 값이면 형식이어야 합니다.".into()
+        }
+        "ko.syntax.creation_branch_result_marker_invalid" => {
+            "조건부 생성 결과의 output model 뒤에는 을 또는 를이 필요합니다.".into()
+        }
         "ko.syntax.field_list_required" => "필드 목록이 필요합니다.".into(),
         "ko.syntax.field_list_empty_name" => "빈 필드 이름은 사용할 수 없습니다.".into(),
         "ko.syntax.field_list_invalid" => "필드 목록 형식이 올바르지 않습니다.".into(),
@@ -201,6 +216,44 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
                 object_marker(reference)
             )
         }
+        "semantic.creation_branch.decision_input_not_found" => format!(
+            "행동 {}에서 조건 입력 {}을 찾을 수 없습니다.",
+            argument(diagnostic, "action_id"),
+            argument(diagnostic, "reference")
+        ),
+        "semantic.creation_branch.decision_input_requires_enum" => format!(
+            "조건부 생성 입력 {}은 닫힌 열거형 값이어야 합니다.",
+            argument(diagnostic, "input_id")
+        ),
+        "semantic.creation_branch.variant_not_in_decision_enum" => format!(
+            "조건 값 {}은 입력 {}의 열거형 {}에 속하지 않습니다.",
+            argument(diagnostic, "reference"),
+            argument(diagnostic, "input_id"),
+            argument(diagnostic, "enum_id")
+        ),
+        "semantic.creation_production.mixed_decision_inputs" => format!(
+            "생산 {}은 하나의 조건 입력만 사용해야 하지만 {}을 함께 사용합니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "input_ids")
+        ),
+        "semantic.creation_production.variant_conflict" => format!(
+            "생산 {}의 값 {}에 branch {}가 함께 선언되었습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "variant_id"),
+            argument(diagnostic, "branch_ids")
+        ),
+        "semantic.creation_production.variant_coverage_missing" => format!(
+            "생산 {}의 조건 입력 {}에서 값 {}가 빠졌습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "input_id"),
+            argument(diagnostic, "missing_variant_ids")
+        ),
+        "semantic.creation_production.required_field_producer_missing" => format!(
+            "생산 {}의 필수 field {}는 생성 branch {}에서 값을 생산하지 않습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "field_id"),
+            argument(diagnostic, "create_branch_ids")
+        ),
         "semantic.constraint.operand_type_mismatch" => {
             "제약의 양쪽 operand 타입이 다릅니다.".into()
         }
@@ -402,6 +455,7 @@ fn syntax_kind(kind: &str) -> &str {
         "sum_derivation" => "계산",
         "recalculation" => "재계산",
         "field_intent" => "필드 사용 의도",
+        "creation_branch" => "조건부 생성 branch",
         "relation" => "관계 선언",
         "entity" => "개체 선언",
         "relational_constraint" => "관계 메타 규칙",
@@ -551,6 +605,40 @@ mod tests {
             )
             .with_argument("relation_ids", relations);
             assert_eq!(render_diagnostic(&diagnostic), expected);
+        }
+    }
+
+    #[test]
+    fn renders_conditional_creation_core_diagnostics() {
+        let arguments = [
+            ("action_id", "notice.assign"),
+            ("reference", "status"),
+            ("input_id", "notice.assign.status"),
+            ("enum_id", "notice.status"),
+            ("production_id", "notice.production_x"),
+            ("input_ids", "notice.assign.status,notice.assign.kind"),
+            ("variant_id", "notice.status.received"),
+            ("branch_ids", "notice.first,notice.second"),
+            ("missing_variant_ids", "notice.status.held"),
+            ("field_id", "notice.output.body"),
+            ("create_branch_ids", "notice.first"),
+        ];
+        for key in [
+            "semantic.creation_branch.decision_input_not_found",
+            "semantic.creation_branch.decision_input_requires_enum",
+            "semantic.creation_branch.variant_not_in_decision_enum",
+            "semantic.creation_production.mixed_decision_inputs",
+            "semantic.creation_production.variant_conflict",
+            "semantic.creation_production.variant_coverage_missing",
+            "semantic.creation_production.required_field_producer_missing",
+        ] {
+            let diagnostic = arguments.into_iter().fold(
+                Diagnostic::error("RSPDL-TEST", key, TextRange::default()),
+                |diagnostic, (argument, value)| diagnostic.with_argument(argument, value),
+            );
+            let rendered = render_diagnostic(&diagnostic);
+            assert_ne!(rendered, key, "{key}");
+            assert!(!rendered.contains("<?>"), "{key}: {rendered}");
         }
     }
 }

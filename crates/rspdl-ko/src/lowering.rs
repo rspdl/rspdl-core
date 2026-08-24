@@ -1,13 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rspdl_domain::{
-    DataMutationKind, Diagnostic, FieldIntentKind, Frontend, FrontendOutput, PolicyEffect,
-    RelationOperator, ScreenOperationKind, SurfaceRef, UnlinkedAction, UnlinkedActionDataMutation,
-    UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint, UnlinkedDataModel,
-    UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent,
-    UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
-    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
-    UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    CreationDecision, DataMutationKind, Diagnostic, FieldIntentKind, Frontend, FrontendOutput,
+    PolicyEffect, RelationOperator, ScreenOperationKind, SurfaceRef, UnlinkedAction,
+    UnlinkedActionDataMutation, UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint,
+    UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum,
+    UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule,
+    UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation,
+    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
+    UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 use crate::ast::*;
@@ -48,6 +49,13 @@ struct ModelSymbols {
     fields: Vec<FieldSymbol>,
 }
 
+#[derive(Clone, Debug)]
+struct ActionInputSymbol {
+    action_id: String,
+    symbol: Symbol,
+    enum_type_name: Option<String>,
+}
+
 #[derive(Clone, Debug, Default)]
 struct StableIdIndex {
     enums: Vec<EnumSymbols>,
@@ -55,6 +63,7 @@ struct StableIdIndex {
     relations: Vec<Symbol>,
     roles: Vec<Symbol>,
     actions: Vec<Symbol>,
+    action_inputs: Vec<ActionInputSymbol>,
 }
 
 impl StableIdIndex {
@@ -92,6 +101,25 @@ impl StableIdIndex {
                 }
                 _ => {}
             }
+        }
+        for declaration in &document.declarations {
+            let DeclarationAst::ActionInput(value) = declaration else {
+                continue;
+            };
+            let Some(action_id) = unique_symbol_id(index.actions.iter(), &value.action) else {
+                continue;
+            };
+            let enum_type_name = match &value.kind {
+                ActionInputKindAst::Value {
+                    value_type: TypeReferenceAst::Named(name),
+                } => Some(name.clone()),
+                ActionInputKindAst::ExistingModel { .. } | ActionInputKindAst::Value { .. } => None,
+            };
+            index.action_inputs.push(ActionInputSymbol {
+                action_id: action_id.to_owned(),
+                symbol: Symbol::from(&value.declaration),
+                enum_type_name,
+            });
         }
         index
     }
@@ -151,6 +179,47 @@ impl StableIdIndex {
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Option<SurfaceRef> {
         resolve_symbols(self.actions.iter(), value, "action", span, diagnostics)
+    }
+
+    fn action_input_reference(
+        &self,
+        action: Option<&SurfaceRef>,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let action_id = action?.id();
+        resolve_symbols(
+            self.action_inputs
+                .iter()
+                .filter(|input| input.action_id == action_id)
+                .map(|input| &input.symbol),
+            value,
+            "action_input",
+            span,
+            diagnostics,
+        )
+    }
+
+    /// A scalar or existing-model input intentionally has no enum here. Its
+    /// variant remains a raw surface reference so the common analyzer owns the
+    /// required `RSPDL-PROD-002` decision-input diagnostic.
+    fn action_input_enum_reference(
+        &self,
+        action: Option<&SurfaceRef>,
+        input: Option<&SurfaceRef>,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let action_id = action?.id();
+        let input_id = input?.id();
+        let enum_type_name = self
+            .action_inputs
+            .iter()
+            .find(|candidate| candidate.action_id == action_id && candidate.symbol.id == input_id)?
+            .enum_type_name
+            .as_deref()?;
+        self.enum_reference(enum_type_name, span, diagnostics)
     }
 
     fn field_reference(
@@ -327,6 +396,7 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         constraints: Vec::new(),
         roles: Vec::new(),
         actions: Vec::new(),
+        creation_branches: Vec::new(),
         policies: Vec::new(),
     };
 
@@ -627,6 +697,49 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                 span: value.span,
             }),
             DeclarationAst::ActionInput(_) => {}
+            DeclarationAst::CreationBranch(value) => {
+                let action = index.action_reference(&value.action, value.span, &mut diagnostics);
+                let input = index.action_input_reference(
+                    action.as_ref(),
+                    &value.input,
+                    value.span,
+                    &mut diagnostics,
+                );
+                let enum_type = index.action_input_enum_reference(
+                    action.as_ref(),
+                    input.as_ref(),
+                    value.span,
+                    &mut diagnostics,
+                );
+                let variant = enum_type.as_ref().map_or_else(
+                    || SurfaceRef::stable_id(&value.variant, value.span),
+                    |enum_type| {
+                        required_reference(
+                            index.enum_variant_reference(
+                                Some(enum_type.id()),
+                                &value.variant,
+                                value.span,
+                                &mut diagnostics,
+                            ),
+                            value.span,
+                        )
+                    },
+                );
+                let output_model =
+                    index.model_reference(&value.output_model, value.span, &mut diagnostics);
+                module.creation_branches.push(UnlinkedCreationBranch {
+                    declaration: declaration(&value.declaration, true),
+                    action: required_reference(action, value.span),
+                    input: required_reference(input, value.span),
+                    variant,
+                    output_model: required_reference(output_model, value.span),
+                    decision: match value.decision {
+                        CreationDecisionAst::Create => CreationDecision::Create,
+                        CreationDecisionAst::Skip => CreationDecision::Skip,
+                    },
+                    span: value.span,
+                });
+            }
             DeclarationAst::Policy(value) => {
                 let role = index.role_reference(&value.role, value.span, &mut diagnostics);
                 let model = index.model_reference(&value.model, value.span, &mut diagnostics);
@@ -881,6 +994,59 @@ request의 금액은 0보다 커야 한다.
                 && diagnostic.message_key == "ko.reference.ambiguous"
                 && diagnostic.argument("kind") == Some("model")
                 && diagnostic.argument("reference") == Some("request")
+        }));
+    }
+
+    #[test]
+    fn lowers_conditional_creation_with_action_scoped_enum_references() {
+        let source = r#"@모듈 알림(notifications)
+상태(status)는 다음 값 중 하나다.
+    접수됨(received)
+    보류됨(on_hold)
+점검 요청 전달 알림(notice)은 다음 필드들로 구성되어 있다.
+    내용(content): 선택 문자열
+점검 요청 전달(assign_request)은 행동이다.
+점검 요청 전달은 상태를 요청 상태(request_status)로 입력받는다.
+접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.
+보류 상태 알림 미생성(on_hold_notice_skip)은 점검 요청 전달의 요청 상태가 보류됨이면 점검 요청 전달 알림을 생성하지 않는다.
+"#;
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let output = lower(&parsed.document.unwrap());
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let module = output.module.unwrap();
+        assert_eq!(module.creation_branches.len(), 2);
+        let create = &module.creation_branches[0];
+        assert_eq!(
+            create.declaration.id.as_deref(),
+            Some("received_notice_create")
+        );
+        assert_eq!(create.action.id(), "assign_request");
+        assert_eq!(create.input.id(), "request_status");
+        assert_eq!(create.variant.id(), "received");
+        assert_eq!(create.output_model.id(), "notice");
+        assert_eq!(create.decision, CreationDecision::Create);
+        assert_eq!(module.creation_branches[1].decision, CreationDecision::Skip);
+    }
+
+    #[test]
+    fn scalar_creation_decision_passes_a_raw_variant_to_the_common_analyzer() {
+        let source = r#"@모듈 알림(notifications)
+점검 요청 전달 알림(notice)은 다음 필드들로 구성되어 있다.
+    내용(content): 선택 문자열
+점검 요청 전달(assign_request)은 행동이다.
+점검 요청 전달은 문자열을 요청 상태(request_status)로 입력받는다.
+접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.
+"#;
+        let output = KoreanFrontend.lower_source(source);
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let module = output.module.unwrap();
+        assert_eq!(module.creation_branches[0].variant.id(), "접수됨");
+        let analyzed = rspdl_domain::analyze(module);
+        assert!(analyzed.module.is_none());
+        assert!(analyzed.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-PROD-002"
+                && diagnostic.message_key == "semantic.creation_branch.decision_input_requires_enum"
         }));
     }
 }

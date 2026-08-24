@@ -150,6 +150,7 @@ fn empty_module() -> SemanticModule {
         constraints: Vec::new(),
         roles: Vec::new(),
         actions: Vec::new(),
+        conditional_productions: Vec::new(),
         policies: Vec::new(),
     }
 }

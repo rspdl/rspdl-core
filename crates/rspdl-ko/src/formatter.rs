@@ -236,6 +236,26 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     directional_marker(&value.declaration.name),
                 ));
             }
+            DeclarationAst::CreationBranch(value) => {
+                output.push_str(&format!(
+                    "{}({}){} {}의 {} {} {} {}.\n",
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    if has_final_consonant(&value.declaration.name) {
+                        "은"
+                    } else {
+                        "는"
+                    },
+                    surface(&value.action),
+                    marked(&value.input, "이", "가"),
+                    marked(&value.variant, "이면", "라면"),
+                    marked(&value.output_model, "을", "를"),
+                    match value.decision {
+                        CreationDecisionAst::Create => "하나 생성한다",
+                        CreationDecisionAst::Skip => "생성하지 않는다",
+                    }
+                ));
+            }
             DeclarationAst::Policy(value) => {
                 let role = marked(&value.role, "은", "는");
                 let field = marked(&value.field, "을", "를");
@@ -540,6 +560,41 @@ mod tests {
         );
         let reparsed = reparsed.document.unwrap();
 
+        assert_eq!(original_module, semantic_module(&reparsed));
+        assert_eq!(first, format_document(&reparsed).unwrap());
+    }
+
+    #[test]
+    fn conditional_creation_sentences_round_trip_and_are_idempotent() {
+        let source = r#"@모듈 알림(notifications)
+상태(status)는 다음 값 중 하나다.
+  접수됨(received)
+  보류됨(on_hold)
+점검 요청 전달 알림(notice)은 다음 필드들로 구성되어 있다.
+  내용(content): 선택 문자열
+점검 요청 전달(assign_request)은 행동이다.
+점검 요청 전달은 상태를 요청 상태(request_status)로 입력받는다.
+접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.
+보류 상태 알림 미생성(on_hold_notice_skip)은 점검 요청 전달의 요청 상태가 보류됨이면 점검 요청 전달 알림을 생성하지 않는다.
+"#;
+        let original = parse(source);
+        assert!(
+            original.diagnostics.is_empty(),
+            "{:?}",
+            original.diagnostics
+        );
+        let original = original.document.unwrap();
+        let original_module = semantic_module(&original);
+        let first = format_document(&original).unwrap();
+        assert!(first.contains("접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다."));
+        assert!(first.contains("보류 상태 알림 미생성(on_hold_notice_skip)은 점검 요청 전달의 요청 상태가 보류됨이면 점검 요청 전달 알림을 생성하지 않는다."));
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        let reparsed = reparsed.document.unwrap();
         assert_eq!(original_module, semantic_module(&reparsed));
         assert_eq!(first, format_document(&reparsed).unwrap());
     }

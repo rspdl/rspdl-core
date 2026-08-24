@@ -31,7 +31,7 @@ related:
   - total-policy-condition-space-analysis
   - typed-domains-and-logic-core
   - frontend-semantic-analysis-contract
-last_updated: "2026-08-24"
+last_updated: "2026-08-25"
 owners:
   - rspdl-maintainers
 ---
