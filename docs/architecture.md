@@ -3,7 +3,7 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "1.1"
+version: "1.2"
 summary: Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded model finding, cross-language SDK distribution, dependency direction, and tests.
 topics:
   - rust
@@ -30,7 +30,8 @@ problem_refs:
   - policy-consistency-blind-spots
   - frontend-grammar-implementation-drift
   - downstream-analysis-integration-friction
-last_updated: "2026-08-16"
+  - semantic-source-provenance-loss
+last_updated: "2026-08-24"
 owners:
   - rspdl-maintainers
 target_spec: "0.3.0"
@@ -320,6 +321,17 @@ Canonical IR을 정책표나 사용자·리소스별 조회 모델로 투영하�
 ## 진단과 source provenance
 
 모든 token과 AST node는 UTF-8 byte range를 유지한다. Line과 column은 source line index에서 표시 시 계산한다.
+
+`SemanticModule`의 source-backed record도 동일한 반개구간 `TextRange { start, end }`를
+보존한다. Module, enum/model block, variant/field line, relation, constraint, role, action,
+policy, screen operation, action mutation, derivation, recalculation과 field intent가 대상이다.
+Workspace serialization에서는 range가 해당 `files[].path` source의 시작을 기준으로 하며
+path를 각 record에 반복하지 않는다. 여러 문장에서 병합되는 screen의 span은 최초 선언
+문장이고 각 operation은 자기 문장 span을 가진다.
+
+Source span은 provenance metadata다. Canonical generated ID, semantic hash, duplicate key와
+정렬 key에는 참여하지 않는다. 같은 의미의 문서를 다시 format하면 위치는 달라질 수 있지만
+stable ID와 의미 분석 결과는 같아야 한다.
 
 `rspdl-domain::Diagnostic`은 `rule_id`, `severity`, `message_key`, key가 정렬된 `arguments`와 `span`만 보존한다. Runtime input과 backend 오류도 같은 원칙의 `RuntimeDiagnostic`에 `path`, `message_key`, 정렬된 `arguments`로 저장한다. 번역된 표시 문장은 core나 compiler facade에 저장하지 않는다. CLI의 사람용 출력은 한국어 renderer를 사용하고 JSON 출력은 Locale 중립 구조를 그대로 직렬화한다. 다른 frontend와 application은 같은 key/argument 계약 위에 자기 renderer를 제공한다.
 

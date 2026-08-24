@@ -18,6 +18,11 @@ test('CommonJS compile returns a versioned workspace result', async () => {
 
   assert.equal(response.schema_version, 1)
   assert.equal(response.result.files[0].module.id, 'inventory')
+  assert.deepEqual(response.result.files[0].module.span, {
+    start: 0,
+    end: validSource.indexOf('\n'),
+  })
+  assert.ok(response.result.files[0].module.models[0].span.end > 0)
 })
 
 test('compiler errors remain in the result', async () => {

@@ -26,6 +26,7 @@ fn reference(id: &str) -> SurfaceRef {
 fn empty_module(name: &str) -> UnlinkedModule {
     UnlinkedModule {
         declaration: declaration(name, Some("expense")),
+        span: span(),
         enums: Vec::new(),
         models: Vec::new(),
         relations: Vec::new(),
@@ -51,13 +52,17 @@ fn policy_module(labels: [&str; 5]) -> UnlinkedModule {
             declaration: declaration(field_name, Some("amount")),
             required: true,
             value_type: UnlinkedTypeReference::Integer,
+            span: span(),
         }],
+        span: span(),
     });
     module.roles.push(UnlinkedRole {
         declaration: declaration(role_name, Some("manager")),
+        span: span(),
     });
     module.actions.push(UnlinkedAction {
         declaration: declaration(action_name, Some("change")),
+        span: span(),
     });
     module.constraints.push(UnlinkedConstraint {
         declaration: declaration("", None),
@@ -124,6 +129,39 @@ fn canonical_generated_ids_do_not_depend_on_locale_labels() {
 }
 
 #[test]
+fn analyzer_preserves_source_backed_spans_without_using_them_for_policy_ids() {
+    let mut first = policy_module(["Approval", "Request", "Amount", "Manager", "Change"]);
+    first.span = TextRange { start: 0, end: 8 };
+    first.models[0].span = TextRange { start: 10, end: 40 };
+    first.models[0].fields[0].span = TextRange { start: 20, end: 30 };
+    first.roles[0].span = TextRange { start: 41, end: 50 };
+    first.actions[0].span = TextRange { start: 51, end: 60 };
+    first.constraints[0].span = TextRange { start: 61, end: 70 };
+    first.policies[0].span = TextRange { start: 71, end: 80 };
+
+    let mut shifted = first.clone();
+    shifted.policies[0].span = TextRange {
+        start: 171,
+        end: 180,
+    };
+
+    let first = analyze(first).module.unwrap();
+    let shifted = analyze(shifted).module.unwrap();
+    assert_eq!(first.span, TextRange { start: 0, end: 8 });
+    assert_eq!(first.models[0].span, TextRange { start: 10, end: 40 });
+    assert_eq!(
+        first.models[0].fields[0].span,
+        TextRange { start: 20, end: 30 }
+    );
+    assert_eq!(first.roles[0].span, TextRange { start: 41, end: 50 });
+    assert_eq!(first.actions[0].span, TextRange { start: 51, end: 60 });
+    assert_eq!(first.constraints[0].span, TextRange { start: 61, end: 70 });
+    assert_eq!(first.policies[0].span, TextRange { start: 71, end: 80 });
+    assert_eq!(first.policies[0].id, shifted.policies[0].id);
+    assert_ne!(first.policies[0].span, shifted.policies[0].span);
+}
+
+#[test]
 fn invalid_stable_references_are_rejected_before_name_lookup() {
     let mut module = policy_module(["Approval", "Request", "Amount", "Manager", "Change"]);
     module.policies[0].role = reference("Not-Canonical");
@@ -153,7 +191,9 @@ fn bare_stable_references_reject_ambiguous_qualified_suffixes() {
             declaration: declaration("Shared amount", Some("amount")),
             required: true,
             value_type: UnlinkedTypeReference::Integer,
+            span: span(),
         }],
+        span: span(),
     });
 
     let output = analyze(module);
@@ -174,6 +214,7 @@ fn duplicate_field_ids_have_stable_id_evidence() {
         declaration: declaration("Total", Some("amount")),
         required: false,
         value_type: UnlinkedTypeReference::Integer,
+        span: span(),
     });
 
     let output = analyze(module);
@@ -216,6 +257,7 @@ fn fieldless_data_models_are_rejected_by_the_shared_analyzer() {
     module.models.push(UnlinkedDataModel {
         declaration: declaration("Project", Some("project")),
         fields: Vec::new(),
+        span: span(),
     });
 
     let output = analyze(module);
@@ -237,7 +279,9 @@ fn relation_cardinality_sentence_must_name_the_anchor_model() {
                 declaration: declaration("Name", Some("name")),
                 required: true,
                 value_type: UnlinkedTypeReference::String,
+                span: span(),
             }],
+            span: span(),
         });
     }
     module.relations.push(UnlinkedRelation {
@@ -275,7 +319,9 @@ fn data_usage_module(include_input: bool, include_read: bool) -> UnlinkedModule 
             declaration: declaration("금액", Some("amount")),
             required: true,
             value_type: UnlinkedTypeReference::Integer,
+            span: span(),
         }],
+        span: span(),
     });
     module.screens.push(UnlinkedScreen {
         declaration: declaration("작성 화면", Some("create_item")),
@@ -354,6 +400,7 @@ fn action_data_mutations_require_a_structural_model_producer() {
         });
         module.actions.push(UnlinkedAction {
             declaration: declaration("처리", Some("process")),
+            span: span(),
         });
         module
             .action_data_mutations
@@ -379,6 +426,7 @@ fn same_action_cannot_update_and_delete_the_same_model() {
     let mut module = data_usage_module(true, true);
     module.actions.push(UnlinkedAction {
         declaration: declaration("취소", Some("cancel")),
+        span: span(),
     });
     for mutation in [DataMutationKind::Update, DataMutationKind::Delete] {
         module
@@ -407,6 +455,7 @@ fn duplicate_action_data_mutation_is_rejected() {
     let mut module = data_usage_module(true, true);
     module.actions.push(UnlinkedAction {
         declaration: declaration("변경", Some("change")),
+        span: span(),
     });
     for _ in 0..2 {
         module
@@ -437,6 +486,7 @@ fn different_actions_may_update_and_delete_the_same_model() {
     ] {
         module.actions.push(UnlinkedAction {
             declaration: declaration(name, Some(id)),
+            span: span(),
         });
         module
             .action_data_mutations

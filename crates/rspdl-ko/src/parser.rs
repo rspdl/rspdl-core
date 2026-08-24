@@ -96,10 +96,22 @@ pub fn parse(source: &str) -> ParseOutput {
             Some(DeclarationKind::Constraint) => {
                 parse_constraint(line, body, &mut diagnostics).map(DeclarationAst::Constraint)
             }
-            Some(DeclarationKind::Role) => parse_role(line, body, &mut diagnostics)
-                .map(|declaration| DeclarationAst::Role(RoleAst { declaration })),
-            Some(DeclarationKind::Action) => parse_action(line, body, &mut diagnostics)
-                .map(|declaration| DeclarationAst::Action(ActionAst { declaration })),
+            Some(DeclarationKind::Role) => {
+                parse_role(line, body, &mut diagnostics).map(|declaration| {
+                    DeclarationAst::Role(RoleAst {
+                        declaration,
+                        span: line.span,
+                    })
+                })
+            }
+            Some(DeclarationKind::Action) => {
+                parse_action(line, body, &mut diagnostics).map(|declaration| {
+                    DeclarationAst::Action(ActionAst {
+                        declaration,
+                        span: line.span,
+                    })
+                })
+            }
             Some(DeclarationKind::Policy) => {
                 parse_policy(line, body, &mut diagnostics).map(DeclarationAst::Policy)
             }
@@ -670,7 +682,10 @@ fn parse_module(line: &Line, _diagnostics: &mut Vec<Diagnostic>) -> Result<Modul
         ));
     }
     let declaration = parse_annotated_name(line, "@모듈")?;
-    Ok(ModuleAst { declaration })
+    Ok(ModuleAst {
+        declaration,
+        span: line.span,
+    })
 }
 
 fn parse_enum(
@@ -704,11 +719,18 @@ fn parse_enum(
             )
         })?;
         let declaration = parse_cfg_item_name(item, id_index)?;
-        values.push(EnumValueAst { declaration });
+        values.push(EnumValueAst {
+            declaration,
+            span: item.span,
+        });
     }
+    let span = line
+        .span
+        .join(body.last().expect("validated enum body").span);
     Ok(EnumAst {
         declaration,
         values,
+        span,
     })
 }
 
@@ -771,11 +793,16 @@ fn parse_model(
             declaration: field,
             required,
             value_type,
+            span: item.span,
         });
     }
+    let span = line
+        .span
+        .join(body.last().expect("validated data model body").span);
     Ok(DataModelAst {
         declaration,
         fields,
+        span,
     })
 }
 
@@ -1679,6 +1706,38 @@ mod tests {
         };
         assert!(policy.declaration.name.is_empty());
         assert!(policy.declaration.id.is_empty());
+    }
+
+    #[test]
+    fn preserves_utf8_byte_spans_for_blocks_and_source_backed_lines() {
+        let output = parse(SOURCE);
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let document = output.document.unwrap();
+
+        assert_eq!(
+            SOURCE.get(document.module.span.start..document.module.span.end),
+            Some("@모듈 비용 승인(expense)")
+        );
+        let DeclarationAst::DataModel(model) = &document.declarations[1] else {
+            panic!("second declaration should be a data model");
+        };
+        assert_eq!(
+            SOURCE.get(model.span.start..model.span.end),
+            Some(
+                "비용 신청(request)은 다음 필드들로 구성되어 있다.\n    식별자(id): 필수 문자열\n    금액(amount): 필수 정수\n    상태(status): 필수 비용 상태"
+            )
+        );
+        assert_eq!(
+            SOURCE.get(model.fields[1].span.start..model.fields[1].span.end),
+            Some("금액(amount): 필수 정수")
+        );
+        let DeclarationAst::Role(role) = &document.declarations[3] else {
+            panic!("fourth declaration should be a role");
+        };
+        assert_eq!(
+            SOURCE.get(role.span.start..role.span.end),
+            Some("회계 관리자(accounting_manager)는 역할이다.")
+        );
     }
 
     #[test]

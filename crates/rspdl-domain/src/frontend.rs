@@ -58,12 +58,14 @@ impl SurfaceRef {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedEnumVariant {
     pub declaration: UnlinkedDeclaration,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedEnum {
     pub declaration: UnlinkedDeclaration,
     pub variants: Vec<UnlinkedEnumVariant>,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -80,12 +82,14 @@ pub struct UnlinkedField {
     pub declaration: UnlinkedDeclaration,
     pub required: bool,
     pub value_type: UnlinkedTypeReference,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedDataModel {
     pub declaration: UnlinkedDeclaration,
     pub fields: Vec<UnlinkedField>,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -203,11 +207,13 @@ pub struct UnlinkedConstraint {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedRole {
     pub declaration: UnlinkedDeclaration,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedAction {
     pub declaration: UnlinkedDeclaration,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -225,6 +231,7 @@ pub struct UnlinkedPolicy {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedModule {
     pub declaration: UnlinkedDeclaration,
+    pub span: TextRange,
     pub enums: Vec<UnlinkedEnum>,
     pub models: Vec<UnlinkedDataModel>,
     pub relations: Vec<UnlinkedRelation>,

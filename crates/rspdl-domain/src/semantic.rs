@@ -9,6 +9,7 @@ pub struct EnumVariantDefinition {
     pub id: CanonicalId,
     pub local_id: CanonicalId,
     pub name: String,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -17,6 +18,7 @@ pub struct EnumDefinition {
     pub name: String,
     pub enum_type: EnumType,
     pub variants: Vec<EnumVariantDefinition>,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -26,6 +28,7 @@ pub struct FieldDefinition {
     pub name: String,
     pub required: bool,
     pub value_type: CanonicalType,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -33,6 +36,7 @@ pub struct DataModelDefinition {
     pub id: CanonicalId,
     pub name: String,
     pub fields: Vec<FieldDefinition>,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -42,6 +46,7 @@ pub struct RelationDefinition {
     /// Ordered entity sorts. The first parameter is the anchor used by
     /// relation cardinality constraints.
     pub parameter_model_ids: Vec<CanonicalId>,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -72,6 +77,7 @@ pub enum RelationalConstraintKind {
 pub struct RelationalConstraintDefinition {
     pub id: CanonicalId,
     pub constraint: RelationalConstraintKind,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -90,6 +96,7 @@ pub struct ScreenOperationDefinition {
     pub model_id: CanonicalId,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub field_ids: Vec<CanonicalId>,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -97,6 +104,7 @@ pub struct ScreenDefinition {
     pub id: CanonicalId,
     pub name: String,
     pub operations: Vec<ScreenOperationDefinition>,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -112,6 +120,7 @@ pub struct ActionDataMutationDefinition {
     pub action_id: CanonicalId,
     pub model_id: CanonicalId,
     pub mutation: DataMutationKind,
+    pub span: TextRange,
 }
 
 /// Source sidecar for one resolved action data mutation.
@@ -135,6 +144,15 @@ pub struct DerivationDefinition {
     pub target_field_id: CanonicalId,
     pub expression: DerivationExpression,
     pub recalculate_when_changed_field_ids: Vec<CanonicalId>,
+    pub span: TextRange,
+}
+
+/// One explicit recalculation declaration retained for source navigation.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct RecalculationDefinition {
+    pub source_field_id: CanonicalId,
+    pub target_field_id: CanonicalId,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -148,6 +166,7 @@ pub enum FieldIntentKind {
 pub struct FieldIntentDefinition {
     pub field_id: CanonicalId,
     pub intent: FieldIntentKind,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -177,18 +196,21 @@ pub struct ConstraintDefinition {
     pub left: ConstraintOperand,
     pub operator: RelationOperator,
     pub right: ConstraintOperand,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RoleDefinition {
     pub id: CanonicalId,
     pub name: String,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ActionDefinition {
     pub id: CanonicalId,
     pub name: String,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -208,12 +230,14 @@ pub struct PolicyDefinition {
     pub field_id: CanonicalId,
     pub action_id: CanonicalId,
     pub effect: PolicyEffect,
+    pub span: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SemanticModule {
     pub id: CanonicalId,
     pub name: String,
+    pub span: TextRange,
     pub enums: Vec<EnumDefinition>,
     pub models: Vec<DataModelDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -226,6 +250,8 @@ pub struct SemanticModule {
     pub action_data_mutations: Vec<ActionDataMutationDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub derivations: Vec<DerivationDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub recalculations: Vec<RecalculationDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub field_intents: Vec<FieldIntentDefinition>,
     pub constraints: Vec<ConstraintDefinition>,

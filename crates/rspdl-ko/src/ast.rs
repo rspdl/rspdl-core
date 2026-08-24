@@ -12,17 +12,20 @@ pub struct NamedIdAst {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ModuleAst {
     pub declaration: NamedIdAst,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct EnumValueAst {
     pub declaration: NamedIdAst,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct EnumAst {
     pub declaration: NamedIdAst,
     pub values: Vec<EnumValueAst>,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -39,12 +42,14 @@ pub struct FieldAst {
     pub declaration: NamedIdAst,
     pub required: bool,
     pub value_type: TypeReferenceAst,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DataModelAst {
     pub declaration: NamedIdAst,
     pub fields: Vec<FieldAst>,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -186,11 +191,13 @@ pub struct ConstraintAst {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RoleAst {
     pub declaration: NamedIdAst,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ActionAst {
     pub declaration: NamedIdAst,
+    pub span: Span,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

@@ -22,6 +22,14 @@ class SdkTest(unittest.TestCase):
         self.assertEqual(
             response["result"]["files"][0]["module"]["id"], "inventory"
         )
+        self.assertEqual(
+            response["result"]["files"][0]["module"]["span"],
+            {"start": 0, "end": VALID_SOURCE.index("\n")},
+        )
+        self.assertGreater(
+            response["result"]["files"][0]["module"]["models"][0]["span"]["end"],
+            0,
+        )
 
     def test_compiler_errors_remain_in_the_result(self) -> None:
         response = rspdl.compile([{"path": "invalid.rspdl", "text": "invalid"}])

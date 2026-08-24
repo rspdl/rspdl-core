@@ -22,13 +22,16 @@ impl Frontend for TestFrontend {
         FrontendOutput {
             module: Some(UnlinkedModule {
                 declaration: declaration("Test module", "test", span(0, 10)),
+                span: span(0, 10),
                 enums: Vec::new(),
                 models: vec![UnlinkedDataModel {
                     declaration: declaration("Item", "item", span(10, 20)),
+                    span: span(10, 30),
                     fields: vec![UnlinkedField {
                         declaration: declaration("Value", "value", span(20, 30)),
                         required: true,
                         value_type: UnlinkedTypeReference::Integer,
+                        span: span(20, 30),
                     }],
                 }],
                 relations: Vec::new(),
@@ -61,6 +64,7 @@ impl Frontend for TestFrontend {
                 roles: Vec::new(),
                 actions: vec![UnlinkedAction {
                     declaration: declaration("Create item", "create_item", span(70, 81)),
+                    span: span(70, 81),
                 }],
                 policies: Vec::new(),
             }),
@@ -114,6 +118,12 @@ fn compiler_preserves_action_mutation_source_provenance() {
     );
 
     assert!(compilation.diagnostics.is_empty());
+    let definition = &compilation
+        .module
+        .as_ref()
+        .expect("test frontend should compile")
+        .action_data_mutations[0];
+    assert_eq!(definition.span, span(70, 90));
     let mutation = &compilation.action_data_mutation_provenance[0];
     assert!(mutation.span.end <= source_text.len());
     assert_eq!(mutation.source_id.as_str(), "contract-test.rspdl");

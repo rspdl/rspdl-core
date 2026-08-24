@@ -1,0 +1,9 @@
+{
+  "spec_version": "0.3.0",
+  "locale": "ko-KR",
+  "category": "failure",
+  "expected_policy_slices": [
+    "편집자는 문서의 제목을 수정할 수 있다.",
+    "편집자는 문서의 제목을 수정할 수 없다."
+  ]
+}

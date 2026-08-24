@@ -249,6 +249,26 @@ mod tests {
     }
 
     #[test]
+    fn schema_one_compile_response_includes_semantic_ir_spans() {
+        let request = json!({
+            "schema_version": WIRE_SCHEMA_VERSION,
+            "locale": SUPPORTED_LOCALE,
+            "sources": [source("inventory.rspdl", VALID_SOURCE)],
+        });
+        let response = compile_json(&request.to_string()).unwrap();
+        let response: Value = serde_json::from_str(&response).unwrap();
+        let module_end = VALID_SOURCE.find('\n').unwrap();
+
+        assert_eq!(response["schema_version"], 1);
+        assert_eq!(
+            response["result"]["files"][0]["module"]["span"],
+            json!({ "start": 0, "end": module_end })
+        );
+        let model_span = &response["result"]["files"][0]["module"]["models"][0]["span"];
+        assert!(model_span["start"].as_u64().unwrap() < model_span["end"].as_u64().unwrap());
+    }
+
+    #[test]
     fn compile_is_independent_of_source_input_order() {
         let first = json!({
             "schema_version": WIRE_SCHEMA_VERSION,

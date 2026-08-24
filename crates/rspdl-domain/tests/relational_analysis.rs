@@ -127,7 +127,9 @@ fn model_with_field(
             name: field_id.into(),
             required: true,
             value_type,
+            span: Default::default(),
         }],
+        span: Default::default(),
     }
 }
 
@@ -135,6 +137,7 @@ fn empty_module() -> SemanticModule {
     SemanticModule {
         id: CanonicalId::new("test").unwrap(),
         name: "Test".into(),
+        span: Default::default(),
         enums: Vec::new(),
         models: Vec::new(),
         relations: Vec::new(),
@@ -142,6 +145,7 @@ fn empty_module() -> SemanticModule {
         screens: Vec::new(),
         action_data_mutations: Vec::new(),
         derivations: Vec::new(),
+        recalculations: Vec::new(),
         field_intents: Vec::new(),
         constraints: Vec::new(),
         roles: Vec::new(),
@@ -185,6 +189,7 @@ fn unsupported_derivation_is_reported_before_solving() {
             source_field_id: id("test.item.value"),
         },
         recalculate_when_changed_field_ids: Vec::new(),
+        span: Default::default(),
     }];
 
     let result = find_bounded_relational_model(
@@ -238,6 +243,7 @@ fn relational_rule_can_produce_a_virtual_tuple() {
         id: id("test.owner"),
         name: "owner".into(),
         parameter_model_ids: vec![id("test.project"), id("test.user")],
+        span: Default::default(),
     }];
     module.relational_constraints = vec![
         RelationalConstraintDefinition {
@@ -245,12 +251,14 @@ fn relational_rule_can_produce_a_virtual_tuple() {
             constraint: RelationalConstraintKind::NonEmpty {
                 model_id: id("test.project"),
             },
+            span: Default::default(),
         },
         RelationalConstraintDefinition {
             id: id("test.rule.required"),
             constraint: RelationalConstraintKind::Required {
                 relation_id: id("test.owner"),
             },
+            span: Default::default(),
         },
     ];
 
@@ -281,12 +289,14 @@ fn unsat_core_rule_ids_follow_deterministic_public_order() {
             constraint: RelationalConstraintKind::NonEmpty {
                 model_id: id("test.zeta"),
             },
+            span: Default::default(),
         },
         RelationalConstraintDefinition {
             id: id("test.rule.alpha"),
             constraint: RelationalConstraintKind::NonEmpty {
                 model_id: id("test.alpha"),
             },
+            span: Default::default(),
         },
     ];
     let solver = ScriptedSolver::new([
@@ -322,6 +332,7 @@ fn missing_present_field_assignment_becomes_unknown() {
         constraint: RelationalConstraintKind::NonEmpty {
             model_id: id("test.item"),
         },
+        span: Default::default(),
     }];
 
     let result = find_bounded_relational_model(
