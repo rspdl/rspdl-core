@@ -13,6 +13,7 @@ topics:
   - explainability
 related:
   - rspdl-product-vision
+  - rspdl-language-prd
   - core-application-boundary
   - frontend-semantic-analysis-contract
 last_updated: 2026-08-24
@@ -42,23 +43,23 @@ owners:
 
 ## How
 
-- source-backed semantic record는 진단과 같은 좌표계의 source range로 원문 선언을 식별할 수 있어야
-  한다.
-- 정상 사례는 각 정책 record에서 서로 다른 선언 문장을 그대로 추출하는 것이다.
-- 실패 사례는 allow와 deny가 함께 있어도 각 record가 자기 원문을 잃지 않는 것이다.
-- 경계 사례는 여러 source를 compile할 때 range가 어느 file 기준인지 결정적으로 해석되는 것이다.
-- 오탐 방지 사례는 source 위치가 stable ID, 의미 정렬, conflict·gap·overlap 판정을 바꾸지 않는 것이다.
+- 정상 사례는 source 순서와 다르게 배열된 각 semantic record에서 사용자가 그 근거가 된 선언으로
+  정확히 돌아갈 수 있는 것이다.
+- 실패 사례는 별개의 선언에서 나온 record가 같은 semantic key를 가질 때 원문 근거를 서로
+  구별하지 못하는 것이다.
+- 경계 사례는 여러 source를 함께 compile하고 결과를 재배열해도 각 record의 원문 근거가 어느
+  source에 속하는지 모호하지 않은 것이다.
+- 오탐 방지 사례는 downstream이 core 문법을 다시 해석하지 않고도 원문 근거를 찾는 것이다.
 
 ## Constraints
 
 - source 위치에서 표현되지 않은 정책 우선순위, lifecycle 동작 또는 conflict를 추론하지 않는다.
 - application 전용 table, graph, filter와 navigation 상태를 core IR에 포함하지 않는다.
-- source range는 semantic identity가 아니며 generated ID나 hash의 입력이 될 수 없다.
-- 개별 reference token 수준의 navigation과 source rewrite는 이 문제의 초기 범위가 아니다.
 
 ## References
 
 - [RSPDL Product Vision](../product/vision.md)
+- [RSPDL Product Requirements](../prd.md)
 - [Core와 Application Projection 경계](../adr/0002-core-application-boundary.md)
 - [Frontend and Semantic Analysis Contract](../specs/frontend-semantic-analysis-contract.md)
 - [rspdl-core issue #27](https://github.com/rspdl/rspdl-core/issues/27)

@@ -24,7 +24,7 @@ class SdkTest(unittest.TestCase):
         )
         self.assertEqual(
             response["result"]["files"][0]["module"]["span"],
-            {"start": 0, "end": VALID_SOURCE.index("\n")},
+            {"start": 0, "end": len(VALID_SOURCE.splitlines()[0].encode("utf-8"))},
         )
         self.assertGreater(
             response["result"]["files"][0]["module"]["models"][0]["span"]["end"],
