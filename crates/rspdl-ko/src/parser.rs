@@ -119,6 +119,10 @@ pub fn parse(source: &str) -> ParseOutput {
                 parse_creation_branch(line, body, &mut diagnostics)
                     .map(DeclarationAst::CreationBranch)
             }
+            Some(DeclarationKind::FieldProducer) => {
+                parse_field_producer(line, body, &mut diagnostics)
+                    .map(DeclarationAst::FieldProducer)
+            }
             Some(DeclarationKind::Policy) => {
                 parse_policy(line, body, &mut diagnostics).map(DeclarationAst::Policy)
             }
@@ -200,6 +204,7 @@ enum DeclarationKind {
     Action,
     ActionInput,
     CreationBranch,
+    FieldProducer,
     Policy,
 }
 
@@ -221,6 +226,7 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
         _ if is_action_sentence(line) => Some(DeclarationKind::Action),
         _ if is_action_input_sentence(line) => Some(DeclarationKind::ActionInput),
         _ if is_creation_branch_sentence(line) => Some(DeclarationKind::CreationBranch),
+        _ if is_field_producer_sentence(line) => Some(DeclarationKind::FieldProducer),
         _ if is_relation_sentence(line) => Some(DeclarationKind::Relation),
         _ if is_nonempty_sentence(line) => Some(DeclarationKind::RelationalConstraint(
             RelationalConstraintDeclarationKind::NonEmpty,
@@ -577,6 +583,14 @@ fn is_creation_branch_sentence(line: &Line) -> bool {
         && line.tokens.iter().any(|token| {
             matches!(&token.kind, TokenKind::Word(word) if matches!(word.as_str(), "이면" | "라면") || word.ends_with("이면") || word.ends_with("라면"))
         })
+}
+
+fn is_field_producer_sentence(line: &Line) -> bool {
+    last_sentence_word(line, 0) == Some("기록한다")
+        && line
+            .tokens
+            .iter()
+            .any(|token| matches!(&token.kind, TokenKind::Word(word) if word == "실행될"))
 }
 
 fn is_relation_sentence(line: &Line) -> bool {
@@ -1076,6 +1090,73 @@ fn parse_creation_branch(
         variant,
         output_model,
         decision,
+        span: line.span,
+    })
+}
+
+fn parse_field_producer(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<FieldProducerAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "field_producer")?;
+    let tokens = sentence_tokens(line)?;
+    let id_index = tokens
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-077",
+                "ko.syntax.field_producer_stable_id_required",
+                line.span,
+            )
+        })?;
+    let declaration = parse_name_with_id_tokens(tokens, 0, id_index, line.span)?;
+    let mut cursor = BodyCursor::new(&tokens[id_index + 1..], line.span);
+    let topic = cursor
+        .next_word()
+        .filter(|marker| matches!(*marker, "은" | "는"))
+        .ok_or_else(|| cursor.error("ko.syntax.field_producer_topic_marker_required"))?;
+    let (action, action_marker) = cursor.marked_ref(&["이", "가"])?;
+    cursor.expect_word("실행될")?;
+    cursor.expect_word("때")?;
+    let source = if cursor.consume_word("상수") {
+        let (literal, _marker) = cursor.field_producer_literal_marked()?;
+        FieldProducerSourceAst::Constant { literal }
+    } else {
+        let (first, marker) = cursor.marked_ref(&["의", "을", "를"])?;
+        if marker == "의" {
+            let (field, field_marker) = cursor.marked_ref(&["을", "를"])?;
+            lint_marker(&field, &field_marker, "을", "를", line.span, diagnostics);
+            FieldProducerSourceAst::InputField {
+                input: first,
+                field,
+            }
+        } else {
+            lint_marker(&first, &marker, "을", "를", line.span, diagnostics);
+            FieldProducerSourceAst::ActionInput { input: first }
+        }
+    };
+    let (output_model, _) = cursor.marked_ref(&["의"])?;
+    let (output_field, output_marker) = cursor.marked_ref(&["으로", "로"])?;
+    cursor.expect_word("기록한다")?;
+    cursor.expect_end()?;
+    lint_marker(&declaration.name, topic, "은", "는", line.span, diagnostics);
+    lint_marker(&action, &action_marker, "이", "가", line.span, diagnostics);
+    lint_marker(
+        &output_field,
+        &output_marker,
+        "으로",
+        "로",
+        line.span,
+        diagnostics,
+    );
+    Ok(FieldProducerAst {
+        declaration,
+        action,
+        output_model,
+        output_field,
+        source,
         span: line.span,
     })
 }
@@ -1785,6 +1866,43 @@ impl<'a> BodyCursor<'a> {
         Ok((RelationOperatorAst::Equal, literal))
     }
 
+    fn field_producer_literal_marked(&mut self) -> Result<(LiteralAst, String), Diagnostic> {
+        let token = self
+            .tokens
+            .get(self.index)
+            .ok_or_else(|| self.error("ko.syntax.field_producer_literal_required"))?;
+        let literal = match &token.kind {
+            TokenKind::StringLiteral(value) => LiteralAst::String(value.clone()),
+            TokenKind::QuotedIdentifier(value) => LiteralAst::Named(value.clone()),
+            TokenKind::Word(value) => {
+                for marker in ["을", "를"] {
+                    if let Some(value) =
+                        value.strip_suffix(marker).filter(|value| !value.is_empty())
+                    {
+                        self.index += 1;
+                        return Ok((parse_word_literal(value), marker.into()));
+                    }
+                }
+                let literal = parse_word_literal(value);
+                self.index += 1;
+                let marker = self
+                    .next_word()
+                    .filter(|marker| matches!(*marker, "을" | "를"))
+                    .ok_or_else(|| {
+                        self.error("ko.syntax.field_producer_literal_marker_required")
+                    })?;
+                return Ok((literal, marker.into()));
+            }
+            _ => return Err(self.error("ko.syntax.field_producer_literal_required")),
+        };
+        self.index += 1;
+        let marker = self
+            .next_word()
+            .filter(|marker| matches!(*marker, "을" | "를"))
+            .ok_or_else(|| self.error("ko.syntax.field_producer_literal_marker_required"))?;
+        Ok((literal, marker.into()))
+    }
+
     fn expect_word(&mut self, expected: &str) -> Result<(), Diagnostic> {
         match self.next_word() {
             Some(actual) if actual == expected => Ok(()),
@@ -2166,6 +2284,35 @@ mod tests {
                 && diagnostic.message_key == "ko.syntax.sentence_block_forbidden"
                 && diagnostic.argument("kind") == Some("creation_branch")
         }));
+    }
+
+    #[test]
+    fn parses_the_three_unconditional_field_producer_sentences() {
+        let source = "@모듈 검증(check)\n알림 제목 기록(title_binding)은 점검 요청 전달이 실행될 때 알림 제목을 점검 요청 전달 알림의 제목으로 기록한다.\n요청 제목 기록(request_title_binding)은 점검 요청 전달이 실행될 때 대상 요청의 제목을 점검 요청 전달 알림의 요청 제목으로 기록한다.\n재시도 횟수 기록(retry_binding)은 점검 요청 전달이 실행될 때 상수 0을 점검 요청 전달 알림의 재시도 횟수로 기록한다.\n";
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let producers = parsed
+            .document
+            .unwrap()
+            .declarations
+            .into_iter()
+            .filter_map(|declaration| match declaration {
+                DeclarationAst::FieldProducer(value) => Some(value),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(producers.len(), 3);
+        assert!(matches!(
+            producers[0].source,
+            FieldProducerSourceAst::ActionInput { .. }
+        ));
+        assert!(matches!(
+            producers[1].source,
+            FieldProducerSourceAst::InputField { .. }
+        ));
+        assert!(
+            matches!(producers[2].source, FieldProducerSourceAst::Constant { literal: LiteralAst::Integer(ref value) } if value == "0")
+        );
     }
 
     #[test]

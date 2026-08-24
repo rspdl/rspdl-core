@@ -236,6 +236,24 @@ pub struct CreationBranchAst {
     pub span: Span,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum FieldProducerSourceAst {
+    ActionInput { input: String },
+    InputField { input: String, field: String },
+    Constant { literal: LiteralAst },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FieldProducerAst {
+    pub declaration: NamedIdAst,
+    pub action: String,
+    pub output_model: String,
+    pub output_field: String,
+    pub source: FieldProducerSourceAst,
+    pub span: Span,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyEffectAst {
@@ -271,6 +289,7 @@ pub enum DeclarationAst {
     Action(ActionAst),
     ActionInput(ActionInputAst),
     CreationBranch(CreationBranchAst),
+    FieldProducer(FieldProducerAst),
     Policy(PolicyAst),
 }
 

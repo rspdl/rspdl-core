@@ -32,10 +32,10 @@ pub use frontend::{
     Frontend, FrontendOutput, SurfaceRef, UnlinkedAction, UnlinkedActionDataMutation,
     UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint, UnlinkedCreationBranch,
     UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField,
-    UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
-    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation,
-    UnlinkedTypeReference,
+    UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerSource, UnlinkedLiteral,
+    UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation,
+    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
+    UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 pub use logic::{
     Atom, AtomView, BooleanExpression, BooleanExpressionView, ComparisonOperator,
@@ -57,10 +57,10 @@ pub use semantic::{
     ConstraintOperand, CreationBranchDefinition, CreationDecision, DataModelDefinition,
     DataMutationKind, DerivationDefinition, DerivationExpression, EnumDefinition,
     EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, FieldIntentKind,
-    PolicyDefinition, PolicyEffect, ProductionCardinality, RecalculationDefinition,
-    RelationDefinition, RelationOperator, RelationalConstraintDefinition, RelationalConstraintKind,
-    RoleDefinition, ScreenDefinition, ScreenOperationDefinition, ScreenOperationKind,
-    SemanticModule,
+    FieldProducerDefinition, FieldProducerSource, PolicyDefinition, PolicyEffect, ProducerPhase,
+    ProductionCardinality, RecalculationDefinition, RelationDefinition, RelationOperator,
+    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
+    ScreenOperationDefinition, ScreenOperationKind, SemanticModule,
 };
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;

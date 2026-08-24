@@ -256,6 +256,31 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     }
                 ));
             }
+            DeclarationAst::FieldProducer(value) => {
+                let source = match &value.source {
+                    FieldProducerSourceAst::ActionInput { input } => marked(input, "을", "를"),
+                    FieldProducerSourceAst::InputField { input, field } => {
+                        format!("{}의 {}", surface(input), marked(field, "을", "를"))
+                    }
+                    FieldProducerSourceAst::Constant { literal } => {
+                        format!("상수 {}을", literal_text(literal))
+                    }
+                };
+                output.push_str(&format!(
+                    "{}({}){} {} 실행될 때 {} {}의 {} 기록한다.\n",
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    if has_final_consonant(&value.declaration.name) {
+                        "은"
+                    } else {
+                        "는"
+                    },
+                    marked(&value.action, "이", "가"),
+                    source,
+                    surface(&value.output_model),
+                    marked(&value.output_field, "으로", "로"),
+                ));
+            }
             DeclarationAst::Policy(value) => {
                 let role = marked(&value.role, "은", "는");
                 let field = marked(&value.field, "을", "를");
@@ -489,6 +514,20 @@ mod tests {
         let reparsed = parse(&formatted).document.unwrap();
 
         assert_eq!(original_module, semantic_module(&reparsed));
+    }
+
+    #[test]
+    fn field_producer_sentences_round_trip_and_are_idempotent() {
+        let source = "@모듈 기록(binding)\n알림 제목 기록(title_binding)은 점검 요청 전달이 실행될 때 알림 제목을 점검 요청 전달 알림의 제목으로 기록한다.\n요청 제목 기록(request_title_binding)은 점검 요청 전달이 실행될 때 대상 요청의 제목을 점검 요청 전달 알림의 요청 제목으로 기록한다.\n재시도 횟수 기록(retry_binding)은 점검 요청 전달이 실행될 때 상수 0을 점검 요청 전달 알림의 재시도 횟수로 기록한다.\n";
+        let original = parse(source).document.unwrap();
+        let first = format_document(&original).unwrap();
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        assert_eq!(first, format_document(&reparsed.document.unwrap()).unwrap());
     }
 
     #[test]

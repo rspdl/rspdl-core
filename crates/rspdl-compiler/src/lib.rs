@@ -355,6 +355,12 @@ pub fn compile_files_with_frontend(
                     .flat_map(|production| {
                         std::iter::once(&production.id)
                             .chain(production.branches.iter().map(|branch| &branch.id))
+                            .chain(
+                                production
+                                    .field_producers
+                                    .iter()
+                                    .map(|producer| &producer.id),
+                            )
                     }),
             )
             .chain(module.policies.iter().map(|value| &value.id))
@@ -1471,6 +1477,27 @@ mod tests {
             file.diagnostics.iter().any(|diagnostic| {
                 diagnostic.rule_id == "RSPDL-LINK-002"
                     && diagnostic.argument("symbol_id") == Some("shared.received_create")
+            })
+        }));
+    }
+
+    #[test]
+    fn duplicate_qualified_field_producer_ids_across_modules_are_link_errors() {
+        let source = |module_name: &str, module_id: &str| {
+            format!(
+                "@모듈 {module_name}({module_id})\n상태(status)는 다음 값 중 하나다.\n    접수됨(received)\n알림(notice)은 다음 필드들로 구성되어 있다.\n    내용(body): 필수 문자열\n전달(assign)은 행동이다.\n전달은 상태를 요청 상태(request_status)로 입력받는다.\n전달은 문자열을 알림 내용(body_input)으로 입력받는다.\n접수 생성(received_create)은 전달의 요청 상태가 접수됨이면 알림을 하나 생성한다.\n내용 기록(shared.body_binding)은 전달이 실행될 때 알림 내용을 알림의 내용으로 기록한다.\n"
+            )
+        };
+        let compilation = compile_ko_files(vec![
+            KoSource::new("one.rspdl", source("하나", "one")),
+            KoSource::new("two.rspdl", source("둘", "two")),
+        ]);
+
+        assert!(compilation.has_errors());
+        assert!(compilation.files.iter().all(|file| {
+            file.diagnostics.iter().any(|diagnostic| {
+                diagnostic.rule_id == "RSPDL-LINK-002"
+                    && diagnostic.argument("symbol_id") == Some("shared.body_binding")
             })
         }));
     }

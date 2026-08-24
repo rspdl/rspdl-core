@@ -253,6 +253,38 @@ pub struct CreationBranchDefinition {
     pub span: TextRange,
 }
 
+/// The lifecycle point at which a conditional-production payload is read.
+/// This first producer slice has no post-mutation or conditional form.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProducerPhase {
+    PreMutation,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
+pub enum FieldProducerSource {
+    ActionInput {
+        input_id: CanonicalId,
+    },
+    InputField {
+        input_id: CanonicalId,
+        field_id: CanonicalId,
+    },
+    Constant {
+        value: CanonicalValue,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FieldProducerDefinition {
+    pub id: CanonicalId,
+    pub output_field_id: CanonicalId,
+    pub source: FieldProducerSource,
+    pub phase: ProducerPhase,
+    pub span: TextRange,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ConditionalProductionDefinition {
     pub id: CanonicalId,
@@ -261,6 +293,8 @@ pub struct ConditionalProductionDefinition {
     pub instance_cardinality: ProductionCardinality,
     pub decision_input_id: CanonicalId,
     pub branches: Vec<CreationBranchDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub field_producers: Vec<FieldProducerDefinition>,
     pub span: TextRange,
 }
 

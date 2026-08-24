@@ -243,6 +243,36 @@ pub struct UnlinkedCreationBranch {
     pub span: TextRange,
 }
 
+/// An unconditional payload binding applied before the action mutates state.
+///
+/// A field producer is deliberately separate from a creation branch: this
+/// slice attaches it to every `Create` branch of its already-declared
+/// action/output production rather than inferring a conditional payload rule.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum UnlinkedFieldProducerSource {
+    ActionInput {
+        input: SurfaceRef,
+    },
+    InputField {
+        input: SurfaceRef,
+        field: SurfaceRef,
+    },
+    Constant {
+        literal: UnlinkedLiteral,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedFieldProducer {
+    pub declaration: UnlinkedDeclaration,
+    pub action: SurfaceRef,
+    pub output_model: SurfaceRef,
+    pub output_field: SurfaceRef,
+    pub source: UnlinkedFieldProducerSource,
+    pub span: TextRange,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedPolicy {
     pub declaration: UnlinkedDeclaration,
@@ -273,5 +303,7 @@ pub struct UnlinkedModule {
     pub actions: Vec<UnlinkedAction>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub creation_branches: Vec<UnlinkedCreationBranch>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub field_producers: Vec<UnlinkedFieldProducer>,
     pub policies: Vec<UnlinkedPolicy>,
 }

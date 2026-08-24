@@ -67,6 +67,18 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "ko.syntax.creation_branch_result_marker_invalid" => {
             "조건부 생성 결과의 output model 뒤에는 을 또는 를이 필요합니다.".into()
         }
+        "ko.syntax.field_producer_stable_id_required" => {
+            "필드 생산자의 stable ID가 필요합니다.".into()
+        }
+        "ko.syntax.field_producer_topic_marker_required" => {
+            "필드 생산자 이름 뒤에는 은 또는 는이 필요합니다.".into()
+        }
+        "ko.syntax.field_producer_literal_required" => {
+            "상수 생산자에는 literal이 필요합니다.".into()
+        }
+        "ko.syntax.field_producer_literal_marker_required" => {
+            "상수 literal 뒤에는 을 또는 를이 필요합니다.".into()
+        }
         "ko.syntax.field_list_required" => "필드 목록이 필요합니다.".into(),
         "ko.syntax.field_list_empty_name" => "빈 필드 이름은 사용할 수 없습니다.".into(),
         "ko.syntax.field_list_invalid" => "필드 목록 형식이 올바르지 않습니다.".into(),
@@ -253,6 +265,38 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "production_id"),
             argument(diagnostic, "field_id"),
             argument(diagnostic, "create_branch_ids")
+        ),
+        "semantic.field_producer.source_input_not_found" => format!(
+            "생산자 {}의 행동 입력 {}을 찾을 수 없습니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "source")
+        ),
+        "semantic.field_producer.type_mismatch" => match diagnostic.argument("source_type") {
+            Some(source_type) => format!(
+                "생산자 {}의 source {} 타입 {}은 output field {}의 {} 타입과 맞지 않습니다.",
+                argument(diagnostic, "producer_id"),
+                argument(diagnostic, "source"),
+                source_type,
+                argument(diagnostic, "output_field_id"),
+                argument(diagnostic, "output_type")
+            ),
+            None => format!(
+                "생산자 {}의 source {}은 output field {}의 {} 타입 값으로 사용할 수 없습니다.",
+                argument(diagnostic, "producer_id"),
+                argument(diagnostic, "source"),
+                argument(diagnostic, "output_field_id"),
+                argument(diagnostic, "output_type")
+            ),
+        },
+        "semantic.creation_production.field_producer_without_creation_decision" => format!(
+            "생산자 {}은 생산 결정이 없는 행동/output에 붙을 수 없습니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.creation_production.field_producer_conflict" => format!(
+            "생산 {}의 field {}에 producer {}가 함께 선언되었습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "field_id"),
+            argument(diagnostic, "producer_ids")
         ),
         "semantic.constraint.operand_type_mismatch" => {
             "제약의 양쪽 operand 타입이 다릅니다.".into()
@@ -456,6 +500,7 @@ fn syntax_kind(kind: &str) -> &str {
         "recalculation" => "재계산",
         "field_intent" => "필드 사용 의도",
         "creation_branch" => "조건부 생성 branch",
+        "field_producer" => "필드 생산자",
         "relation" => "관계 선언",
         "entity" => "개체 선언",
         "relational_constraint" => "관계 메타 규칙",
@@ -631,6 +676,46 @@ mod tests {
             "semantic.creation_production.variant_conflict",
             "semantic.creation_production.variant_coverage_missing",
             "semantic.creation_production.required_field_producer_missing",
+        ] {
+            let diagnostic = arguments.into_iter().fold(
+                Diagnostic::error("RSPDL-TEST", key, TextRange::default()),
+                |diagnostic, (argument, value)| diagnostic.with_argument(argument, value),
+            );
+            let rendered = render_diagnostic(&diagnostic);
+            assert_ne!(rendered, key, "{key}");
+            assert!(!rendered.contains("<?>"), "{key}: {rendered}");
+        }
+    }
+
+    #[test]
+    fn renders_field_producer_diagnostics_without_raw_keys_or_missing_arguments() {
+        for key in [
+            "ko.syntax.field_producer_stable_id_required",
+            "ko.syntax.field_producer_topic_marker_required",
+            "ko.syntax.field_producer_literal_required",
+            "ko.syntax.field_producer_literal_marker_required",
+        ] {
+            assert_ne!(
+                render_diagnostic(&Diagnostic::error("RSPDL-TEST", key, TextRange::default())),
+                key
+            );
+        }
+
+        let arguments = [
+            ("producer_id", "notice.title_binding"),
+            ("source", "notice.assign.title"),
+            ("source_type", "integer"),
+            ("output_field_id", "notice.output.title"),
+            ("output_type", "string"),
+            ("production_id", "notice.production_x"),
+            ("field_id", "notice.output.title"),
+            ("producer_ids", "notice.first,notice.second"),
+        ];
+        for key in [
+            "semantic.field_producer.source_input_not_found",
+            "semantic.field_producer.type_mismatch",
+            "semantic.creation_production.field_producer_without_creation_decision",
+            "semantic.creation_production.field_producer_conflict",
         ] {
             let diagnostic = arguments.into_iter().fold(
                 Diagnostic::error("RSPDL-TEST", key, TextRange::default()),

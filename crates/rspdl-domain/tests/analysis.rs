@@ -3,9 +3,10 @@ use rspdl_domain::{
     ScreenOperationKind, SurfaceRef, TextRange, UnlinkedAction, UnlinkedActionDataMutation,
     UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint, UnlinkedCreationBranch,
     UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField,
-    UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
-    UnlinkedScreen, UnlinkedTypeReference, analyze,
+    UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerSource, UnlinkedLiteral,
+    UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRelation,
+    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
+    UnlinkedTypeReference, analyze,
 };
 
 fn span() -> TextRange {
@@ -41,6 +42,7 @@ fn empty_module(name: &str) -> UnlinkedModule {
         roles: Vec::new(),
         actions: Vec::new(),
         creation_branches: Vec::new(),
+        field_producers: Vec::new(),
         policies: Vec::new(),
     }
 }
@@ -168,6 +170,36 @@ fn conditional_creation_module(
     });
     module.creation_branches = branches;
     module
+}
+
+fn field_producer(id: &str, source: UnlinkedFieldProducerSource) -> UnlinkedFieldProducer {
+    field_producer_at(id, source, span())
+}
+
+fn field_producer_at(
+    id: &str,
+    source: UnlinkedFieldProducerSource,
+    producer_span: TextRange,
+) -> UnlinkedFieldProducer {
+    UnlinkedFieldProducer {
+        declaration: UnlinkedDeclaration {
+            name: "Field producer".into(),
+            id: Some(id.into()),
+            span: producer_span,
+        },
+        action: SurfaceRef::stable_id("publish", producer_span),
+        output_model: SurfaceRef::stable_id("notice", producer_span),
+        output_field: SurfaceRef::stable_id("body", producer_span),
+        source,
+        span: producer_span,
+    }
+}
+
+fn exhaustive_creation_branches(decision: CreationDecision) -> Vec<UnlinkedCreationBranch> {
+    vec![
+        creation_branch("draft_branch", "status", "draft", decision),
+        creation_branch("published_branch", "status", "published", decision),
+    ]
 }
 
 type DiagnosticProjection = Vec<(String, String, Vec<(String, String)>)>;
@@ -552,6 +584,574 @@ fn conditional_creation_is_canonical_when_branches_are_reordered() {
             start: 100,
             end: 120
         }
+    );
+}
+
+#[test]
+fn conditional_creation_field_producer_copies_a_direct_value_input() {
+    let mut module = conditional_creation_module(
+        true,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("Body", Some("body_input")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::String,
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.field_producers = vec![field_producer(
+        "copy_body",
+        UnlinkedFieldProducerSource::ActionInput {
+            input: reference("body_input"),
+        },
+    )];
+
+    let output = analyze(module);
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    let producer = &output.module.unwrap().conditional_productions[0].field_producers[0];
+    assert_eq!(producer.id.as_str(), "expense.copy_body");
+    assert_eq!(producer.output_field_id.as_str(), "expense.notice.body");
+    assert_eq!(producer.phase, rspdl_domain::ProducerPhase::PreMutation);
+    assert!(matches!(
+        &producer.source,
+        rspdl_domain::FieldProducerSource::ActionInput { input_id }
+            if input_id.as_str() == "expense.publish.body_input"
+    ));
+}
+
+#[test]
+fn conditional_creation_field_producer_reads_an_existing_model_input_field() {
+    let mut module = conditional_creation_module(
+        true,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("Request", Some("request_input")),
+                kind: UnlinkedActionInputKind::ExistingModel {
+                    model: reference("request"),
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.models.push(UnlinkedDataModel {
+        declaration: declaration("Request", Some("request")),
+        fields: vec![UnlinkedField {
+            declaration: declaration("Title", Some("title")),
+            required: true,
+            value_type: UnlinkedTypeReference::String,
+            span: span(),
+        }],
+        span: span(),
+    });
+    module.field_producers = vec![field_producer(
+        "copy_request_title",
+        UnlinkedFieldProducerSource::InputField {
+            input: reference("request_input"),
+            field: reference("title"),
+        },
+    )];
+
+    let output = analyze(module);
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    assert!(matches!(
+        &output.module.unwrap().conditional_productions[0].field_producers[0].source,
+        rspdl_domain::FieldProducerSource::InputField { input_id, field_id }
+            if input_id.as_str() == "expense.publish.request_input"
+                && field_id.as_str() == "expense.request.title"
+    ));
+}
+
+#[test]
+fn conditional_creation_field_producer_rejects_an_existing_record_as_a_direct_value() {
+    let mut module = conditional_creation_module(
+        true,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("Request", Some("request_input")),
+                kind: UnlinkedActionInputKind::ExistingModel {
+                    model: reference("request"),
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.models.push(UnlinkedDataModel {
+        declaration: declaration("Request", Some("request")),
+        fields: vec![UnlinkedField {
+            declaration: declaration("Title", Some("title")),
+            required: true,
+            value_type: UnlinkedTypeReference::String,
+            span: span(),
+        }],
+        span: span(),
+    });
+    module.field_producers = vec![field_producer(
+        "copy_request",
+        UnlinkedFieldProducerSource::ActionInput {
+            input: reference("request_input"),
+        },
+    )];
+
+    let output = analyze(module);
+    assert!(output.module.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-002"
+            && diagnostic.message_key == "semantic.field_producer.type_mismatch"
+            && diagnostic.argument("producer_id") == Some("expense.copy_request")
+            && diagnostic.argument("source") == Some("expense.publish.request_input")
+    }));
+}
+
+#[test]
+fn conditional_creation_field_producer_rejects_a_field_path_from_a_scalar_input() {
+    let mut module = conditional_creation_module(
+        true,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("Body", Some("body_input")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::String,
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.field_producers = vec![field_producer(
+        "read_scalar_field",
+        UnlinkedFieldProducerSource::InputField {
+            input: reference("body_input"),
+            field: reference("title"),
+        },
+    )];
+
+    let output = analyze(module);
+    assert!(output.module.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-002"
+            && diagnostic.message_key == "semantic.field_producer.type_mismatch"
+            && diagnostic.argument("producer_id") == Some("expense.read_scalar_field")
+            && diagnostic.argument("source") == Some("expense.publish.body_input")
+    }));
+}
+
+#[test]
+fn conditional_creation_field_producer_cannot_read_a_field_from_another_input_model() {
+    let mut module = conditional_creation_module(
+        true,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("Request", Some("request_input")),
+                kind: UnlinkedActionInputKind::ExistingModel {
+                    model: reference("request"),
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    for model_id in ["request", "other"] {
+        module.models.push(UnlinkedDataModel {
+            declaration: declaration(model_id, Some(model_id)),
+            fields: vec![UnlinkedField {
+                declaration: declaration("Title", Some("title")),
+                required: true,
+                value_type: UnlinkedTypeReference::String,
+                span: span(),
+            }],
+            span: span(),
+        });
+    }
+    module.field_producers = vec![field_producer(
+        "cross_model_title",
+        UnlinkedFieldProducerSource::InputField {
+            input: reference("request_input"),
+            field: SurfaceRef::stable_id("expense.other.title", span()),
+        },
+    )];
+
+    let output = analyze(module);
+    assert!(output.module.is_none());
+    assert!(
+        output.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-LINK-003"
+                && diagnostic.message_key == "semantic.field.not_found"
+                && diagnostic.argument("model_id") == Some("expense.request")
+                && diagnostic.argument("reference") == Some("expense.other.title")
+        }),
+        "{:?}",
+        output.diagnostics
+    );
+}
+
+#[test]
+fn conditional_creation_field_producer_accepts_zero_as_a_constant_value() {
+    let mut module = conditional_creation_module(
+        true,
+        vec![enum_decision_input("status")],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.models[0].fields[0].value_type = UnlinkedTypeReference::Integer;
+    module.field_producers = vec![field_producer(
+        "zero_body",
+        UnlinkedFieldProducerSource::Constant {
+            literal: UnlinkedLiteral::Integer {
+                value: "0".into(),
+                span: span(),
+            },
+        },
+    )];
+
+    let output = analyze(module);
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    assert!(matches!(
+        &output.module.unwrap().conditional_productions[0].field_producers[0].source,
+        rspdl_domain::FieldProducerSource::Constant { value }
+            if value.as_integer().is_some_and(|integer| integer.to_string() == "0")
+    ));
+}
+
+#[test]
+fn conditional_creation_field_producer_reports_type_mismatch_with_canonical_evidence() {
+    let mut module = conditional_creation_module(
+        true,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("Count", Some("count")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::Integer,
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.field_producers = vec![field_producer(
+        "copy_count",
+        UnlinkedFieldProducerSource::ActionInput {
+            input: reference("count"),
+        },
+    )];
+
+    let output = analyze(module);
+    let diagnostic = output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-002")
+        .expect("incompatible producer must be rejected");
+    assert_eq!(
+        diagnostic.argument("producer_id"),
+        Some("expense.copy_count")
+    );
+    assert_eq!(diagnostic.argument("action_id"), Some("expense.publish"));
+    assert_eq!(
+        diagnostic.argument("output_field_id"),
+        Some("expense.notice.body")
+    );
+    assert_eq!(diagnostic.argument("source"), Some("expense.publish.count"));
+    assert_eq!(diagnostic.argument("output_type"), Some("string"));
+}
+
+#[test]
+fn conditional_creation_field_producers_detect_duplicate_target_evidence_canonically() {
+    let mut module = conditional_creation_module(
+        true,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("First", Some("first")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::String,
+                },
+                span: span(),
+            },
+            UnlinkedActionInput {
+                declaration: declaration("Second", Some("second")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::String,
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.field_producers = vec![
+        field_producer(
+            "z_second",
+            UnlinkedFieldProducerSource::ActionInput {
+                input: reference("second"),
+            },
+        ),
+        field_producer(
+            "a_first",
+            UnlinkedFieldProducerSource::ActionInput {
+                input: reference("first"),
+            },
+        ),
+    ];
+
+    let output = analyze(module);
+    let diagnostic = output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-004")
+        .expect("same output field has two producers");
+    assert_eq!(
+        diagnostic.argument("producer_ids"),
+        Some("expense.a_first,expense.z_second")
+    );
+    assert_eq!(
+        diagnostic.argument("create_branch_ids"),
+        Some("expense.draft_branch,expense.published_branch")
+    );
+}
+
+#[test]
+fn conditional_creation_field_producer_rejects_a_missing_action_input() {
+    let mut module = conditional_creation_module(
+        false,
+        vec![enum_decision_input("status")],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.field_producers = vec![field_producer(
+        "missing_input",
+        UnlinkedFieldProducerSource::ActionInput {
+            input: reference("missing"),
+        },
+    )];
+
+    let output = analyze(module);
+    let diagnostic = output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-001")
+        .expect("producer sources must start from an action input");
+    assert_eq!(
+        diagnostic.argument("producer_id"),
+        Some("expense.missing_input")
+    );
+    assert_eq!(diagnostic.argument("source"), Some("missing"));
+}
+
+#[test]
+fn conditional_creation_field_producer_requires_an_existing_creation_production() {
+    let mut module = conditional_creation_module(false, Vec::new(), Vec::new());
+    module.field_producers = vec![field_producer(
+        "orphan",
+        UnlinkedFieldProducerSource::Constant {
+            literal: UnlinkedLiteral::String {
+                value: "body".into(),
+                span: span(),
+            },
+        },
+    )];
+
+    let output = analyze(module);
+    assert!(output.module.is_none());
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-007"
+            && diagnostic.message_key
+                == "semantic.creation_production.field_producer_without_creation_decision"
+            && diagnostic.argument("producer_id") == Some("expense.orphan")
+    }));
+}
+
+#[test]
+fn conditional_creation_optional_field_needs_no_producer_and_skip_paths_hide_payload_conflicts() {
+    let optional = analyze(conditional_creation_module(
+        false,
+        vec![enum_decision_input("status")],
+        exhaustive_creation_branches(CreationDecision::Create),
+    ));
+    assert!(
+        optional.diagnostics.is_empty(),
+        "{:?}",
+        optional.diagnostics
+    );
+
+    let mut all_skip = conditional_creation_module(
+        true,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("First", Some("first")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::String,
+                },
+                span: span(),
+            },
+            UnlinkedActionInput {
+                declaration: declaration("Second", Some("second")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::String,
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Skip),
+    );
+    all_skip.field_producers = vec![
+        field_producer(
+            "first_copy",
+            UnlinkedFieldProducerSource::ActionInput {
+                input: reference("first"),
+            },
+        ),
+        field_producer(
+            "second_copy",
+            UnlinkedFieldProducerSource::ActionInput {
+                input: reference("second"),
+            },
+        ),
+    ];
+    let all_skip = analyze(all_skip);
+    assert!(
+        all_skip.diagnostics.is_empty(),
+        "{:?}",
+        all_skip.diagnostics
+    );
+}
+
+#[test]
+fn conditional_creation_field_producers_for_different_fields_do_not_conflict() {
+    let mut module = conditional_creation_module(
+        false,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("Body", Some("body_input")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::String,
+                },
+                span: span(),
+            },
+            UnlinkedActionInput {
+                declaration: declaration("Title", Some("title_input")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::String,
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.models[0].fields.push(UnlinkedField {
+        declaration: declaration("Title", Some("title")),
+        required: false,
+        value_type: UnlinkedTypeReference::String,
+        span: span(),
+    });
+    let mut title_producer = field_producer(
+        "copy_title",
+        UnlinkedFieldProducerSource::ActionInput {
+            input: reference("title_input"),
+        },
+    );
+    title_producer.output_field = reference("title");
+    module.field_producers = vec![
+        field_producer(
+            "copy_body",
+            UnlinkedFieldProducerSource::ActionInput {
+                input: reference("body_input"),
+            },
+        ),
+        title_producer,
+    ];
+
+    let output = analyze(module);
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+}
+
+#[test]
+fn conditional_creation_field_producers_are_canonical_when_reordered() {
+    let make_module = |producers: Vec<UnlinkedFieldProducer>| {
+        let mut module = conditional_creation_module(
+            false,
+            vec![
+                enum_decision_input("status"),
+                UnlinkedActionInput {
+                    declaration: declaration("Body", Some("body_input")),
+                    kind: UnlinkedActionInputKind::Value {
+                        value_type: UnlinkedTypeReference::String,
+                    },
+                    span: span(),
+                },
+                UnlinkedActionInput {
+                    declaration: declaration("Title", Some("title_input")),
+                    kind: UnlinkedActionInputKind::Value {
+                        value_type: UnlinkedTypeReference::String,
+                    },
+                    span: span(),
+                },
+            ],
+            exhaustive_creation_branches(CreationDecision::Create),
+        );
+        module.models[0].fields.push(UnlinkedField {
+            declaration: declaration("Title", Some("title")),
+            required: false,
+            value_type: UnlinkedTypeReference::String,
+            span: span(),
+        });
+        module.field_producers = producers;
+        module
+    };
+    let body = field_producer_at(
+        "copy_body",
+        UnlinkedFieldProducerSource::ActionInput {
+            input: reference("body_input"),
+        },
+        TextRange {
+            start: 90,
+            end: 100,
+        },
+    );
+    let mut title = field_producer_at(
+        "copy_title",
+        UnlinkedFieldProducerSource::ActionInput {
+            input: reference("title_input"),
+        },
+        TextRange { start: 30, end: 40 },
+    );
+    title.output_field = reference("title");
+    let first = analyze(make_module(vec![title.clone(), body.clone()]));
+    let second = analyze(make_module(vec![body, title]));
+
+    assert_eq!(
+        diagnostic_projection(&first),
+        diagnostic_projection(&second)
+    );
+    let projection = |output: &rspdl_domain::AnalysisOutput| {
+        output.module.as_ref().map(|module| {
+            module.conditional_productions[0]
+                .field_producers
+                .iter()
+                .map(|producer| {
+                    (
+                        producer.id.as_str().to_owned(),
+                        producer.output_field_id.as_str().to_owned(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+    };
+    assert_eq!(projection(&first), projection(&second));
+    assert_eq!(
+        projection(&first),
+        Some(vec![
+            ("expense.copy_body".into(), "expense.notice.body".into()),
+            ("expense.copy_title".into(), "expense.notice.title".into()),
+        ])
     );
 }
 

@@ -5,10 +5,11 @@ use rspdl_domain::{
     PolicyEffect, RelationOperator, ScreenOperationKind, SurfaceRef, UnlinkedAction,
     UnlinkedActionDataMutation, UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint,
     UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum,
-    UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule,
-    UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation,
-    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
-    UnlinkedSumDerivation, UnlinkedTypeReference,
+    UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent, UnlinkedFieldProducer,
+    UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
+    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation,
+    UnlinkedTypeReference,
 };
 
 use crate::ast::*;
@@ -54,6 +55,7 @@ struct ActionInputSymbol {
     action_id: String,
     symbol: Symbol,
     enum_type_name: Option<String>,
+    existing_model_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -115,10 +117,15 @@ impl StableIdIndex {
                 } => Some(name.clone()),
                 ActionInputKindAst::ExistingModel { .. } | ActionInputKindAst::Value { .. } => None,
             };
+            let existing_model_name = match &value.kind {
+                ActionInputKindAst::ExistingModel { model } => Some(model.clone()),
+                ActionInputKindAst::Value { .. } => None,
+            };
             index.action_inputs.push(ActionInputSymbol {
                 action_id: action_id.to_owned(),
                 symbol: Symbol::from(&value.declaration),
                 enum_type_name,
+                existing_model_name,
             });
         }
         index
@@ -220,6 +227,20 @@ impl StableIdIndex {
             .enum_type_name
             .as_deref()?;
         self.enum_reference(enum_type_name, span, diagnostics)
+    }
+
+    fn action_input_model_reference(
+        &self,
+        action: Option<&SurfaceRef>,
+        input: Option<&SurfaceRef>,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let candidate = self.action_inputs.iter().find(|candidate| {
+            Some(candidate.action_id.as_str()) == action.map(SurfaceRef::id)
+                && Some(candidate.symbol.id.as_str()) == input.map(SurfaceRef::id)
+        })?;
+        self.model_reference(candidate.existing_model_name.as_deref()?, span, diagnostics)
     }
 
     fn field_reference(
@@ -397,6 +418,7 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         roles: Vec::new(),
         actions: Vec::new(),
         creation_branches: Vec::new(),
+        field_producers: Vec::new(),
         policies: Vec::new(),
     };
 
@@ -737,6 +759,96 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                         CreationDecisionAst::Create => CreationDecision::Create,
                         CreationDecisionAst::Skip => CreationDecision::Skip,
                     },
+                    span: value.span,
+                });
+            }
+            DeclarationAst::FieldProducer(value) => {
+                let action = index.action_reference(&value.action, value.span, &mut diagnostics);
+                let output_model =
+                    index.model_reference(&value.output_model, value.span, &mut diagnostics);
+                let output_field = index.field_reference(
+                    output_model.as_ref(),
+                    &value.output_field,
+                    value.span,
+                    &mut diagnostics,
+                );
+                let source = match &value.source {
+                    FieldProducerSourceAst::ActionInput { input } => {
+                        UnlinkedFieldProducerSource::ActionInput {
+                            input: required_reference(
+                                index.action_input_reference(
+                                    action.as_ref(),
+                                    input,
+                                    value.span,
+                                    &mut diagnostics,
+                                ),
+                                value.span,
+                            ),
+                        }
+                    }
+                    FieldProducerSourceAst::InputField { input, field } => {
+                        let input = index.action_input_reference(
+                            action.as_ref(),
+                            input,
+                            value.span,
+                            &mut diagnostics,
+                        );
+                        let source_model = index.action_input_model_reference(
+                            action.as_ref(),
+                            input.as_ref(),
+                            value.span,
+                            &mut diagnostics,
+                        );
+                        UnlinkedFieldProducerSource::InputField {
+                            input: required_reference(input, value.span),
+                            field: required_reference(
+                                index.field_reference(
+                                    source_model.as_ref(),
+                                    field,
+                                    value.span,
+                                    &mut diagnostics,
+                                ),
+                                value.span,
+                            ),
+                        }
+                    }
+                    FieldProducerSourceAst::Constant { literal } => {
+                        let enum_id =
+                            index.field_enum_id(output_model.as_ref(), output_field.as_ref());
+                        let literal = match literal {
+                            LiteralAst::String(literal_value) => UnlinkedLiteral::String {
+                                value: literal_value.clone(),
+                                span: value.span,
+                            },
+                            LiteralAst::Integer(literal_value) => UnlinkedLiteral::Integer {
+                                value: literal_value.clone(),
+                                span: value.span,
+                            },
+                            LiteralAst::Boolean(literal_value) => UnlinkedLiteral::Boolean {
+                                value: *literal_value,
+                                span: value.span,
+                            },
+                            LiteralAst::Named(literal_value) => {
+                                UnlinkedLiteral::Named(required_reference(
+                                    index.enum_variant_reference(
+                                        enum_id,
+                                        literal_value,
+                                        value.span,
+                                        &mut diagnostics,
+                                    ),
+                                    value.span,
+                                ))
+                            }
+                        };
+                        UnlinkedFieldProducerSource::Constant { literal }
+                    }
+                };
+                module.field_producers.push(UnlinkedFieldProducer {
+                    declaration: declaration(&value.declaration, true),
+                    action: required_reference(action, value.span),
+                    output_model: required_reference(output_model, value.span),
+                    output_field: required_reference(output_field, value.span),
+                    source,
                     span: value.span,
                 });
             }

@@ -2,6 +2,7 @@ mod adapter;
 mod constraint;
 mod creation;
 mod declarations;
+mod field_producer;
 mod policy;
 mod provenance;
 mod relation;

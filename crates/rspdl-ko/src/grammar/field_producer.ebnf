@@ -1,0 +1,11 @@
+# Unconditional pre-mutation field producer; alternatives make source shape explicit.
+pub field_producer_statement =
+    producer_name: @surface_name() producer_id: @canonical_id() ("은" | "는")
+    action: @marked_ref("이", "가") "실행될" "때"
+    (
+        input: @source_direct("을", "를")
+      | existing_input: @marked_ref("의") existing_field: @marked_ref("을", "를")
+      | "상수" constant: @literal("을", "를")
+    )
+    output_model: @marked_ref("의") output_field: @marked_ref("으로", "로")
+    "기록한다" "." ;

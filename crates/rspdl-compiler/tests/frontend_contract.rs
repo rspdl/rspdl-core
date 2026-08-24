@@ -68,6 +68,7 @@ impl Frontend for TestFrontend {
                     span: span(70, 81),
                 }],
                 creation_branches: Vec::new(),
+                field_producers: Vec::new(),
                 policies: Vec::new(),
             }),
             diagnostics: Vec::<Diagnostic>::new(),

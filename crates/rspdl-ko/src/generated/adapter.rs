@@ -98,8 +98,14 @@ fn marked_bare_references(
         if !matches.is_empty() {
             let first = &tokens[position];
             let last = &tokens[index];
+            let longest = matches
+                .iter()
+                .map(|(_, marker)| marker.len())
+                .max()
+                .unwrap_or(0);
             return matches
                 .into_iter()
+                .filter(|(_, marker)| marker.len() == longest)
                 .map(|(base, marker)| {
                     let mut value_parts = parts.clone();
                     value_parts.push(base.to_owned());
