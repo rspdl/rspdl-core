@@ -193,6 +193,7 @@ console.log(response.result.files[0].diagnostics)
 - [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](docs/rfcs/0005-field-provenance-and-sum-derivation.md): 화면·행동의 생산·소비와 합계 계산 문법
 - [Policy Consistency Blind Spots](docs/problems/0002-policy-consistency-blind-spots.md): 충돌·누락·중첩·도달 불가
 - [Total Policy Condition Spaces and SMT-First Consistency Analysis](docs/rfcs/0006-total-policy-condition-space-analysis.md): 닫힌 vocabulary, 전체 조건 공간과 명시적 override의 SMT 분석 계약
+- [Conditional Data Production for Notifications and Prices](docs/rfcs/0008-conditional-data-production.md): 입력 provenance와 lifecycle을 검증하는 알림·가격 output 생산의 제안 의미 계약
 - [Finite Relational Rules and Bounded Model Finding](docs/rfcs/0007-finite-relational-model-finding.md): typed relation, 명시적 cardinality/compatibility와 가상 데이터 모델 탐색
 - [Problem-driven Development](docs/guides/problem-driven-development.md): 원인에서 코드와 증명까지 연결하는 기여 흐름
 - [Frontend and Semantic Analysis Contract](docs/specs/frontend-semantic-analysis-contract.md): 다른 표현 언어가 구현할 stable-ID IR과 진단 계약

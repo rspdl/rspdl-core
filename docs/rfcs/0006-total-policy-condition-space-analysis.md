@@ -3,7 +3,7 @@ id: total-policy-condition-space-analysis
 title: Total Policy Condition Spaces and SMT-First Consistency Analysis
 type: rfc
 status: proposed
-version: "0.3"
+version: "0.4"
 summary: Defines closed policy vocabulary, exhaustive condition-space coverage, explicit override semantics, and SMT-first consistency analysis.
 topics:
   - policy-analysis
@@ -15,10 +15,11 @@ topics:
 related:
   - rspdl-language-prd
   - typed-domains-and-logic-core
+  - conditional-data-production
 problem_refs:
   - policy-consistency-blind-spots
   - data-lifecycle-modeling-gap
-last_updated: "2026-08-12"
+last_updated: "2026-08-24"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -250,6 +251,8 @@ Effect declaration은 최소한 다음 정보를 제공할 수 있어야 한다.
 - 함께 적용 가능한 독립 side effect인지 여부
 - action의 precondition과 postcondition
 - 보존해야 하는 cross-field 또는 lifecycle invariant
+
+알림 payload나 가격처럼 결과가 typed field를 가져야 하는 경우에는 effect 이름만으로 compatibility를 판정하지 않는다. [조건부 데이터 생산 RFC](0008-conditional-data-production.md)가 output instance, field slot, input provenance, snapshot과 field-level gap/conflict 계약을 소유한다. 이 RFC는 그 생산 branch의 typed domain, effective condition, totality와 override 분석을 계속 소유한다.
 
 예를 들어 같은 authorization slot의 `allow`와 `deny`, 같은 next-state slot의 `approved`와 `rejected`는 양립 불가능하다. `allow`와 `audit_log_created`는 서로 다른 slot을 쓴다면 함께 적용할 수 있다.
 
