@@ -52,9 +52,9 @@ target_spec: "0.4.0"
 
 ## 가장 작은 vertical slice
 
-첫 slice는 한 action invocation의 pre-state에서 하나의 output record를 생성한다. field producer는 typed action input, input record의 field, constant 및 명시적 pre-state snapshot만 지원한다. 목표 의미의 trigger는 `Action`과 명시적으로 선언된 `Event`를 구분하지만 첫 slice는 `Action`만 lower한다.
+첫 slice는 한 action invocation의 pre-state에서 하나의 output record를 생성한다. field producer는 typed action input, input record의 field, constant와 같은 output의 String field만 참조하는 template을 지원한다. snapshot은 아직 지원하지 않는다. 목표 의미의 trigger는 `Action`과 명시적으로 선언된 `Event`를 구분하지만 첫 slice는 `Action`만 lower한다.
 
-2026-08-25 현재 구현된 범위는 stable-ID typed action input, direct enum conditional creation decision과 field/relation producer다. Korean frontend와 common analyzer는 action+output production을 만들고 ExactlyOne `Create`/`Skip`, enum coverage, same-variant conflict 및 Create variant별 required output field/relation producer gap/conflict를 검사한다. field producer는 direct Value input, ExistingModel input field 또는 explicit scalar constant를 action mutation 전(`PreMutation`)에 무조건 적용하거나 production의 decision input과 같은 enum variant에만 적용한다. relation producer는 Required+Unique output-first binary relation slot에 same-action ExistingModel input을 무조건 연결한다. snapshot과 template은 아직 구현하지 않았다.
+2026-08-25 현재 구현된 범위는 stable-ID typed action input, direct enum conditional creation decision과 field/relation producer, 그리고 output-field-only message template이다. Korean frontend와 common analyzer는 action+output production을 만들고 ExactlyOne `Create`/`Skip`, enum coverage, same-variant conflict 및 Create variant별 required output field/relation producer gap/conflict를 검사한다. direct Value input, ExistingModel input field와 explicit scalar constant producer는 action mutation 전(`PreMutation`)에 무조건 적용하거나 production의 decision input과 같은 enum variant에만 적용한다. 현재 Korean template producer는 무조건 `PreMutation`이며 같은 output model의 String field만 `{표시 이름}`으로 참조하고 `{{`, `}}`로 literal brace를 쓴다. template dependency는 source order가 아닌 canonical graph로 검사하고 cycle을 거부한다. conditional template과 snapshot은 아직 구현하지 않았다.
 
 - action은 stable-ID typed input을 선언한다. existing record input은 action 직전에 존재해야 한다.
 - output record는 하나 이상의 typed field를 가진다. output field와 output relation slot은 target과 producer span을 가진 binding으로만 채운다.
@@ -98,6 +98,7 @@ annotation과 block은 허용하지 않으며, source order는 priority가 아�
 요청 제목 기록(request_title_binding)은 점검 요청 전달이 실행될 때 대상 요청의 제목을 점검 요청 전달 알림의 요청 제목으로 기록한다.
 재시도 횟수 기록(retry_binding)은 점검 요청 전달이 실행될 때 상수 0을 점검 요청 전달 알림의 재시도 횟수로 기록한다.
 접수 제목 기록(received_title)은 점검 요청 전달의 요청 상태가 접수됨이면 상수 "요청이 접수되었습니다"를 점검 요청 전달 알림의 제목으로 기록한다.
+알림 내용 조합(content_template)은 점검 요청 전달이 실행될 때 "{제목} 점검이 전달되었습니다."를 점검 전달 알림의 내용으로 조합한다.
 ```
 
 ## 문장형 비정규 설계 예시
@@ -259,6 +260,8 @@ RelationProducer {
 ```
 
 `InputPath`의 root는 trigger의 declared input stable ID여야 한다. 첫 slice에는 action input record field 접근과 single relation-slot input binding만 허용하며 `EventId` lowering은 후속 slice다. `OutputRelationSlot`은 relation endpoint type과 required/unique cardinality를 갖고, `RelationProducer`도 `FieldProducer`와 같은 provenance·type·availability 검사를 받는다. future `RelationPath`는 edge 방향, cardinality, availability phase와 output instance multiplicity를 IR에 보존해야 한다. template은 `OutputFieldId`만 가지며 원본 path를 갖지 않는다. `ExpressionId`가 같은 output의 다른 field를 참조할 때 analyzer는 stable ID dependency graph를 만들고 cycle을 source 순서와 무관하게 거부한다.
+
+구현된 template producer는 `FieldProducerSource::Template { parts: Text | OutputField(CanonicalId) }`로 canonical IR에 남는다. target, result와 placeholder field는 모두 `String`이며 별도 formatting contract가 필요한 정수·금액·enum의 암시적 문자열 변환은 하지 않는다. placeholder가 가리키는 output field는 각 effective `Create` variant에 정확히 하나의 producer를 가져야 한다. optional field도 template dependency라면 누락될 수 없다. `field_evaluation_order`는 stable ID로 tie-break한 canonical topological projection이며 소비자는 원문 선언 순서를 execution order로 해석하지 않는다. `Skip`만 effective한 production은 payload gap/conflict/cycle을 내지 않지만 template syntax, link, type 오류는 그대로 보고한다.
 
 creation branch가 정한 `Create` effective region에서 required field slot과 required output relation slot은 정확히 하나의 typed producer를 가져야 한다. field/relation producer는 각자 조건을 가지므로, 가격의 기본 금액·장비 추가 금액·할인 금액은 creation 조건을 cross-product로 복제하지 않고 독립적으로 coverage와 conflict를 분석한다. optional absence, explicit `Skip`, `0`, `false`, 빈 문자열과 solver `UNKNOWN`은 서로 대체되지 않는다. `내용` template도 content field의 `ExpressionId` producer다. 금액 field의 additive/mergeable composition은 field slot에 별도 contract가 선언될 때만 허용한다.
 

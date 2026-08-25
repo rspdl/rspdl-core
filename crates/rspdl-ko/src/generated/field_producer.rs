@@ -1,4 +1,4 @@
-//! Executable grammar shadow for unconditional field-producer sentences.
+//! Executable grammar shadow for pre-mutation field-producer sentences.
 use super::adapter::{match_literal, match_marked_ref};
 use super::required_capture;
 use crate::scanner::Token;
@@ -18,6 +18,8 @@ pub(crate) struct GeneratedFieldProducer {
     pub existing_input: Option<Capture>,
     pub existing_field: Option<Capture>,
     pub constant: Option<Capture>,
+    #[allow(dead_code)]
+    pub template: Option<Capture>,
 }
 pub(crate) fn parse_field_producer(tokens: &[Token]) -> Result<GeneratedFieldProducer, ParseError> {
     let grammar: Grammar = generated_field_producer_grammar();
@@ -38,6 +40,7 @@ pub(crate) fn parse_field_producer(tokens: &[Token]) -> Result<GeneratedFieldPro
         existing_input: parsed.capture("existing_input").cloned(),
         existing_field: parsed.capture("existing_field").cloned(),
         constant: parsed.capture("constant").cloned(),
+        template: parsed.capture("template").cloned(),
     })
 }
 struct Adapter;
@@ -52,6 +55,7 @@ impl InputAdapter<Token> for Adapter {
             "surface_name" => surface_name_prefixes(t, p),
             "canonical_id" => canonical_id(t, p),
             "literal" => literal(t, p, a),
+            "template_string" => template_string(t, p, a),
             _ => Vec::new(),
         }
     }
@@ -107,6 +111,19 @@ fn literal(tokens: &[Token], position: usize, markers: &[String]) -> Vec<Termina
         }
         _ => match_marked_ref(tokens, position, markers),
     }
+}
+fn template_string(tokens: &[Token], position: usize, markers: &[String]) -> Vec<TerminalMatch> {
+    let Some(Token {
+        kind: crate::TokenKind::StringLiteral(value),
+        span,
+    }) = tokens.get(position)
+    else {
+        return Vec::new();
+    };
+    matches!(tokens.get(position + 1).map(|token| &token.kind), Some(crate::TokenKind::Word(marker)) if markers.iter().any(|expected| expected == marker))
+        .then(|| TerminalMatch::new(position + 2, value, span.start, span.end))
+        .into_iter()
+        .collect()
 }
 fn direct_source(tokens: &[Token], position: usize, markers: &[String]) -> Vec<TerminalMatch> {
     match_marked_ref(tokens, position, markers)
@@ -213,10 +230,36 @@ mod tests {
     }
 
     #[test]
+    fn executable_field_producer_grammar_matches_output_only_template_shape() {
+        let sentence = "알림 내용 조합(content_template)은 점검 요청 전달이 실행될 때 \"{제목} 점검이 전달되었습니다.\"를 점검 전달 알림의 내용으로 조합한다.";
+        let tokens = scan(sentence)
+            .tokens
+            .into_iter()
+            .filter(|token| !matches!(token.kind, TokenKind::Newline))
+            .collect::<Vec<_>>();
+        let generated = parse_field_producer(&tokens).unwrap();
+        assert_eq!(
+            generated.template.unwrap().value,
+            "{제목} 점검이 전달되었습니다."
+        );
+        let document = parse_document(&format!("@모듈 검증(check)\n{sentence}\n"));
+        let DeclarationAst::FieldProducer(handwritten) =
+            document.document.unwrap().declarations.remove(0)
+        else {
+            panic!()
+        };
+        assert!(matches!(
+            handwritten.source,
+            FieldProducerSourceAst::Template { value } if value == "{제목} 점검이 전달되었습니다."
+        ));
+    }
+
+    #[test]
     fn executable_field_producer_grammar_rejects_foreign_sentence_shapes() {
         for sentence in [
             "조건 기록(binding)은 전달이 실행될 때 상태가 접수됨이면 제목을 알림의 제목으로 기록한다.",
             "템플릿 기록(binding)은 전달이 실행될 때 제목을 알림의 제목으로 채운다.",
+            "알림 내용 조합(content_template)은 전달의 상태가 접수됨이면 \"{제목}\"를 알림의 내용으로 조합한다.",
         ] {
             let tokens = scan(sentence)
                 .tokens

@@ -36,7 +36,7 @@ pub use frontend::{
     UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
     UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationProducer,
     UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
-    UnlinkedSumDerivation, UnlinkedTypeReference,
+    UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference,
 };
 pub use logic::{
     Atom, AtomView, BooleanExpression, BooleanExpressionView, ComparisonOperator,
@@ -63,7 +63,7 @@ pub use semantic::{
     ProductionCardinality, RecalculationDefinition, RelationDefinition, RelationOperator,
     RelationProducerDefinition, RelationSlotCardinality, RelationalConstraintDefinition,
     RelationalConstraintKind, RoleDefinition, ScreenDefinition, ScreenOperationDefinition,
-    ScreenOperationKind, SemanticModule,
+    ScreenOperationKind, SemanticModule, TemplatePart,
 };
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;

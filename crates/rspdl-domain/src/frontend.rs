@@ -261,6 +261,18 @@ pub enum UnlinkedFieldProducerSource {
     Constant {
         literal: UnlinkedLiteral,
     },
+    /// A message template may interpolate only fields of its own output
+    /// model.  It deliberately carries no input/model path.
+    Template {
+        parts: Vec<UnlinkedTemplatePart>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum UnlinkedTemplatePart {
+    Text { value: String },
+    OutputField { field: SurfaceRef },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

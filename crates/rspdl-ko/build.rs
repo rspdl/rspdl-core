@@ -52,6 +52,7 @@ fn compile_grammar(grammar_path: &std::path::Path, output_dir: &std::path::Path)
         "string_equal",
         "string_not_equal",
         "surface_name",
+        "template_string",
         "word_equal",
         "word_not_equal",
     ])

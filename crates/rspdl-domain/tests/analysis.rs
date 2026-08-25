@@ -6,7 +6,8 @@ use rspdl_domain::{
     UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerCondition,
     UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
     UnlinkedRelation, UnlinkedRelationProducer, UnlinkedRelationalConstraint,
-    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedTypeReference, analyze,
+    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedTemplatePart,
+    UnlinkedTypeReference, analyze,
 };
 
 fn span() -> TextRange {
@@ -208,6 +209,22 @@ fn conditional_field_producer(
         input: reference(input),
         variant: reference(variant),
     });
+    producer
+}
+
+fn template_producer(id: &str, target: &str, dependencies: &[&str]) -> UnlinkedFieldProducer {
+    let mut producer = field_producer(
+        id,
+        UnlinkedFieldProducerSource::Template {
+            parts: dependencies
+                .iter()
+                .map(|field| UnlinkedTemplatePart::OutputField {
+                    field: reference(field),
+                })
+                .collect(),
+        },
+    );
+    producer.output_field = reference(target);
     producer
 }
 
@@ -2044,4 +2061,184 @@ fn one_screen_may_offer_update_and_delete_capabilities() {
     let output = analyze(module);
     assert!(output.module.is_some(), "{:?}", output.diagnostics);
     assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+}
+
+#[test]
+fn output_templates_are_linked_and_analyzed_without_source_order_inference() {
+    fn module(required_title: bool, body_type: UnlinkedTypeReference) -> UnlinkedModule {
+        let mut module = conditional_creation_module(
+            true,
+            vec![
+                enum_decision_input("status"),
+                UnlinkedActionInput {
+                    declaration: declaration("Title", Some("title_input")),
+                    kind: UnlinkedActionInputKind::Value {
+                        value_type: UnlinkedTypeReference::String,
+                    },
+                    span: span(),
+                },
+            ],
+            exhaustive_creation_branches(CreationDecision::Create),
+        );
+        module.models[0].fields = vec![
+            UnlinkedField {
+                declaration: declaration("Title", Some("title")),
+                required: required_title,
+                value_type: UnlinkedTypeReference::String,
+                span: span(),
+            },
+            UnlinkedField {
+                declaration: declaration("Body", Some("body")),
+                required: true,
+                value_type: body_type,
+                span: span(),
+            },
+        ];
+        module
+    }
+    let direct = || {
+        field_producer(
+            "title_binding",
+            UnlinkedFieldProducerSource::ActionInput {
+                input: reference("title_input"),
+            },
+        )
+    };
+
+    let mut normal = module(true, UnlinkedTypeReference::String);
+    let mut title = direct();
+    title.output_field = reference("title");
+    normal.field_producers = vec![
+        template_producer("body_template", "body", &["title"]),
+        title,
+    ];
+    let normal_output = analyze(normal.clone());
+    assert!(
+        normal_output.diagnostics.is_empty(),
+        "{:?}",
+        normal_output.diagnostics
+    );
+    assert_eq!(
+        normal_output
+            .module
+            .as_ref()
+            .unwrap()
+            .conditional_productions[0]
+            .field_evaluation_order
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec!["expense.notice.title", "expense.notice.body"]
+    );
+
+    let mut unknown = normal.clone();
+    unknown.field_producers[0] = template_producer("body_template", "body", &["unknown"]);
+    assert!(
+        analyze(unknown)
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_id == "RSPDL-LINK-003")
+    );
+
+    let mut optional_missing = module(false, UnlinkedTypeReference::String);
+    optional_missing.field_producers = vec![template_producer("body_template", "body", &["title"])];
+    assert!(
+        analyze(optional_missing)
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_id == "RSPDL-PROD-003")
+    );
+
+    let mut target_conflict = normal.clone();
+    target_conflict.field_producers.push(field_producer(
+        "body_direct",
+        UnlinkedFieldProducerSource::ActionInput {
+            input: reference("title_input"),
+        },
+    ));
+    assert!(
+        analyze(target_conflict)
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_id == "RSPDL-PROD-004")
+    );
+
+    let mut self_cycle = module(false, UnlinkedTypeReference::String);
+    self_cycle.field_producers = vec![template_producer("body_template", "body", &["body"])];
+    assert!(
+        analyze(self_cycle)
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_id == "RSPDL-PROD-008")
+    );
+
+    let mut two_node = module(false, UnlinkedTypeReference::String);
+    two_node.models[0].fields.push(UnlinkedField {
+        declaration: declaration("Footer", Some("footer")),
+        required: false,
+        value_type: UnlinkedTypeReference::String,
+        span: span(),
+    });
+    two_node.field_producers = vec![
+        template_producer("body_template", "body", &["footer"]),
+        template_producer("footer_template", "footer", &["body"]),
+    ];
+    assert!(
+        analyze(two_node)
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_id == "RSPDL-PROD-008")
+    );
+
+    let mut all_skip = module(false, UnlinkedTypeReference::String);
+    all_skip.creation_branches = exhaustive_creation_branches(CreationDecision::Skip);
+    all_skip.field_producers = vec![template_producer("body_template", "body", &["body"])];
+    assert!(analyze(all_skip).diagnostics.is_empty());
+
+    let mut non_string = module(false, UnlinkedTypeReference::Integer);
+    non_string.field_producers = vec![
+        template_producer("body_template", "body", &["title"]),
+        direct(),
+    ];
+    assert!(
+        analyze(non_string)
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_id == "RSPDL-PROD-002")
+    );
+
+    let mut non_string_placeholder = module(false, UnlinkedTypeReference::String);
+    non_string_placeholder.models[0].fields[0].value_type = UnlinkedTypeReference::Integer;
+    non_string_placeholder.actions[0].inputs[1].kind = UnlinkedActionInputKind::Value {
+        value_type: UnlinkedTypeReference::Integer,
+    };
+    let mut integer_title = direct();
+    integer_title.output_field = reference("title");
+    non_string_placeholder.field_producers = vec![
+        template_producer("body_template", "body", &["title"]),
+        integer_title,
+    ];
+    assert!(analyze(non_string_placeholder).diagnostics.iter().any(|d| {
+        d.rule_id == "RSPDL-PROD-002"
+            && d.message_key == "semantic.template.placeholder_not_string"
+            && d.argument("dependency_field_id") == Some("expense.notice.title")
+    }));
+
+    let mut reordered = normal;
+    reordered.field_producers.reverse();
+    let reordered_output = analyze(reordered);
+    assert_eq!(
+        diagnostic_projection(&normal_output),
+        diagnostic_projection(&reordered_output)
+    );
+    assert_eq!(
+        normal_output
+            .module
+            .as_ref()
+            .map(|module| &module.conditional_productions[0].field_evaluation_order),
+        reordered_output
+            .module
+            .as_ref()
+            .map(|module| &module.conditional_productions[0].field_evaluation_order),
+    );
 }

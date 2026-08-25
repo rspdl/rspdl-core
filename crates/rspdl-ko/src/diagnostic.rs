@@ -79,6 +79,22 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "ko.syntax.field_producer_literal_marker_required" => {
             "상수 literal 뒤에는 을 또는 를이 필요합니다.".into()
         }
+        "ko.syntax.template_string_required" => {
+            "알림 내용 조합에는 문자열 template이 필요합니다.".into()
+        }
+        "ko.syntax.template_unmatched_brace" => {
+            "template의 { 또는 } 짝이 맞지 않습니다. literal brace는 {{ 또는 }}로 쓰세요.".into()
+        }
+        "ko.syntax.template_empty_placeholder" => {
+            "template placeholder는 비워둘 수 없습니다.".into()
+        }
+        "ko.syntax.template_nested_placeholder" => {
+            "template placeholder 안에 {를 중첩할 수 없습니다.".into()
+        }
+        "ko.syntax.template_path_placeholder_forbidden" => format!(
+            "template placeholder {}은 output field 이름 하나여야 하며 경로를 쓸 수 없습니다.",
+            argument(diagnostic, "placeholder")
+        ),
         "ko.syntax.relation_producer_stable_id_required" => {
             "관계 생산자의 stable ID가 필요합니다.".into()
         }
@@ -303,6 +319,29 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "production_id"),
             argument(diagnostic, "field_id"),
             argument(diagnostic, "producer_ids")
+        ),
+        "semantic.template.dependency_producer_missing" => format!(
+            "template target {}가 참조한 output field {}는 생성 branch {}에서 값을 생산하지 않습니다.",
+            argument(diagnostic, "target_field_id"),
+            argument(diagnostic, "dependency_field_id"),
+            argument(diagnostic, "create_branch_ids")
+        ),
+        "semantic.template.dependency_producer_conflict" => format!(
+            "template target {}가 참조한 output field {}에 producer {}가 함께 선언되었습니다.",
+            argument(diagnostic, "target_field_id"),
+            argument(diagnostic, "dependency_field_id"),
+            argument(diagnostic, "producer_ids")
+        ),
+        "semantic.template.dependency_cycle" => format!(
+            "생산 {}의 template output field 의존성이 순환합니다: {}.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "cycle_field_ids")
+        ),
+        "semantic.template.placeholder_not_string" => format!(
+            "template 생산자 {}가 참조한 output field {}의 타입 {}은 문자열이 아닙니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "dependency_field_id"),
+            argument(diagnostic, "dependency_type")
         ),
         "semantic.creation_production.relation_producer_without_creation_decision" => format!(
             "관계 생산자 {}은 생산 결정이 없는 행동/output에 붙을 수 없습니다.",

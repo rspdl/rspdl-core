@@ -231,6 +231,7 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
         _ if is_action_sentence(line) => Some(DeclarationKind::Action),
         _ if is_action_input_sentence(line) => Some(DeclarationKind::ActionInput),
         _ if is_creation_branch_sentence(line) => Some(DeclarationKind::CreationBranch),
+        _ if is_template_producer_sentence(line) => Some(DeclarationKind::FieldProducer),
         _ if is_field_producer_sentence(line) => Some(DeclarationKind::FieldProducer),
         _ if is_relation_producer_sentence(line) => Some(DeclarationKind::RelationProducer),
         _ if is_relation_sentence(line) => Some(DeclarationKind::Relation),
@@ -598,6 +599,18 @@ fn is_field_producer_sentence(line: &Line) -> bool {
                 if word == "실행될" || word == "이면" || word == "라면"
                     || word.ends_with("이면") || word.ends_with("라면"))
         })
+}
+
+fn is_template_producer_sentence(line: &Line) -> bool {
+    last_sentence_word(line, 0) == Some("조합한다")
+        && line
+            .tokens
+            .iter()
+            .any(|token| matches!(token.kind, TokenKind::StringLiteral(_)))
+        && line
+            .tokens
+            .iter()
+            .any(|token| matches!(&token.kind, TokenKind::Word(word) if word == "실행될"))
 }
 
 fn is_relation_producer_sentence(line: &Line) -> bool {
@@ -1142,7 +1155,19 @@ fn parse_field_producer(
         cursor.expect_word("때")?;
         None
     };
-    let source = if cursor.consume_word("상수") {
+    let source = if is_template_producer_sentence(line) {
+        let token = cursor
+            .next_token()
+            .ok_or_else(|| cursor.error("ko.syntax.template_string_required"))?;
+        let TokenKind::StringLiteral(value) = &token.kind else {
+            return Err(cursor.error("ko.syntax.template_string_required"));
+        };
+        cursor.expect_word("를")?;
+        validate_template_syntax(value, token.span)?;
+        FieldProducerSourceAst::Template {
+            value: value.clone(),
+        }
+    } else if cursor.consume_word("상수") {
         let (literal, _marker) = cursor.field_producer_literal_marked()?;
         FieldProducerSourceAst::Constant { literal }
     } else {
@@ -1161,7 +1186,11 @@ fn parse_field_producer(
     };
     let (output_model, _) = cursor.marked_ref(&["의"])?;
     let (output_field, output_marker) = cursor.marked_ref(&["으로", "로"])?;
-    cursor.expect_word("기록한다")?;
+    if matches!(source, FieldProducerSourceAst::Template { .. }) {
+        cursor.expect_word("조합한다")?;
+    } else {
+        cursor.expect_word("기록한다")?;
+    }
     cursor.expect_end()?;
     lint_marker(&declaration.name, topic, "은", "는", line.span, diagnostics);
     if action_marker != "의" {
@@ -1184,6 +1213,73 @@ fn parse_field_producer(
         condition,
         span: line.span,
     })
+}
+
+fn validate_template_syntax(value: &str, span: Span) -> Result<(), Diagnostic> {
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '{' if chars.peek() == Some(&'{') => {
+                chars.next();
+            }
+            '}' if chars.peek() == Some(&'}') => {
+                chars.next();
+            }
+            '{' => {
+                let mut placeholder = String::new();
+                let mut closed = false;
+                for next in chars.by_ref() {
+                    if next == '{' {
+                        return Err(Diagnostic::error(
+                            "RSPDL-KO-SYN-079",
+                            "ko.syntax.template_nested_placeholder",
+                            span,
+                        ));
+                    }
+                    if next == '}' {
+                        closed = true;
+                        break;
+                    }
+                    placeholder.push(next);
+                }
+                if !closed {
+                    return Err(Diagnostic::error(
+                        "RSPDL-KO-SYN-079",
+                        "ko.syntax.template_unmatched_brace",
+                        span,
+                    ));
+                }
+                if placeholder.trim().is_empty() {
+                    return Err(Diagnostic::error(
+                        "RSPDL-KO-SYN-079",
+                        "ko.syntax.template_empty_placeholder",
+                        span,
+                    ));
+                }
+                if placeholder != placeholder.trim()
+                    || placeholder.contains('.')
+                    || placeholder.contains('/')
+                    || placeholder.contains("::")
+                {
+                    return Err(Diagnostic::error(
+                        "RSPDL-KO-SYN-079",
+                        "ko.syntax.template_path_placeholder_forbidden",
+                        span,
+                    )
+                    .with_argument("placeholder", placeholder));
+                }
+            }
+            '}' => {
+                return Err(Diagnostic::error(
+                    "RSPDL-KO-SYN-079",
+                    "ko.syntax.template_unmatched_brace",
+                    span,
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn parse_relation_producer(
@@ -1793,6 +1889,12 @@ impl<'a> BodyCursor<'a> {
             index: 0,
             span,
         }
+    }
+
+    fn next_token(&mut self) -> Option<&'a Token> {
+        let token = self.tokens.get(self.index)?;
+        self.index += 1;
+        Some(token)
     }
 
     fn marked_ref(&mut self, markers: &[&str]) -> Result<(String, String), Diagnostic> {

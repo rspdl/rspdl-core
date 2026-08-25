@@ -274,6 +274,16 @@ pub enum FieldProducerSource {
     Constant {
         value: CanonicalValue,
     },
+    Template {
+        parts: Vec<TemplatePart>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum TemplatePart {
+    Text { value: String },
+    OutputField { field_id: CanonicalId },
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
@@ -330,6 +340,10 @@ pub struct ConditionalProductionDefinition {
     pub branches: Vec<CreationBranchDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub field_producers: Vec<FieldProducerDefinition>,
+    /// Canonical dependency-respecting projection for consumers that render or
+    /// evaluate output payloads. It never relies on source declaration order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub field_evaluation_order: Vec<CanonicalId>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub relation_slots: Vec<OutputRelationSlotDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

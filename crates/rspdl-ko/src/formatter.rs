@@ -257,6 +257,13 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                 ));
             }
             DeclarationAst::FieldProducer(value) => {
+                if matches!(value.source, FieldProducerSourceAst::Template { .. })
+                    && value.condition.is_some()
+                {
+                    return Err(FormatError::unsupported_constraint(
+                        "조건부 template producer는 현재 Korean 문법으로 표현할 수 없습니다.",
+                    ));
+                }
                 let source = match &value.source {
                     FieldProducerSourceAst::ActionInput { input } => marked(input, "을", "를"),
                     FieldProducerSourceAst::InputField { input, field } => {
@@ -264,6 +271,12 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     }
                     FieldProducerSourceAst::Constant { literal } => {
                         format!("상수 {}", marked(&literal_text(literal), "을", "를"))
+                    }
+                    FieldProducerSourceAst::Template { value } => {
+                        format!(
+                            "{}를",
+                            serde_json::to_string(value).expect("template string serializes")
+                        )
                     }
                 };
                 let trigger = match &value.condition {
@@ -276,7 +289,7 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     None => format!("{} 실행될 때", marked(&value.action, "이", "가")),
                 };
                 output.push_str(&format!(
-                    "{}({}){} {} {} {}의 {} 기록한다.\n",
+                    "{}({}){} {} {} {}의 {} {}.\n",
                     surface(&value.declaration.name),
                     value.declaration.id,
                     if has_final_consonant(&value.declaration.name) {
@@ -288,6 +301,11 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     source,
                     surface(&value.output_model),
                     marked(&value.output_field, "으로", "로"),
+                    if matches!(value.source, FieldProducerSourceAst::Template { .. }) {
+                        "조합한다"
+                    } else {
+                        "기록한다"
+                    },
                 ));
             }
             DeclarationAst::RelationProducer(value) => {
@@ -549,6 +567,39 @@ mod tests {
             reparsed.diagnostics
         );
         assert_eq!(first, format_document(&reparsed.document.unwrap()).unwrap());
+    }
+
+    #[test]
+    fn template_strings_with_quotes_and_literal_braces_round_trip() {
+        let source = r#"@모듈 기록(binding)
+알림 내용 조합(content_template)은 점검 요청 전달이 실행될 때 "\"{알림 제목}\" {{원문}}"를 점검 요청 전달 알림의 내용으로 조합한다.
+"#;
+        let original = parse(source);
+        assert!(
+            original.diagnostics.is_empty(),
+            "{:?}",
+            original.diagnostics
+        );
+        let document = original.document.unwrap();
+        let first = format_document(&document).unwrap();
+        assert!(first.contains("\\\"{알림 제목}\\\" {{원문}}"));
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        assert_eq!(first, format_document(&reparsed.document.unwrap()).unwrap());
+
+        let mut conditional = document;
+        let DeclarationAst::FieldProducer(producer) = &mut conditional.declarations[0] else {
+            panic!()
+        };
+        producer.condition = Some(FieldProducerConditionAst {
+            input: "상태".into(),
+            variant: "접수됨".into(),
+        });
+        assert!(format_document(&conditional).is_err());
     }
 
     #[test]

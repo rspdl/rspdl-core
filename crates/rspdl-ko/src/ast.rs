@@ -242,6 +242,7 @@ pub enum FieldProducerSourceAst {
     ActionInput { input: String },
     InputField { input: String, field: String },
     Constant { literal: LiteralAst },
+    Template { value: String },
 }
 
 /// The only payload condition in this slice: one direct enum action input

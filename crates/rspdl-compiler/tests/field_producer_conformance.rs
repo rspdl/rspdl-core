@@ -165,6 +165,19 @@ fn producers(module: &rspdl_domain::SemanticModule) -> Vec<(String, String, Stri
                                 .map(ToString::to_string)
                                 .unwrap_or_default())
                     ),
+                    FieldProducerSource::Template { parts } => format!(
+                        "template:{}",
+                        parts
+                            .iter()
+                            .map(|part| match part {
+                                rspdl_domain::TemplatePart::Text { value } =>
+                                    format!("text:{value}"),
+                                rspdl_domain::TemplatePart::OutputField { field_id } =>
+                                    format!("field:{field_id}"),
+                            })
+                            .collect::<Vec<_>>()
+                            .join("|")
+                    ),
                 };
                 (f.id.to_string(), f.output_field_id.to_string(), s)
             })

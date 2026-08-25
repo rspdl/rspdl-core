@@ -105,7 +105,7 @@ target_spec: "0.3.0"
   - 문장형 화면 create/read/update/delete와 field input/read/update 선언
   - 문장형 action create/update/delete 결과와 동일 action·model의 mutation conflict 검증
   - stable-ID typed action input의 한국어 문형, common linking/type checking, source-backed Canonical IR과 결정적 JSON 직렬화
-  - direct enum action input의 한국어 conditional ExactlyOne Create/Skip, enum coverage와 same-variant conflict, direct input·ExistingModel input field·constant의 무조건 또는 동일 decision enum variant `PreMutation` producer와 variant별 required output field gap/conflict
+  - direct enum action input의 한국어 conditional ExactlyOne Create/Skip, enum coverage와 same-variant conflict, direct input·ExistingModel input field·constant의 무조건 또는 동일 decision enum variant `PreMutation` producer, 무조건 output-field-only message template와 variant별 required output field gap/conflict
   - output-first binary relation에 Required와 Unique가 함께 있으면 ExactlyOne output relation slot으로 해석하고 direct ExistingModel input relation producer의 Create-path gap/conflict 검증
   - 화면 입력과 합계 계산을 생산자로 연결한 field provenance 검증
   - 단일 정수 필드 합계, 원본 변경 시 재계산과 내부/비표시 의도
@@ -121,7 +121,7 @@ target_spec: "0.3.0"
   - relation/join 기반 교차 모델 집계 실행과 일반 계산식
   - 조건부 정책의 한국어 표면 문법, Canonical IR lowering과 compiler structured diagnostic 연결
   - 다중 입력 domain과 일반 effect compatibility, 조건부 field requiredness, explicit default와 override
-  - conditional data production의 output template field binding, snapshot/retain lifecycle analysis, conditional relation producer와 structured diagnostic 확장
+  - snapshot/retain lifecycle analysis, conditional relation producer와 structured diagnostic 확장
   - relation path 기반 다수 output 생성, 실제 relation JSON binding, output delivery, 일반 expression·통화·반올림·가격표 snapshot과 field composition
   - effective condition에 기반한 unreachable 분석
   - 유저 플로우, 컬렉션, module import와 다국어 의미 동등성

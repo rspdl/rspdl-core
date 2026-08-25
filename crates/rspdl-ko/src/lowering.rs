@@ -9,7 +9,8 @@ use rspdl_domain::{
     UnlinkedFieldProducerCondition, UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule,
     UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation,
     UnlinkedRelationProducer, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind,
-    UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTemplatePart,
+    UnlinkedTypeReference,
 };
 
 use crate::ast::*;
@@ -863,6 +864,53 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                             }
                         };
                         UnlinkedFieldProducerSource::Constant { literal }
+                    }
+                    FieldProducerSourceAst::Template { value: template } => {
+                        let mut parts = Vec::new();
+                        let mut chars = template.chars().peekable();
+                        let mut text = String::new();
+                        while let Some(ch) = chars.next() {
+                            match ch {
+                                '{' if chars.peek() == Some(&'{') => {
+                                    chars.next();
+                                    text.push('{');
+                                }
+                                '}' if chars.peek() == Some(&'}') => {
+                                    chars.next();
+                                    text.push('}');
+                                }
+                                '{' => {
+                                    if !text.is_empty() {
+                                        parts.push(UnlinkedTemplatePart::Text {
+                                            value: std::mem::take(&mut text),
+                                        });
+                                    }
+                                    let mut name = String::new();
+                                    for next in chars.by_ref() {
+                                        if next == '}' {
+                                            break;
+                                        }
+                                        name.push(next);
+                                    }
+                                    parts.push(UnlinkedTemplatePart::OutputField {
+                                        field: required_reference(
+                                            index.field_reference(
+                                                output_model.as_ref(),
+                                                &name,
+                                                value.span,
+                                                &mut diagnostics,
+                                            ),
+                                            value.span,
+                                        ),
+                                    });
+                                }
+                                other => text.push(other),
+                            }
+                        }
+                        if !text.is_empty() {
+                            parts.push(UnlinkedTemplatePart::Text { value: text });
+                        }
+                        UnlinkedFieldProducerSource::Template { parts }
                     }
                 };
                 module.field_producers.push(UnlinkedFieldProducer {

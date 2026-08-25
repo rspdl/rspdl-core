@@ -96,6 +96,18 @@ fn producers(module: &rspdl_domain::SemanticModule) -> Vec<(String, String, Stri
                 FieldProducerSource::Constant { value } => {
                     format!("constant:{}:{value:?}", value.value_type())
                 }
+                FieldProducerSource::Template { parts } => format!(
+                    "template:{}",
+                    parts
+                        .iter()
+                        .map(|part| match part {
+                            rspdl_domain::TemplatePart::Text { value } => format!("text:{value}"),
+                            rspdl_domain::TemplatePart::OutputField { field_id } =>
+                                format!("field:{field_id}"),
+                        })
+                        .collect::<Vec<_>>()
+                        .join("|")
+                ),
             };
             let condition = match &producer.condition {
                 Some(FieldProducerCondition::EnumVariant {

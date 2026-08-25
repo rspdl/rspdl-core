@@ -16,12 +16,13 @@ use crate::{
     RelationDefinition, RelationOperator, RelationProducerDefinition, RelationSlotCardinality,
     RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
     ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SourceId, SurfaceRef,
-    TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind, UnlinkedConstraint,
-    UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedFieldIntent,
-    UnlinkedFieldProducer, UnlinkedFieldProducerCondition, UnlinkedFieldProducerSource,
-    UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
-    UnlinkedRelation, UnlinkedRelationProducer, UnlinkedRelationalConstraint,
-    UnlinkedRelationalConstraintKind, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
+    TemplatePart, TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind,
+    UnlinkedConstraint, UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration,
+    UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerCondition,
+    UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
+    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationProducer,
+    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedScreen,
+    UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -1023,6 +1024,7 @@ fn analyze_conditional_productions(
                 })
                 .collect(),
             field_producers: Vec::new(),
+            field_evaluation_order: Vec::new(),
             relation_slots: output_relation_slots(
                 &output_model_id,
                 relations,
@@ -1161,6 +1163,8 @@ fn analyze_field_producers(
             &output_field.value_type,
             models,
             enums,
+            output_model,
+            value.span,
             diagnostics,
         ) else {
             continue;
@@ -1196,6 +1200,8 @@ fn analyze_field_producers(
         production
             .field_producers
             .sort_by(|left, right| left.id.cmp(&right.id));
+        production.field_evaluation_order =
+            canonical_field_evaluation_order(&production.field_producers);
         let create_branches_by_variant = production.branches.iter().fold(
             BTreeMap::<CanonicalId, Vec<&CreationBranchDefinition>>::new(),
             |mut grouped, branch| {
@@ -1215,7 +1221,7 @@ fn analyze_field_producers(
             .values()
             .find(|model| model.id == production.output_model_id)
             .expect("production output was linked above");
-        for (variant_id, create_branches) in create_branches_by_variant {
+        for (variant_id, create_branches) in &create_branches_by_variant {
             let create_branch_ids = create_branches
                 .iter()
                 .map(|branch| branch.id.clone())
@@ -1230,7 +1236,7 @@ fn analyze_field_producers(
                             && producer_applies_to_variant(
                                 producer,
                                 &production.decision_input_id,
-                                &variant_id,
+                                variant_id,
                             )
                     })
                     .collect::<Vec<_>>();
@@ -1245,7 +1251,7 @@ fn analyze_field_producers(
                         .with_argument("action_id", &production.action_id)
                         .with_argument("output_model_id", &production.output_model_id)
                         .with_argument("field_id", &field.id)
-                        .with_argument("variant_id", &variant_id)
+                        .with_argument("variant_id", variant_id)
                         .with_argument("create_branch_ids", joined_ids_csv(&create_branch_ids)),
                     );
                 }
@@ -1269,13 +1275,204 @@ fn analyze_field_producers(
                                     .collect::<Vec<_>>(),
                             ),
                         )
-                        .with_argument("variant_id", &variant_id)
+                        .with_argument("variant_id", variant_id)
                         .with_argument("create_branch_ids", joined_ids_csv(&create_branch_ids)),
                     );
                 }
             }
         }
+        analyze_template_dependencies(
+            production,
+            output_model,
+            &create_branches_by_variant,
+            diagnostics,
+        );
     }
+}
+
+fn canonical_field_evaluation_order(producers: &[FieldProducerDefinition]) -> Vec<CanonicalId> {
+    let mut remaining = producers
+        .iter()
+        .map(|producer| (producer.output_field_id.clone(), BTreeSet::new()))
+        .collect::<BTreeMap<_, BTreeSet<_>>>();
+    for producer in producers {
+        if let FieldProducerSource::Template { parts } = &producer.source {
+            for part in parts {
+                if let TemplatePart::OutputField { field_id } = part {
+                    remaining
+                        .entry(producer.output_field_id.clone())
+                        .or_default()
+                        .insert(field_id.clone());
+                }
+            }
+        }
+    }
+    let mut order = Vec::new();
+    while !remaining.is_empty() {
+        let ready = remaining
+            .iter()
+            .filter(|(_, dependencies)| dependencies.is_empty())
+            .map(|(field, _)| field.clone())
+            .collect::<Vec<_>>();
+        if ready.is_empty() {
+            order.extend(remaining.keys().cloned());
+            break;
+        }
+        for field in ready {
+            remaining.remove(&field);
+            for dependencies in remaining.values_mut() {
+                dependencies.remove(&field);
+            }
+            order.push(field);
+        }
+    }
+    order
+}
+
+/// Templates are producers themselves, but their placeholders additionally
+/// depend on other output fields.  Check the graph per effective Create
+/// variant so optional fields cannot be silently absent when interpolated.
+fn analyze_template_dependencies(
+    production: &ConditionalProductionDefinition,
+    output_model: &DataModelDefinition,
+    create_branches_by_variant: &BTreeMap<CanonicalId, Vec<&CreationBranchDefinition>>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for (variant_id, branches) in create_branches_by_variant {
+        let branch_ids = branches
+            .iter()
+            .map(|branch| branch.id.clone())
+            .collect::<Vec<_>>();
+        let mut graph = BTreeMap::<CanonicalId, BTreeSet<CanonicalId>>::new();
+        for producer in &production.field_producers {
+            if !producer_applies_to_variant(producer, &production.decision_input_id, variant_id) {
+                continue;
+            }
+            let FieldProducerSource::Template { parts } = &producer.source else {
+                continue;
+            };
+            let dependencies = parts
+                .iter()
+                .filter_map(|part| match part {
+                    TemplatePart::OutputField { field_id } => Some(field_id.clone()),
+                    TemplatePart::Text { .. } => None,
+                })
+                .collect::<BTreeSet<_>>();
+            for field_id in dependencies {
+                let dependency_producers = production
+                    .field_producers
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.output_field_id == field_id
+                            && producer_applies_to_variant(
+                                candidate,
+                                &production.decision_input_id,
+                                variant_id,
+                            )
+                    })
+                    .collect::<Vec<_>>();
+                if dependency_producers.is_empty() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "RSPDL-PROD-003",
+                            "semantic.template.dependency_producer_missing",
+                            producer.span,
+                        )
+                        .with_argument("production_id", &production.id)
+                        .with_argument("action_id", &production.action_id)
+                        .with_argument("output_model_id", &production.output_model_id)
+                        .with_argument("target_field_id", &producer.output_field_id)
+                        .with_argument("dependency_field_id", &field_id)
+                        .with_argument("variant_id", variant_id)
+                        .with_argument("create_branch_ids", joined_ids_csv(&branch_ids)),
+                    );
+                }
+                if dependency_producers.len() > 1 {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "RSPDL-PROD-004",
+                            "semantic.template.dependency_producer_conflict",
+                            producer.span,
+                        )
+                        .with_argument("production_id", &production.id)
+                        .with_argument("action_id", &production.action_id)
+                        .with_argument("output_model_id", &production.output_model_id)
+                        .with_argument("target_field_id", &producer.output_field_id)
+                        .with_argument("dependency_field_id", &field_id)
+                        .with_argument(
+                            "producer_ids",
+                            joined_ids_csv(
+                                &dependency_producers
+                                    .iter()
+                                    .map(|candidate| candidate.id.clone())
+                                    .collect::<Vec<_>>(),
+                            ),
+                        )
+                        .with_argument("variant_id", variant_id)
+                        .with_argument("create_branch_ids", joined_ids_csv(&branch_ids)),
+                    );
+                }
+                graph
+                    .entry(producer.output_field_id.clone())
+                    .or_default()
+                    .insert(field_id);
+            }
+        }
+        if let Some(cycle) = canonical_template_cycle(&graph) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-PROD-008",
+                    "semantic.template.dependency_cycle",
+                    branches[0].span,
+                )
+                .with_argument("production_id", &production.id)
+                .with_argument("action_id", &production.action_id)
+                .with_argument("output_model_id", &production.output_model_id)
+                .with_argument("variant_id", variant_id)
+                .with_argument("create_branch_ids", joined_ids_csv(&branch_ids))
+                .with_argument("cycle_field_ids", joined_ids_csv(&cycle)),
+            );
+        }
+    }
+    let _ = output_model; // documents the same-model contract at the call site.
+}
+
+fn canonical_template_cycle(
+    graph: &BTreeMap<CanonicalId, BTreeSet<CanonicalId>>,
+) -> Option<Vec<CanonicalId>> {
+    fn visit(
+        node: &CanonicalId,
+        graph: &BTreeMap<CanonicalId, BTreeSet<CanonicalId>>,
+        visited: &mut BTreeSet<CanonicalId>,
+        stack: &mut Vec<CanonicalId>,
+    ) -> Option<Vec<CanonicalId>> {
+        if let Some(index) = stack.iter().position(|value| value == node) {
+            let mut cycle = stack[index..].to_vec();
+            cycle.sort();
+            cycle.dedup();
+            return Some(cycle);
+        }
+        if !visited.insert(node.clone()) {
+            return None;
+        }
+        stack.push(node.clone());
+        if let Some(next) = graph.get(node) {
+            for dependency in next {
+                if let Some(cycle) = visit(dependency, graph, visited, stack) {
+                    return Some(cycle);
+                }
+            }
+        }
+        stack.pop();
+        None
+    }
+    let mut visited = BTreeSet::new();
+    for node in graph.keys() {
+        if let Some(cycle) = visit(node, graph, &mut visited, &mut Vec::new()) {
+            return Some(cycle);
+        }
+    }
+    None
 }
 
 fn producer_applies_to_variant(
@@ -1623,6 +1820,8 @@ fn resolve_field_producer_source(
     output_type: &CanonicalType,
     models: &BTreeMap<String, DataModelDefinition>,
     enums: &[EnumDefinition],
+    output_model: &DataModelDefinition,
+    source_span: TextRange,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<ResolvedFieldProducerSource> {
     match source {
@@ -1709,6 +1908,55 @@ fn resolve_field_producer_source(
                 value_type: value.value_type().clone(),
                 source: FieldProducerSource::Constant { value },
                 evidence: "constant".into(),
+            })
+        }
+        UnlinkedFieldProducerSource::Template { parts } => {
+            if *output_type != CanonicalType::String {
+                diagnostics.push(field_producer_type_error(
+                    source_span,
+                    producer_id,
+                    action_id,
+                    output_model_id,
+                    output_field_id,
+                    "template",
+                    output_type,
+                ));
+                return None;
+            }
+            let mut resolved = Vec::new();
+            for part in parts {
+                match part {
+                    UnlinkedTemplatePart::Text { value } => resolved.push(TemplatePart::Text {
+                        value: value.clone(),
+                    }),
+                    UnlinkedTemplatePart::OutputField { field } => {
+                        let field = resolve_field(output_model, field, diagnostics)?;
+                        if field.value_type != CanonicalType::String {
+                            diagnostics.push(
+                                Diagnostic::error(
+                                    "RSPDL-PROD-002",
+                                    "semantic.template.placeholder_not_string",
+                                    source_span,
+                                )
+                                .with_argument("producer_id", producer_id)
+                                .with_argument("action_id", action_id)
+                                .with_argument("output_model_id", output_model_id)
+                                .with_argument("output_field_id", output_field_id)
+                                .with_argument("dependency_field_id", &field.id)
+                                .with_argument("dependency_type", &field.value_type),
+                            );
+                            return None;
+                        }
+                        resolved.push(TemplatePart::OutputField {
+                            field_id: field.id.clone(),
+                        });
+                    }
+                }
+            }
+            Some(ResolvedFieldProducerSource {
+                source: FieldProducerSource::Template { parts: resolved },
+                value_type: CanonicalType::String,
+                evidence: "template".into(),
             })
         }
     }
