@@ -416,6 +416,18 @@ fn canonical_integer_text_has_one_representation() {
             "{invalid}"
         );
     }
+    // 소수 파서도 같은 규칙을 지켜야 한다. `-0` 계열이 통과하면 하나의 값에 여러
+    // 바이트 표현이 생기고 두 파서가 같은 입력에 다르게 답한다.
+    assert!(CanonicalValue::decimal_from_str("42.5").is_ok());
+    for invalid in ["+42", "042", "-0", "-0.0", "-0.00", " 42"] {
+        assert!(
+            matches!(
+                CanonicalValue::decimal_from_str(invalid),
+                Err(ModelError::InvalidDecimal { .. })
+            ),
+            "{invalid}"
+        );
+    }
 }
 
 #[test]

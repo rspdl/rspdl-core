@@ -708,6 +708,7 @@ fn bind_runtime(
         .collect::<BTreeMap<_, _>>();
     let mut records = BTreeMap::new();
     let mut record_ids = BTreeMap::<CanonicalId, BTreeSet<String>>::new();
+    let mut model_texts = BTreeMap::<CanonicalId, String>::new();
 
     for (model_text, values) in input.records {
         let Some(model) = models.get(model_text.as_str()).copied() else {
@@ -794,7 +795,50 @@ fn bind_runtime(
             });
         }
         record_ids.insert(model.id.clone(), ids);
+        model_texts.insert(model.id.clone(), model_text);
         records.insert(model.id.clone(), bound);
+    }
+
+    // 참조 대상 확인은 모든 record 를 읽은 뒤에야 할 수 있다. 앞 record 가 뒤 record 를
+    // 가리킬 수 있기 때문이다. `action_requests` 의 record 확인과 같은 규칙을 쓴다.
+    for (model_id, bound) in &records {
+        let Some(model) = models.get(model_id.as_str()).copied() else {
+            continue;
+        };
+        let local_ids = model
+            .fields
+            .iter()
+            .map(|field| (field.id.clone(), field.local_id.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let model_text = model_texts
+            .get(model_id)
+            .map_or_else(|| model_id.to_string(), Clone::clone);
+        for (index, record) in bound.iter().enumerate() {
+            for (field_id, value) in &record.values {
+                let mut targets = Vec::new();
+                value.collect_reference_targets(&mut targets);
+                for (target_model, record_id) in targets {
+                    if record_ids
+                        .get(target_model)
+                        .is_some_and(|ids| ids.contains(record_id))
+                    {
+                        continue;
+                    }
+                    let local = local_ids
+                        .get(field_id)
+                        .map_or_else(|| field_id.to_string(), CanonicalId::to_string);
+                    diagnostics.push(
+                        runtime_error(
+                            "RSPDL-INPUT-026",
+                            format!("$.records.{model_text}[{index}].{local}"),
+                            "runtime.reference.target_not_found",
+                        )
+                        .with_argument("model_id", target_model)
+                        .with_argument("record_id", record_id),
+                    );
+                }
+            }
+        }
     }
 
     let role_ids = modules
@@ -1537,6 +1581,31 @@ mod tests {
             Some("latitude")
         );
         assert!(report.constraint_violations.is_empty());
+    }
+
+    #[test]
+    fn dangling_typed_references_are_rejected() {
+        // `action_requests` 의 record 확인과 같은 규칙이다 — 같은 입력에 실린 대상만
+        // 가리킬 수 있다. 입력 밖을 조회하지는 않는다.
+        let source = "@모듈 참조(refs)\n대상(target)은 다음 필드들로 구성되어 있다.\n    이름(name): 필수 문자열\n출처(source)는 다음 필드들로 구성되어 있다.\n    주 대상(primary): 필수 참조(target)\n    부 대상(others): 필수 목록(참조(target))\n";
+        let data = r#"{
+          "records": {
+            "refs.target": [{ "$id": "target-1", "name": "있음" }],
+            "refs.source": [{
+              "$id": "source-1",
+              "primary": "target-1",
+              "others": ["target-1", "target-missing"]
+            }]
+          }
+        }"#;
+        let report = check_ko(source, data, CheckOptions::default());
+
+        assert_eq!(report.runtime_diagnostics.len(), 1, "{report:?}");
+        assert_eq!(report.runtime_diagnostics[0].rule_id, "RSPDL-INPUT-026");
+        assert_eq!(
+            report.runtime_diagnostics[0].argument("record_id"),
+            Some("target-missing")
+        );
     }
 
     #[test]

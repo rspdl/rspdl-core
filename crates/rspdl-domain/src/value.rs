@@ -7,7 +7,7 @@ use chrono::{
     DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, Timelike, Utc,
 };
 use chrono_tz::Tz;
-use num_bigint::BigInt;
+use num_bigint::{BigInt, Sign};
 use num_prime::nt_funcs::is_prime64;
 use num_traits::{Signed, ToPrimitive, Zero};
 use serde::{Serialize, Serializer};
@@ -99,6 +99,11 @@ impl CanonicalDecimal {
                 value: value.clone(),
             }
         })?;
+        // `-0`, `-0.00` 은 전부 `0` 으로 정규화된다. 하나의 값에 여러 바이트 표현이
+        // 생기면 정규 입력이 아니다 — `+42`, `042` 를 막는 것과 같은 이유다.
+        if negative && coefficient.sign() == Sign::NoSign {
+            return Err(ModelError::InvalidDecimal { value });
+        }
         if negative {
             coefficient = -coefficient;
         }
@@ -940,6 +945,36 @@ impl CanonicalValue {
             value_type: CanonicalType::Reference(target_model),
             representation: ValueRepresentation::Reference { record_id },
         })
+    }
+
+    /// 이 값이 가리키는 typed reference 를 모두 모은다. 컬렉션 안에 들어 있어도 찾는다.
+    /// 참조 대상이 실제로 있는지는 런타임 입력을 가진 쪽만 알 수 있으므로, 여기서는
+    /// 대상 모델과 record ID 쌍만 돌려준다.
+    pub fn collect_reference_targets<'a>(&'a self, targets: &mut Vec<(&'a CanonicalId, &'a str)>) {
+        match &self.representation {
+            ValueRepresentation::Reference { record_id } => {
+                if let CanonicalType::Reference(model) = &self.value_type {
+                    targets.push((model, record_id.as_str()));
+                }
+            }
+            ValueRepresentation::List(values) => {
+                for value in values {
+                    value.collect_reference_targets(targets);
+                }
+            }
+            ValueRepresentation::Set(values) => {
+                for value in values {
+                    value.collect_reference_targets(targets);
+                }
+            }
+            ValueRepresentation::Map(entries) => {
+                for (key, value) in entries {
+                    key.collect_reference_targets(targets);
+                    value.collect_reference_targets(targets);
+                }
+            }
+            _ => {}
+        }
     }
 
     pub fn list_contains(&self, value: &Self) -> Result<bool, ModelError> {

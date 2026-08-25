@@ -396,9 +396,9 @@ policy-statement =
 
 `rspdl-compiler`는 외부 JSON의 `records`, `role_assignments`, `action_requests`를 `SemanticModule`에 연결한다. 필수 field의 누락 또는 `null`은 backend 실행 전 입력 오류다. 선택 field가 없거나 `null`이면 그 field를 참조하는 제약은 해당 record에 적용하지 않는다.
 
-`날짜`, `시간`, `날짜시간`, `기간`, `지역 날짜시간`, `시간대 날짜시간`, `달력 기간` field는 canonical text를 JSON string으로 받는다. 시간대 날짜시간은 explicit offset과 IANA zone을 함께 받아 pinned time-zone data와 일치하지 않는 DST offset을 거부한다. `소수`, `위도`, `경도`는 정밀도를 보존하기 위해 JSON string을 기준 형식으로 사용하며 exponent가 없는 JSON number도 허용한다.
+`날짜`, `시간`, `날짜시간`, `기간`, `지역 날짜시간`, `시간대 날짜시간`, `달력 기간` field는 canonical text를 JSON string으로 받는다. 시간대 날짜시간은 explicit offset과 IANA zone을 함께 받아 pinned time-zone data와 일치하지 않는 DST offset을 거부한다. `소수`, `위도`, `경도`는 정밀도를 보존하기 위해 JSON string을 기준 형식으로 사용한다. JSON number는 정수만 허용한다 — 소수 자릿수를 가진 JSON number는 파서가 이미 배정밀도로 반올림한 뒤라 정확한 값이 아니므로 입력 오류다. 어느 형식이든 canonical 표기여야 하며 `+42`, `042`, `-0` 은 하나의 값에 여러 바이트 표현을 만들므로 거부한다.
 
-`통화`, `백분율`/`비율`, `수량`, `좌표`와 문자열 refinement도 canonical string을 받는다. 통화와 수량은 field의 currency/dimension과 다른 값을 거부하고, UUID·IP·CIDR 등은 타입별 lexical/canonical validation을 적용한다. `목록`과 `집합`은 JSON array, `맵`은 JSON object, `참조`는 target record ID string을 받는다. 모든 원소·key·value를 재귀적으로 타입 검사하고 집합 중복을 거부한다. Typed reference의 target model 존재는 compile 시 common analyzer가 검사하지만 외부 runtime record의 실제 존재 조회는 하지 않는다.
+`통화`, `백분율`/`비율`, `수량`, `좌표`와 문자열 refinement도 canonical string을 받는다. 통화와 수량은 field의 currency/dimension과 다른 값을 거부하고, UUID·IP·CIDR 등은 타입별 lexical/canonical validation을 적용한다. `목록`과 `집합`은 JSON array, `맵`은 JSON object, `참조`는 target record ID string을 받는다. 모든 원소·key·value를 재귀적으로 타입 검사하고 집합 중복을 거부한다. Typed reference의 target model 존재는 compile 시 common analyzer가 검사하고, runtime 에서는 **같은 입력에 실린 target model의 record ID 목록**과 대조해 없는 대상을 `RSPDL-INPUT-026` 으로 거부한다 (`action_requests` 의 record 확인과 같은 규칙이다). 입력 밖의 데이터베이스나 외부 저장소를 조회하지는 않는다.
 
 ### 7.2 제약 backend
 
