@@ -1,0 +1,11 @@
+{
+  "spec_version": "0.4.0",
+  "locale": "ko-KR",
+  "category": "false_positive",
+  "expected_module": true,
+  "expected_diagnostics": [],
+  "expected_field_types": {
+    "string_value.external_code.raw": "string"
+  },
+  "expected_constraint_values": ["2026-02-29"]
+}

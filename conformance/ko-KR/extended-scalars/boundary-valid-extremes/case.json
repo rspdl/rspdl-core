@@ -1,0 +1,23 @@
+{
+  "spec_version": "0.4.0",
+  "locale": "ko-KR",
+  "category": "boundary",
+  "expected_module": true,
+  "expected_diagnostics": [],
+  "expected_field_types": {
+    "boundary.measurement.instant": "date_time",
+    "boundary.measurement.last_time": "time",
+    "boundary.measurement.latitude": "latitude",
+    "boundary.measurement.leap_date": "date",
+    "boundary.measurement.longitude": "longitude",
+    "boundary.measurement.zero_duration": "duration"
+  },
+  "expected_constraint_values": [
+    "2024-02-29",
+    "23:59:59.999999999",
+    "2026-08-12T15:30:00Z",
+    "PT0S",
+    "-90",
+    "180"
+  ]
+}

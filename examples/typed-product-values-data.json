@@ -1,0 +1,16 @@
+{
+  "records": {
+    "product_values.payment": [
+      {"$id": "payment-1", "amount": "10000 KRW", "discount_rate": "15%"}
+    ],
+    "product_values.shipment": [
+      {"$id": "shipment-1", "weight": "20 kg", "origin": "37.5665,126.9780"}
+    ],
+    "product_values.customer": [
+      {"$id": "customer-1", "external_id": "550e8400-e29b-41d4-a716-446655440000", "email": "owner@example.com", "webhook": "https://example.com/hook", "allowed_network": "192.0.2.0/24", "tags": ["priority", "verified"], "aliases": ["owner"], "settings": {"tier": "gold"}, "default_payment": "payment-1"}
+    ],
+    "product_values.reservation": [
+      {"$id": "reservation-1", "local_start": "2026-08-13T14:30:00", "starts_at": "2026-11-01T01:30:00-04:00 America/New_York", "recurrence": "P1M"}
+    ]
+  }
+}

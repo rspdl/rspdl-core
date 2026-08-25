@@ -118,6 +118,28 @@ fn checks_the_expense_approval_example_with_runtime_fixture_data() {
 }
 
 #[test]
+fn checks_the_typed_product_values_example_with_runtime_fixture_data() {
+    let workspace = workspace_root();
+    let output = Command::new(env!("CARGO_BIN_EXE_rspdl"))
+        .args([
+            "check",
+            workspace
+                .join("examples/typed-product-values.rspdl")
+                .to_str()
+                .unwrap(),
+            "--data",
+            workspace
+                .join("examples/typed-product-values-data.json")
+                .to_str()
+                .unwrap(),
+            "--json",
+        ])
+        .output()
+        .expect("rspdl command should run");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+}
+
+#[test]
 fn finds_a_virtual_model_without_runtime_data() {
     let source = workspace_root().join("examples/project-ownership.rspdl");
     let output = Command::new(env!("CARGO_BIN_EXE_rspdl"))

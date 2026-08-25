@@ -1,0 +1,1 @@
+{"records":{"customer.customer":[{"$id":"c","id":"bad-uuid","email":"not-email"}]}}

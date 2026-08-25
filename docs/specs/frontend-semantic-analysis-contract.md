@@ -3,8 +3,8 @@ id: frontend-semantic-analysis-contract
 title: Frontend and Semantic Analysis Contract
 type: spec
 status: implemented
-version: "10"
-summary: Defines stable-ID Unlinked records, action data mutations, relations, rules, and the structured diagnostic boundary shared by frontends.
+version: "11"
+summary: Defines stable-ID Unlinked records, semantic product value types, action data mutations, relations, rules, and the structured diagnostic boundary shared by frontends.
 topics:
   - compiler-frontend
   - unlinked-ir
@@ -20,10 +20,10 @@ problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss
-last_updated: "2026-08-25"
+last_updated: "2026-08-26"
 owners:
   - rspdl-maintainers
-target_spec: "0.3.0"
+target_spec: "0.4.0"
 ---
 
 # Frontend and Semantic Analysis Contract
@@ -42,6 +42,7 @@ Locale Source -> Locale AST -> Stable-ID UnlinkedModule -> Link/Type Check -> Se
 
 - Locale AST는 frontend 내부 타입이며 호환 계약이 아니다.
 - `UnlinkedModule`은 선언 ID, 표시 이름, stable-ID `SurfaceRef`, literal, source range와 의미 construct를 보존한다.
+- Built-in field type은 base scalar 외에 `Money(currency)`, `Percentage`, `Quantity(unit)`, `Coordinate`, `LocalDateTime`, `ZonedDateTime`, `CalendarDuration`, 문자열 refinement, `List(element)`, `Set(element)`, `Map(key,value)`, `Reference(model)` variant로 lowering한다. Parameter와 nested type은 Unlinked IR에서도 손실 없이 보존한다. Frontend는 reference에 stable ID와 span만 넣으며, common analyzer가 local/fully-qualified target을 동일한 model symbol table에서 resolve하고 존재하지 않는 target을 `RSPDL-LINK-*` 진단으로 거부한다.
 - action의 데이터 결과는 action·model `SurfaceRef`, `create|update|delete` mutation과 source range를 가진 `UnlinkedActionDataMutation`으로 보존한다. Linking 뒤에는 `ActionDataMutationDefinition.span`과 기존 `Compilation.action_data_mutation_provenance` sidecar가 같은 UTF-8 byte `TextRange`를 유지한다.
 - conditional creation branch는 explicit declaration ID, optional legacy Action `action` reference와 authoritative tagged `trigger`, input/variant/output `SurfaceRef`, `Create|Skip`과 span을 가진 `UnlinkedCreationBranch`로 보존한다. Event branch는 `action`을 직렬화하지 않으며 frontend는 trigger owner의 direct enum input과 그 enum 안의 variant만 표시 이름에서 stable ID로 연결한다.
 - Event는 immutable typed payload input을 가진 별도 declaration이며 branch는 tagged `Action|Event` trigger reference를 보존한다. common analyzer는 owner-scoped direct enum payload만 Event creation decision으로 허용한다. Event producer는 Event 전용 source variant와 `TriggerPayload` phase를 가지며 Action-shaped legacy `action` field를 직렬화하지 않는다.
@@ -112,6 +113,7 @@ Frontend가 소유하지 않는다.
 - stable ID 문법 검증, module qualification과 중복 판정
 - stable ID 기반 symbol resolution
 - field, enum, constraint와 policy type checking
+- 확장 scalar literal의 canonical validation, ordered-type capability 검사와 위도·경도 범위 검사
 - relation parameter, cardinality와 compatibility group 검증
 - producer/consumer graph와 lifecycle 분석
 - 동일 action·model의 중복 또는 상충하는 data mutation 판정

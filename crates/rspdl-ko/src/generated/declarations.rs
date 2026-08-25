@@ -118,6 +118,13 @@ fn type_reference(name: &str) -> TypeReferenceAst {
         "문자열" => TypeReferenceAst::String,
         "정수" => TypeReferenceAst::Integer,
         "불리언" => TypeReferenceAst::Boolean,
+        "소수" => TypeReferenceAst::Decimal,
+        "날짜" => TypeReferenceAst::Date,
+        "시간" => TypeReferenceAst::Time,
+        "날짜시간" => TypeReferenceAst::DateTime,
+        "기간" => TypeReferenceAst::Duration,
+        "위도" => TypeReferenceAst::Latitude,
+        "경도" => TypeReferenceAst::Longitude,
         _ => TypeReferenceAst::Named(name.to_owned()),
     }
 }

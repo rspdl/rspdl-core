@@ -298,7 +298,7 @@ fn comma_reference(tokens: &[Token], position: usize) -> Vec<TerminalMatch> {
 mod tests {
     use crate::ast::{
         ActionInputKindAst, DataMutationKindAst, DeclarationAst, FieldIntentKindAst,
-        ScreenOperationKindAst, TypeReferenceAst,
+        ScreenOperationKindAst,
     };
     use crate::scanner::TokenKind;
     use crate::{Diagnostic, parse as parse_document, scan};
@@ -515,12 +515,9 @@ mod tests {
                 }
                 ActionInputKindAst::Value { value_type } => {
                     assert!(generated.existing.is_none());
-                    let expected = match value_type {
-                        TypeReferenceAst::String => "문자열".to_owned(),
-                        TypeReferenceAst::Integer => "정수".to_owned(),
-                        TypeReferenceAst::Boolean => "불리언".to_owned(),
-                        TypeReferenceAst::Named(name) => name,
-                    };
+                    // formatter 가 쓰는 표면형과 같은 함수를 쓴다. 타입이 늘어날 때마다
+                    // 이 테스트가 따로 뒤처지지 않게 한다.
+                    let expected = crate::formatter::type_reference(&value_type);
                     assert_eq!(generated.input_type.value, expected);
                 }
             }

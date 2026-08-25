@@ -1011,11 +1011,35 @@ fn parse_action_input_with_verb(
     let mut cursor = BodyCursor::new(tokens, line.span);
     let (action, action_marker) = cursor.marked_ref(&["은", "는"])?;
     let is_existing_model = cursor.consume_word("기존");
-    let (input_type_name, input_type_marker) = cursor.marked_ref(&["을", "를"])?;
+    // `통화(KRW)를` 같은 매개변수 타입은 이름과 마커 사이에 안정 ID 모양의 토큰이 끼어
+    // `marked_ref` 로 읽히지 않는다. 필드에서 쓰는 타입을 행동·사건 입력에서만 쓸 수
+    // 없을 이유가 없으므로, 그 형태를 여기서 먼저 알아본다.
+    let parameterized = (!is_existing_model)
+        .then(|| cursor.parameterized_type_before_marker(&["을", "를"]))
+        .flatten();
+    let (input_type_name, input_type_marker, parameterized_type) = match parameterized {
+        Some((tokens, marker)) => {
+            let value_type = parse_type_reference(
+                &Line {
+                    indent: line.indent,
+                    tokens,
+                    span: line.span,
+                },
+                0,
+            )?;
+            (String::new(), marker, Some(value_type))
+        }
+        None => {
+            let (name, marker) = cursor.marked_ref(&["을", "를"])?;
+            (name, marker, None)
+        }
+    };
     let kind = if is_existing_model {
         ActionInputKindAst::ExistingModel {
             model: input_type_name.clone(),
         }
+    } else if let Some(value_type) = parameterized_type {
+        ActionInputKindAst::Value { value_type }
     } else {
         ActionInputKindAst::Value {
             value_type: type_reference_from_name(&input_type_name, line.span)?,
@@ -1042,6 +1066,8 @@ fn parse_action_input_with_verb(
     cursor.expect_word(verb)?;
     cursor.expect_end()?;
     lint_marker(&action, &action_marker, "은", "는", line.span, diagnostics);
+    // 매개변수 타입은 마커가 `)` 뒤에 붙는다. 받침 규칙을 괄호에 적용할 수 없으므로
+    // 그 형태에서는 마커 린트를 걸지 않는다.
     lint_marker(
         &input_type_name,
         &input_type_marker,
@@ -1933,12 +1959,126 @@ fn parse_type_reference(line: &Line, start: usize) -> Result<TypeReferenceAst, D
             line.span,
         ));
     }
+    let tokens = &line.tokens[start..];
+    if let [
+        Token {
+            kind: TokenKind::Word(keyword),
+            ..
+        },
+        Token {
+            kind: TokenKind::CanonicalId(parameter),
+            ..
+        },
+    ] = tokens
+        && matches!(keyword.as_str(), "통화" | "수량" | "참조")
+    {
+        return Ok(match keyword.as_str() {
+            "통화" => TypeReferenceAst::Money(parameter.clone()),
+            "수량" => TypeReferenceAst::Quantity(parameter.clone()),
+            "참조" => TypeReferenceAst::Reference(parameter.clone()),
+            _ => unreachable!("guarded above"),
+        });
+    }
+    if let [
+        Token {
+            kind: TokenKind::Word(keyword),
+            ..
+        },
+        rest @ ..,
+    ] = tokens
+        && matches!(keyword.as_str(), "목록" | "집합")
+    {
+        let element = parse_type_reference(
+            &Line {
+                indent: line.indent,
+                tokens: rest.to_vec(),
+                span: line.span,
+            },
+            0,
+        )?;
+        return Ok(if keyword == "목록" {
+            TypeReferenceAst::List(Box::new(element))
+        } else {
+            TypeReferenceAst::Set(Box::new(element))
+        });
+    }
+    if let [
+        Token {
+            kind: TokenKind::Word(keyword),
+            ..
+        },
+        key,
+        Token {
+            kind: TokenKind::Comma,
+            ..
+        },
+        value,
+    ] = tokens
+        && keyword == "맵"
+    {
+        let key = parse_type_reference(
+            &Line {
+                indent: line.indent,
+                tokens: vec![key.clone()],
+                span: line.span,
+            },
+            0,
+        )?;
+        let value = parse_type_reference(
+            &Line {
+                indent: line.indent,
+                tokens: vec![value.clone()],
+                span: line.span,
+            },
+            0,
+        )?;
+        return Ok(TypeReferenceAst::Map(Box::new(key), Box::new(value)));
+    }
+    if let [
+        Token {
+            kind: TokenKind::Word(keyword),
+            ..
+        },
+        Token {
+            kind: TokenKind::CanonicalId(parameters),
+            ..
+        },
+    ] = tokens
+        && keyword == "맵"
+    {
+        // `맵(문자열, 목록(문자열))` 처럼 매개변수가 다시 매개변수를 가지면 scanner 가
+        // 통째로 한 토큰으로 준다. 이름으로 읽어 버리면 `목록(문자열)` 이 enum 이름이
+        // 되므로, 여기서 다시 타입으로 읽는다.
+        let (key, value) = split_type_parameters(parameters).ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-011",
+                "ko.syntax.field_type_invalid",
+                line.span,
+            )
+        })?;
+        return Ok(TypeReferenceAst::Map(
+            Box::new(type_reference_from_text(key, line.span)?),
+            Box::new(type_reference_from_text(value, line.span)?),
+        ));
+    }
+    // `목록(맵(문자열, 정수))` 처럼 매개변수 전체가 한 토큰으로 온 경우. 이름으로 읽으면
+    // enum 이름이 되므로 그 안을 다시 타입으로 읽는다.
+    if let [
+        Token {
+            kind: TokenKind::CanonicalId(value),
+            ..
+        },
+    ] = tokens
+        && value.contains('(')
+    {
+        return type_reference_from_text(value, line.span);
+    }
     let mut parts = Vec::new();
     for token in &line.tokens[start..] {
         match &token.kind {
-            TokenKind::Word(value) | TokenKind::QuotedIdentifier(value) => {
-                parts.push(value.clone())
-            }
+            TokenKind::Word(value)
+            | TokenKind::QuotedIdentifier(value)
+            | TokenKind::CanonicalId(value) => parts.push(value.clone()),
             _ => {
                 return Err(Diagnostic::error(
                     "RSPDL-KO-SYN-011",
@@ -1951,11 +2091,82 @@ fn parse_type_reference(line: &Line, start: usize) -> Result<TypeReferenceAst, D
     type_reference_from_name(&parts.join(" "), line.span)
 }
 
+/// 괄호 깊이를 보며 최상위 쉼표 하나에서만 가른다. `맵(문자열, 맵(문자열, 정수))` 의
+/// 안쪽 쉼표에서 자르면 매개변수가 조각난다.
+fn split_type_parameters(parameters: &str) -> Option<(&str, &str)> {
+    let mut depth = 0usize;
+    for (index, character) in parameters.char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => depth = depth.checked_sub(1)?,
+            ',' if depth == 0 => {
+                return Some((
+                    parameters[..index].trim(),
+                    parameters[index + character.len_utf8()..].trim(),
+                ));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 텍스트를 다시 토큰으로 읽어 타입으로 해석한다. 매개변수 안에 매개변수가 있을 때만
+/// 필요하다 — scanner 가 그 경우에만 통째로 한 토큰을 준다.
+fn type_reference_from_text(text: &str, span: Span) -> Result<TypeReferenceAst, Diagnostic> {
+    let scanned = scan(text);
+    if !scanned.diagnostics.is_empty() {
+        return type_reference_from_name(text, span);
+    }
+    let tokens: Vec<Token> = scanned
+        .tokens
+        .into_iter()
+        .filter(|token| {
+            !matches!(
+                token.kind,
+                TokenKind::Newline | TokenKind::Indent | TokenKind::Dedent
+            )
+        })
+        .collect();
+    if tokens.is_empty() {
+        return type_reference_from_name(text, span);
+    }
+    parse_type_reference(
+        &Line {
+            indent: 0,
+            tokens,
+            span,
+        },
+        0,
+    )
+}
+
 fn type_reference_from_name(name: &str, span: Span) -> Result<TypeReferenceAst, Diagnostic> {
     match name {
         "문자열" => Ok(TypeReferenceAst::String),
         "정수" => Ok(TypeReferenceAst::Integer),
         "불리언" => Ok(TypeReferenceAst::Boolean),
+        "소수" => Ok(TypeReferenceAst::Decimal),
+        "날짜" => Ok(TypeReferenceAst::Date),
+        "시간" => Ok(TypeReferenceAst::Time),
+        "날짜시간" => Ok(TypeReferenceAst::DateTime),
+        "기간" => Ok(TypeReferenceAst::Duration),
+        "위도" => Ok(TypeReferenceAst::Latitude),
+        "경도" => Ok(TypeReferenceAst::Longitude),
+        "백분율" | "비율" => Ok(TypeReferenceAst::Percentage),
+        "좌표" => Ok(TypeReferenceAst::Coordinate),
+        "지역 날짜시간" => Ok(TypeReferenceAst::LocalDateTime),
+        "시간대 날짜시간" => Ok(TypeReferenceAst::ZonedDateTime),
+        "달력 기간" => Ok(TypeReferenceAst::CalendarDuration),
+        "UUID" => Ok(TypeReferenceAst::Uuid),
+        "이메일" => Ok(TypeReferenceAst::Email),
+        "URL" => Ok(TypeReferenceAst::Url),
+        "전화번호" => Ok(TypeReferenceAst::PhoneNumber),
+        "IP" => Ok(TypeReferenceAst::IpAddress),
+        "CIDR" => Ok(TypeReferenceAst::Cidr),
+        "국가 코드" => Ok(TypeReferenceAst::CountryCode),
+        "언어 코드" => Ok(TypeReferenceAst::LanguageCode),
+        "통화 코드" => Ok(TypeReferenceAst::CurrencyCode),
         "" => Err(Diagnostic::error(
             "RSPDL-KO-SYN-011",
             "ko.syntax.field_type_required",
@@ -2048,6 +2259,35 @@ impl<'a> BodyCursor<'a> {
             ) {
                 self.index += 3;
                 return Ok((RelationOperatorAst::NotEqual, literal));
+            }
+            let operator =
+                match self
+                    .tokens
+                    .get(self.index + 1)
+                    .and_then(|token| match &token.kind {
+                        TokenKind::Word(word) => Some(word.as_str()),
+                        _ => None,
+                    }) {
+                    Some("이상이어야") => Some((RelationOperatorAst::GreaterThanOrEqual, 2)),
+                    Some("이하여야") => Some((RelationOperatorAst::LessThanOrEqual, 2)),
+                    Some("보다") => {
+                        match self
+                            .tokens
+                            .get(self.index + 2)
+                            .and_then(|token| match &token.kind {
+                                TokenKind::Word(word) => Some(word.as_str()),
+                                _ => None,
+                            }) {
+                            Some("커야") => Some((RelationOperatorAst::GreaterThan, 3)),
+                            Some("작아야") => Some((RelationOperatorAst::LessThan, 3)),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                };
+            if let Some((operator, consumed)) = operator {
+                self.index += consumed;
+                return Ok((operator, literal));
             }
         }
         if let TokenKind::QuotedIdentifier(value) = &token.kind {
@@ -2189,6 +2429,36 @@ impl<'a> BodyCursor<'a> {
             self.index += 1;
         }
         value
+    }
+
+    /// `통화(KRW)를` 처럼 `이름 + 매개변수 + 마커` 로 끝나는 타입 표기를 알아본다.
+    /// 마커가 독립 토큰으로 떨어져 있을 때만 해당한다 — `문자열을` 처럼 마커가 이름에
+    /// 붙는 형태는 기존 `marked_ref` 가 읽는다.
+    fn parameterized_type_before_marker(
+        &mut self,
+        markers: &[&str],
+    ) -> Option<(Vec<Token>, String)> {
+        let keyword = match &self.tokens.get(self.index)?.kind {
+            TokenKind::Word(value) => value.clone(),
+            _ => return None,
+        };
+        let parameter = self.tokens.get(self.index + 1)?;
+        if !matches!(parameter.kind, TokenKind::CanonicalId(_)) {
+            return None;
+        }
+        let marker = match &self.tokens.get(self.index + 2)?.kind {
+            TokenKind::Word(value) if markers.contains(&value.as_str()) => value.clone(),
+            _ => return None,
+        };
+        let tokens = vec![
+            Token {
+                kind: TokenKind::Word(keyword),
+                span: self.tokens[self.index].span,
+            },
+            parameter.clone(),
+        ];
+        self.index += 3;
+        Some((tokens, marker))
     }
 
     fn consume_word(&mut self, expected: &str) -> bool {
@@ -2786,5 +3056,60 @@ mod tests {
         assert!(output.diagnostics.iter().all(|diagnostic| {
             diagnostic.message_key == "ko.syntax.domain_annotation_forbidden"
         }));
+    }
+
+    #[test]
+    fn nested_parameterized_types_parse_as_types_not_names() {
+        // scanner 가 첫 `)` 에서 멈추면 `목록(문자열)` 이 enum 이름이 된다.
+        let source = "@모듈 중첩(nested)\n설정(config)은 다음 필드들로 구성되어 있다.\n    항목(entries): 필수 맵(문자열, 목록(문자열))\n    묶음(groups): 필수 목록(맵(문자열, 정수))\n";
+        let output = parse(source);
+
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let DeclarationAst::DataModel(model) = &output.document.unwrap().declarations[0] else {
+            panic!("data model expected")
+        };
+        assert!(matches!(
+            &model.fields[0].value_type,
+            TypeReferenceAst::Map(key, value)
+                if **key == TypeReferenceAst::String
+                    && matches!(&**value, TypeReferenceAst::List(element)
+                        if **element == TypeReferenceAst::String)
+        ));
+        assert!(matches!(
+            &model.fields[1].value_type,
+            TypeReferenceAst::List(element)
+                if matches!(&**element, TypeReferenceAst::Map(key, value)
+                    if **key == TypeReferenceAst::String
+                        && **value == TypeReferenceAst::Integer)
+        ));
+    }
+
+    #[test]
+    fn action_inputs_accept_parameterized_types() {
+        // `통화(KRW)를` 는 이름과 마커 사이에 안정 ID 모양이 끼어 marked_ref 로 읽히지
+        // 않는다. 필드에서 쓰는 타입을 행동 입력에서 쓸 수 없을 이유가 없다.
+        let source = "@모듈 입력(inputs)\n전달(assign)은 행동이다.\n전달은 통화(KRW)를 금액(amount)으로 입력받는다.\n전달은 목록(문자열)을 태그(tags)로 입력받는다.\n전달은 문자열을 메모(memo)로 입력받는다.\n";
+        let output = parse(source);
+
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let declarations = output.document.unwrap().declarations;
+        let types: Vec<TypeReferenceAst> = declarations
+            .iter()
+            .filter_map(|declaration| match declaration {
+                DeclarationAst::ActionInput(input) => match &input.kind {
+                    ActionInputKindAst::Value { value_type } => Some(value_type.clone()),
+                    ActionInputKindAst::ExistingModel { .. } => None,
+                },
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            types,
+            vec![
+                TypeReferenceAst::Money("KRW".into()),
+                TypeReferenceAst::List(Box::new(TypeReferenceAst::String)),
+                TypeReferenceAst::String,
+            ]
+        );
     }
 }

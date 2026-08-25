@@ -1,0 +1,29 @@
+@모듈 제품값(product_values)
+
+결제(payment)는 다음 필드들로 구성되어 있다.
+    승인 금액(amount): 필수 통화(KRW)
+    할인율(discount_rate): 필수 백분율
+
+결제의 승인 금액은 "10000 KRW" 이상이어야 한다.
+결제의 할인율은 "15%" 이하여야 한다.
+
+배송(shipment)은 다음 필드들로 구성되어 있다.
+    총 무게(weight): 필수 수량(kg)
+    출발지(origin): 필수 좌표
+
+배송의 총 무게는 "20 kg" 이하여야 한다.
+
+고객(customer)은 다음 필드들로 구성되어 있다.
+    외부 ID(external_id): 필수 UUID
+    이메일(email): 필수 이메일
+    웹훅(webhook): 필수 URL
+    허용 대역(allowed_network): 필수 CIDR
+    태그(tags): 필수 집합(문자열)
+    별칭(aliases): 필수 목록(문자열)
+    설정(settings): 필수 맵(문자열, 문자열)
+    기본 결제(default_payment): 필수 참조(payment)
+
+예약(reservation)은 다음 필드들로 구성되어 있다.
+    현지 시작(local_start): 필수 지역 날짜시간
+    시작 순간(starts_at): 필수 시간대 날짜시간
+    반복 간격(recurrence): 필수 달력 기간

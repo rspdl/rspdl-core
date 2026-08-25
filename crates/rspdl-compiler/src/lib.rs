@@ -2,14 +2,14 @@
 
 #![forbid(unsafe_code)]
 
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use rspdl_domain::{
-    ActionDataMutationProvenance, Atom, BooleanExpression, BoundedModelOptions, BoundedModelResult,
-    CanonicalId, CanonicalType, CanonicalValue, ConstraintOperand, ConstraintProblem,
-    ConstraintSolver, Diagnostic, Frontend, FrontendOutput, PolicyEffect, RelationOperator,
-    SemanticModule, Severity, SolveOptions, SolveResult, SourceId, Term, TextRange,
+    ActionDataMutationProvenance, BoundedModelOptions, BoundedModelResult, CanonicalId,
+    CanonicalType, CanonicalValue, ConstraintOperand, Diagnostic, Frontend, FrontendOutput,
+    PolicyEffect, RelationOperator, SemanticModule, Severity, SolveOptions, SourceId, TextRange,
     analyze_with_source, find_bounded_relational_model,
 };
 use rspdl_ko::KoreanFrontend;
@@ -399,6 +399,10 @@ pub fn compile_files_with_frontend(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CheckOptions {
+    /// **`check` 의 제약 실행에는 쓰이지 않는다.** 제약은 canonical value 를 정확히
+    /// 비교해 판정하므로 solver 가 개입하지 않고, 따라서 시간 제한도 없다. 이 필드는
+    /// SDK 의 `timeout_ms` 계약을 깨지 않으려고 남아 있다. solver 시간 제한이 실제로
+    /// 필요한 곳은 model finding 이며 그쪽은 [`ModelFindingOptions`] 를 쓴다.
     pub solver_timeout: Duration,
 }
 
@@ -527,7 +531,7 @@ impl WorkspaceCheckReport {
     }
 }
 
-pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> CheckReport {
+pub fn check_ko(source: &str, runtime_json: &str, _options: CheckOptions) -> CheckReport {
     let compilation = compile_ko(source);
     let mut report = CheckReport {
         compilation,
@@ -568,7 +572,6 @@ pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> Chec
     execute_constraints(
         &[module],
         &runtime,
-        options,
         &mut report.constraint_violations,
         &mut report.runtime_diagnostics,
     );
@@ -589,7 +592,7 @@ pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> Chec
 pub fn check_ko_files(
     sources: Vec<KoSource>,
     runtime_json: &str,
-    options: CheckOptions,
+    _options: CheckOptions,
 ) -> WorkspaceCheckReport {
     let compilation = compile_ko_files(sources);
     let mut report = WorkspaceCheckReport {
@@ -624,7 +627,6 @@ pub fn check_ko_files(
     execute_constraints(
         &modules,
         &runtime,
-        options,
         &mut report.constraint_violations,
         &mut report.runtime_diagnostics,
     );
@@ -706,6 +708,7 @@ fn bind_runtime(
         .collect::<BTreeMap<_, _>>();
     let mut records = BTreeMap::new();
     let mut record_ids = BTreeMap::<CanonicalId, BTreeSet<String>>::new();
+    let mut model_texts = BTreeMap::<CanonicalId, String>::new();
 
     for (model_text, values) in input.records {
         let Some(model) = models.get(model_text.as_str()).copied() else {
@@ -792,7 +795,50 @@ fn bind_runtime(
             });
         }
         record_ids.insert(model.id.clone(), ids);
+        model_texts.insert(model.id.clone(), model_text);
         records.insert(model.id.clone(), bound);
+    }
+
+    // 참조 대상 확인은 모든 record 를 읽은 뒤에야 할 수 있다. 앞 record 가 뒤 record 를
+    // 가리킬 수 있기 때문이다. `action_requests` 의 record 확인과 같은 규칙을 쓴다.
+    for (model_id, bound) in &records {
+        let Some(model) = models.get(model_id.as_str()).copied() else {
+            continue;
+        };
+        let local_ids = model
+            .fields
+            .iter()
+            .map(|field| (field.id.clone(), field.local_id.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let model_text = model_texts
+            .get(model_id)
+            .map_or_else(|| model_id.to_string(), Clone::clone);
+        for (index, record) in bound.iter().enumerate() {
+            for (field_id, value) in &record.values {
+                let mut targets = Vec::new();
+                value.collect_reference_targets(&mut targets);
+                for (target_model, record_id) in targets {
+                    if record_ids
+                        .get(target_model)
+                        .is_some_and(|ids| ids.contains(record_id))
+                    {
+                        continue;
+                    }
+                    let local = local_ids
+                        .get(field_id)
+                        .map_or_else(|| field_id.to_string(), CanonicalId::to_string);
+                    diagnostics.push(
+                        runtime_error(
+                            "RSPDL-INPUT-026",
+                            format!("$.records.{model_text}[{index}].{local}"),
+                            "runtime.reference.target_not_found",
+                        )
+                        .with_argument("model_id", target_model)
+                        .with_argument("record_id", record_id),
+                    );
+                }
+            }
+        }
     }
 
     let role_ids = modules
@@ -931,6 +977,85 @@ fn bind_value(
             };
             CanonicalValue::integer_from_decimal(number.to_string()).map_err(|_| invalid())
         }
+        CanonicalType::Decimal => bind_decimal_text(value)
+            .and_then(|value| CanonicalValue::decimal_from_str(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::Date => value
+            .as_str()
+            .and_then(|value| CanonicalValue::date_from_iso(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::Time => value
+            .as_str()
+            .and_then(|value| CanonicalValue::time_from_iso(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::DateTime => value
+            .as_str()
+            .and_then(|value| CanonicalValue::date_time_from_rfc3339(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::Duration => value
+            .as_str()
+            .and_then(|value| CanonicalValue::duration_from_iso(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::Latitude => bind_decimal_text(value)
+            .and_then(|value| CanonicalValue::latitude_from_decimal(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::Longitude => bind_decimal_text(value)
+            .and_then(|value| CanonicalValue::longitude_from_decimal(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::Money(_) => value
+            .as_str()
+            .and_then(|value| CanonicalValue::money_from_str(value).ok())
+            .filter(|bound| bound.value_type() == &field.value_type)
+            .ok_or_else(invalid),
+        CanonicalType::Percentage => value
+            .as_str()
+            .and_then(|value| CanonicalValue::percentage_from_str(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::Quantity(_) => value
+            .as_str()
+            .and_then(|value| CanonicalValue::quantity_from_str(value).ok())
+            .filter(|bound| bound.value_type() == &field.value_type)
+            .ok_or_else(invalid),
+        CanonicalType::Coordinate => value
+            .as_str()
+            .and_then(|value| CanonicalValue::coordinate_from_str(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::Uuid
+        | CanonicalType::Email
+        | CanonicalType::Url
+        | CanonicalType::PhoneNumber
+        | CanonicalType::IpAddress
+        | CanonicalType::Cidr
+        | CanonicalType::CountryCode
+        | CanonicalType::LanguageCode
+        | CanonicalType::CurrencyCode => value
+            .as_str()
+            .and_then(|value| {
+                CanonicalValue::refinement_from_str(field.value_type.clone(), value).ok()
+            })
+            .ok_or_else(invalid),
+        CanonicalType::List(element) => bind_collection(value, element, false).ok_or_else(invalid),
+        CanonicalType::Set(element) => bind_collection(value, element, true).ok_or_else(invalid),
+        CanonicalType::Map {
+            key,
+            value: value_type,
+        } => bind_map(value, key, value_type).ok_or_else(invalid),
+        CanonicalType::Reference(target) => value
+            .as_str()
+            .and_then(|value| CanonicalValue::reference(target.clone(), value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::LocalDateTime => value
+            .as_str()
+            .and_then(|value| CanonicalValue::local_date_time_from_iso(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::ZonedDateTime => value
+            .as_str()
+            .and_then(|value| CanonicalValue::zoned_date_time_from_str(value).ok())
+            .ok_or_else(invalid),
+        CanonicalType::CalendarDuration => value
+            .as_str()
+            .and_then(|value| CanonicalValue::calendar_duration_from_iso(value).ok())
+            .ok_or_else(invalid),
         CanonicalType::Enum(enum_type) => {
             let Some(local_id) = value.as_str() else {
                 return Err(invalid());
@@ -943,28 +1068,77 @@ fn bind_value(
     }
 }
 
+fn bind_collection(value: &Value, element: &CanonicalType, set: bool) -> Option<CanonicalValue> {
+    let values = value.as_array()?;
+    let mut canonical = values
+        .iter()
+        .map(|value| bind_runtime_type(value, element))
+        .collect::<Option<Vec<_>>>()?;
+    if set {
+        canonical.sort();
+        canonical.dedup();
+        if canonical.len() != values.len() {
+            return None;
+        }
+    }
+    if set {
+        CanonicalValue::set(element.clone(), canonical).ok()
+    } else {
+        CanonicalValue::list(element.clone(), canonical).ok()
+    }
+}
+
+fn bind_map(
+    input: &Value,
+    key: &CanonicalType,
+    value_type: &CanonicalType,
+) -> Option<CanonicalValue> {
+    // 어떤 key 타입이 결정적인지는 `CanonicalType::map` 이 정한다. 여기서 그 목록을
+    // 베껴 두면 새 key 타입이 허용될 때 두 곳이 갈라진다.
+    let object = input.as_object()?;
+    let mut canonical = Vec::new();
+    for (raw_key, raw_value) in object {
+        canonical.push((
+            bind_runtime_type(&Value::String(raw_key.clone()), key)?,
+            bind_runtime_type(raw_value, value_type)?,
+        ));
+    }
+    CanonicalValue::map(key.clone(), value_type.clone(), canonical).ok()
+}
+
+fn bind_runtime_type(value: &Value, value_type: &CanonicalType) -> Option<CanonicalValue> {
+    let field = rspdl_domain::FieldDefinition {
+        id: CanonicalId::new("internal.value").expect("constant ID"),
+        local_id: CanonicalId::new("value").expect("constant ID"),
+        name: String::new(),
+        required: true,
+        value_type: value_type.clone(),
+        // 이 필드는 runtime 값을 검사하려고 만든 합성 선언이라 원문 문장이 없다.
+        span: TextRange::default(),
+    };
+    bind_value(value, &field, "$").ok()
+}
+
+fn bind_decimal_text(value: &Value) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        return Some(text.to_owned());
+    }
+    let number = value.as_number()?;
+    // `serde_json` 은 `arbitrary_precision` 없이 쓰므로 소수 JSON 숫자는 이미 `f64` 로
+    // 반올림된 뒤다. 그 자릿수를 정확한 소수 생성자에 넘기면 "정확하다" 는 약속이
+    // 거짓이 된다. 정수는 그대로 보존되므로 그대로 받고, 소수는 문자열로 받는다.
+    if number.is_f64() {
+        return None;
+    }
+    Some(number.to_string())
+}
+
 fn execute_constraints(
     modules: &[&SemanticModule],
     runtime: &BoundRuntime,
-    options: CheckOptions,
     violations: &mut Vec<ConstraintViolation>,
     diagnostics: &mut Vec<RuntimeDiagnostic>,
 ) {
-    let solve_options = match SolveOptions::with_timeout(options.solver_timeout) {
-        Ok(options) => options,
-        Err(error) => {
-            diagnostics.push(
-                runtime_error(
-                    "RSPDL-BACKEND-Z3-001",
-                    "$.records",
-                    "runtime.backend.z3_configuration_error",
-                )
-                .with_argument("reason", error),
-            );
-            return;
-        }
-    };
-    let solver = Z3Solver::new();
     for constraint in modules.iter().flat_map(|module| module.constraints.iter()) {
         let Some(records) = runtime.records.get(&constraint.model_id) else {
             continue;
@@ -976,60 +1150,28 @@ fn execute_constraints(
             let Some(right) = operand_value(&constraint.right, record) else {
                 continue;
             };
-            let expression = match relation_expression(constraint.operator, &left, &right) {
-                Ok(expression) => expression,
+            let holds = match relation_holds(constraint.operator, &left, &right) {
+                Ok(holds) => holds,
                 Err(message) => {
                     diagnostics.push(
                         runtime_error(
-                            "RSPDL-BACKEND-Z3-002",
+                            "RSPDL-RUNTIME-001",
                             format!("$.records.{}[{}]", constraint.model_id, record.id),
-                            "runtime.backend.z3_expression_error",
+                            "runtime.constraint.expression_error",
                         )
                         .with_argument("reason", message),
                     );
                     continue;
                 }
             };
-            let problem =
-                match ConstraintProblem::new(Vec::new(), BooleanExpression::negate(expression)) {
-                    Ok(problem) => problem,
-                    Err(error) => {
-                        diagnostics.push(
-                            runtime_error(
-                                "RSPDL-BACKEND-Z3-002",
-                                "$.records",
-                                "runtime.backend.z3_expression_error",
-                            )
-                            .with_argument("reason", error),
-                        );
-                        continue;
-                    }
-                };
-            match solver.solve(&problem, solve_options) {
-                Ok(SolveResult::Sat(_)) => violations.push(ConstraintViolation {
+            if !holds {
+                violations.push(ConstraintViolation {
                     constraint_id: constraint.id.clone(),
                     model_id: constraint.model_id.clone(),
                     record_id: record.id.clone(),
                     left,
                     right,
-                }),
-                Ok(SolveResult::Unsat) => {}
-                Ok(SolveResult::Unknown { reason }) => diagnostics.push(
-                    runtime_error(
-                        "RSPDL-BACKEND-Z3-003",
-                        format!("$.records.{}[{}]", constraint.model_id, record.id),
-                        "runtime.backend.z3_unknown",
-                    )
-                    .with_argument("reason", reason),
-                ),
-                Err(error) => diagnostics.push(
-                    runtime_error(
-                        "RSPDL-BACKEND-Z3-004",
-                        format!("$.records.{}[{}]", constraint.model_id, record.id),
-                        "runtime.backend.z3_error",
-                    )
-                    .with_argument("reason", error),
-                ),
+                });
             }
         }
     }
@@ -1042,42 +1184,32 @@ fn operand_value(operand: &ConstraintOperand, record: &BoundRecord) -> Option<Ca
     }
 }
 
-fn relation_expression(
+fn relation_holds(
     operator: RelationOperator,
     left: &CanonicalValue,
     right: &CanonicalValue,
-) -> Result<BooleanExpression, String> {
-    let left = Term::Constant(left.clone());
-    let right = Term::Constant(right.clone());
+) -> Result<bool, String> {
     match operator {
-        RelationOperator::Equal => Atom::equal(left, right)
-            .map(BooleanExpression::atom)
-            .map_err(|error| error.to_string()),
-        RelationOperator::NotEqual => Atom::equal(left, right)
-            .map(|atom| BooleanExpression::negate(BooleanExpression::atom(atom)))
-            .map_err(|error| error.to_string()),
-        RelationOperator::LessThan => {
-            integer_relation(rspdl_domain::ComparisonOperator::Lt, left, right)
-        }
+        RelationOperator::Equal => Ok(left == right),
+        RelationOperator::NotEqual => Ok(left != right),
+        RelationOperator::LessThan => ordered_relation(Ordering::is_lt, left, right),
         RelationOperator::LessThanOrEqual => {
-            integer_relation(rspdl_domain::ComparisonOperator::Le, left, right)
+            ordered_relation(|ordering| ordering.is_le(), left, right)
         }
-        RelationOperator::GreaterThan => {
-            integer_relation(rspdl_domain::ComparisonOperator::Gt, left, right)
-        }
+        RelationOperator::GreaterThan => ordered_relation(Ordering::is_gt, left, right),
         RelationOperator::GreaterThanOrEqual => {
-            integer_relation(rspdl_domain::ComparisonOperator::Ge, left, right)
+            ordered_relation(|ordering| ordering.is_ge(), left, right)
         }
     }
 }
 
-fn integer_relation(
-    operator: rspdl_domain::ComparisonOperator,
-    left: Term,
-    right: Term,
-) -> Result<BooleanExpression, String> {
-    Atom::integer_comparison(operator, left, right)
-        .map(BooleanExpression::atom)
+fn ordered_relation(
+    predicate: impl FnOnce(Ordering) -> bool,
+    left: &CanonicalValue,
+    right: &CanonicalValue,
+) -> Result<bool, String> {
+    left.compare_ordered(right)
+        .map(predicate)
         .map_err(|error| error.to_string())
 }
 
@@ -1365,6 +1497,153 @@ mod tests {
         let report = check_ko(source, data, CheckOptions::default());
         assert!(!report.has_errors(), "{:?}", report);
         assert!(report.constraint_violations.is_empty());
+    }
+
+    const EXTENDED_SCALAR_SOURCE: &str = r#"@모듈 확장 값(extended_runtime)
+이벤트(event)는 다음 필드들로 구성되어 있다.
+    금액(amount): 필수 소수
+    시작일(start_date): 필수 날짜
+    시작 시각(start_time): 필수 시간
+    발생 시점(occurred_at): 필수 날짜시간
+    대기 기간(wait_duration): 필수 기간
+    위도(latitude): 필수 위도
+    경도(longitude): 필수 경도
+이벤트의 금액은 "10.5" 이상이어야 한다.
+이벤트의 시작일은 "2026-08-13" 이상이어야 한다.
+이벤트의 시작 시각은 "09:00:00"보다 커야 한다.
+이벤트의 발생 시점은 "2026-08-13T05:30:00Z" 이상이어야 한다.
+이벤트의 대기 기간은 "PT2S" 이하여야 한다.
+이벤트의 위도는 "37.5"이어야 한다.
+이벤트의 경도는 "127"이어야 한다.
+"#;
+
+    #[test]
+    fn binds_and_executes_extended_scalar_constraints_exactly() {
+        let data = r#"{
+          "records": {
+            "extended_runtime.event": [
+              {
+                "$id": "valid",
+                "amount": "10.5",
+                "start_date": "2026-08-13",
+                "start_time": "09:00:00.000000001",
+                "occurred_at": "2026-08-13T14:30:00+09:00",
+                "wait_duration": "PT1.5S",
+                "latitude": "37.5",
+                "longitude": "127.0"
+              },
+              {
+                "$id": "invalid",
+                "amount": "10.499",
+                "start_date": "2026-08-12",
+                "start_time": "09:00:00",
+                "occurred_at": "2026-08-13T05:29:59Z",
+                "wait_duration": "PT2.000000001S",
+                "latitude": "37.6",
+                "longitude": "126.9"
+              }
+            ]
+          }
+        }"#;
+        let report = check_ko(EXTENDED_SCALAR_SOURCE, data, CheckOptions::default());
+        assert!(!report.has_errors(), "{report:?}");
+        assert_eq!(report.constraint_violations.len(), 7);
+        assert!(
+            report
+                .constraint_violations
+                .iter()
+                .all(|violation| violation.record_id == "invalid")
+        );
+    }
+
+    #[test]
+    fn rejects_out_of_range_runtime_coordinates_before_constraints() {
+        let data = r#"{
+          "records": {
+            "extended_runtime.event": [{
+              "$id": "invalid-coordinate",
+              "amount": "10.5",
+              "start_date": "2026-08-13",
+              "start_time": "09:00:01",
+              "occurred_at": "2026-08-13T05:30:00Z",
+              "wait_duration": "PT1S",
+              "latitude": "90.0001",
+              "longitude": 127
+            }]
+          }
+        }"#;
+        let report = check_ko(EXTENDED_SCALAR_SOURCE, data, CheckOptions::default());
+        assert!(report.has_errors());
+        assert_eq!(report.runtime_diagnostics.len(), 1);
+        assert_eq!(report.runtime_diagnostics[0].rule_id, "RSPDL-INPUT-015");
+        assert_eq!(
+            report.runtime_diagnostics[0].argument("expected_type"),
+            Some("latitude")
+        );
+        assert!(report.constraint_violations.is_empty());
+    }
+
+    #[test]
+    fn dangling_typed_references_are_rejected() {
+        // `action_requests` 의 record 확인과 같은 규칙이다 — 같은 입력에 실린 대상만
+        // 가리킬 수 있다. 입력 밖을 조회하지는 않는다.
+        let source = "@모듈 참조(refs)\n대상(target)은 다음 필드들로 구성되어 있다.\n    이름(name): 필수 문자열\n출처(source)는 다음 필드들로 구성되어 있다.\n    주 대상(primary): 필수 참조(target)\n    부 대상(others): 필수 목록(참조(target))\n";
+        let data = r#"{
+          "records": {
+            "refs.target": [{ "$id": "target-1", "name": "있음" }],
+            "refs.source": [{
+              "$id": "source-1",
+              "primary": "target-1",
+              "others": ["target-1", "target-missing"]
+            }]
+          }
+        }"#;
+        let report = check_ko(source, data, CheckOptions::default());
+
+        assert_eq!(report.runtime_diagnostics.len(), 1, "{report:?}");
+        assert_eq!(report.runtime_diagnostics[0].rule_id, "RSPDL-INPUT-026");
+        assert_eq!(
+            report.runtime_diagnostics[0].argument("record_id"),
+            Some("target-missing")
+        );
+    }
+
+    #[test]
+    fn fractional_json_numbers_are_rejected_for_exact_decimals() {
+        // `serde_json` 은 소수 JSON 숫자를 `f64` 로 담는다. 그 자릿수를 정확한 소수로
+        // 받아들이면 "정확하다" 는 약속이 입력 모양에 따라 조용히 깨진다.
+        let data = r#"{
+          "records": {
+            "extended_runtime.event": [
+              {
+                "$id": "rounded",
+                "amount": 10.5,
+                "start_date": "2026-08-13",
+                "start_time": "09:00:01",
+                "occurred_at": "2026-08-13T05:30:00Z",
+                "wait_duration": "PT1S",
+                "latitude": "37.5",
+                "longitude": 127
+              }
+            ]
+          }
+        }"#;
+        let report = check_ko(EXTENDED_SCALAR_SOURCE, data, CheckOptions::default());
+        assert!(report.has_errors(), "{report:?}");
+        assert_eq!(
+            report.runtime_diagnostics[0].argument("expected_type"),
+            Some("decimal")
+        );
+    }
+
+    #[test]
+    fn extended_scalar_symbolic_model_finding_is_explicitly_unsupported() {
+        let report = find_ko_model(EXTENDED_SCALAR_SOURCE, ModelFindingOptions::default());
+        assert!(matches!(
+            report.result,
+            Some(BoundedModelResult::Unsupported { ref constructs, .. })
+                if constructs.iter().any(|construct| construct == "symbolic_field:decimal:extended_runtime.event.amount")
+        ));
     }
 
     #[test]

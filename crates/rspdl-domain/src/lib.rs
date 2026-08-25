@@ -72,5 +72,11 @@ pub use solver::{
     CanonicalModel, ConstraintProblem, ConstraintSolver, SolveOptions, SolveResult, VariableDomain,
 };
 pub use source::{SourceId, TextRange};
-pub use types::{BuiltinRefinement, CanonicalId, CanonicalType, EnumType, RefinementType};
-pub use value::{CanonicalInteger, CanonicalValue};
+pub use types::{
+    BuiltinRefinement, CanonicalId, CanonicalType, CurrencyCode, EnumType, QuantityDimension,
+    RefinementType,
+};
+pub use value::{
+    CanonicalDate, CanonicalDateTime, CanonicalDecimal, CanonicalDuration, CanonicalInteger,
+    CanonicalLatitude, CanonicalLongitude, CanonicalTime, CanonicalValue,
+};

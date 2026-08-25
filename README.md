@@ -35,6 +35,8 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 현재 구현은 다음을 지원합니다.
 
 - 한국어 module, enum, record field와 field constraint
+- 소수, 날짜, 시간, UTC 날짜시간, 고정 기간, 위도와 경도의 canonical 값·범위 검증·타입별 대소 비교
+- 통화·백분율·닫힌 단위 수량, 좌표쌍, UUID/이메일/URL/IP/CIDR code refinement와 typed list/set/map/reference의 type identity 및 runtime validation
 - 문장형 화면 생성·입력·조회·수정·삭제 선언과 field provenance 검증
 - 문장형 action 생성·수정·삭제 결과와 동일 action·model mutation 충돌 검증
 - stable ID와 typed existing-model/enum·scalar input을 가진 문장형 action input 선언
@@ -73,6 +75,19 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 재고 항목의 수량은 0 이상이어야 한다.
 ```
 
+문자열로 우회하지 않고 시간·위치 scalar를 선언할 수 있다. 확장 scalar literal은 canonical text를 JSON string으로 적는다.
+
+```rspdl
+행사(event)는 다음 필드들로 구성되어 있다.
+    시작일(start_date): 필수 날짜
+    시작 시각(start_time): 필수 시간
+    위도(latitude): 필수 위도
+    경도(longitude): 필수 경도
+
+행사의 시작일은 "2026-08-13" 이상이어야 한다.
+행사의 위도는 "37.5665"이어야 한다.
+```
+
 관계와 cardinality도 annotation이 아니라 방향이 드러나는 문장으로 쓴다.
 
 ```rspdl
@@ -100,6 +115,19 @@ cargo run -p rspdl-cli -- compile examples/rejected/unproduced-data-usage.rspdl 
 cargo run -p rspdl-cli -- compile examples/rejected/unproduced-calculation.rspdl --json
 cargo run -p rspdl-cli -- compile examples/rejected/conflicting-action-results.rspdl --json
 ```
+
+### 제품 값 예시
+
+통화, 단위와 외부 ID는 문자열로 우회하지 않습니다. [제품 값 예시](examples/typed-product-values.rspdl)는 `통화(KRW)`, `백분율`, `수량(kg)`, `좌표`, refinement 및 `집합(문자열)`을 실제 compile/runtime validation으로 확인합니다.
+
+여기서 `통화`가 뜻하는 것은 **타입 검증과 같은 통화끼리의 exact 비교·덧셈·뺄셈**입니다. 가격 산술, 환율 환산, 반올림 정책과 가격표 구성은 지원하지 않습니다 — 그것들은 제품이 정할 규칙이지 언어가 정할 규칙이 아닙니다.
+
+```console
+cargo run -p rspdl-cli -- check examples/typed-product-values.rspdl \
+  --data examples/typed-product-values-data.json --json
+```
+
+원시 문자열/소수로는 `10000 KRW`와 `10000 USD`, `1000 g`와 `1 kg`, 또는 DST가 겹치는 현지 시각의 차이를 보존할 수 없습니다. 시간대 날짜시간은 explicit offset과 IANA zone을 함께 검증하며, 달력 기간은 고정 초로 근사하지 않습니다. 환율, geocoding/GIS polygon, 참조 대상의 외부 존재 조회는 수행하지 않습니다.
 
 `check`는 compile 또는 input 오류에 exit code `1`, 정책 충돌·미일치나 제약 위반 발견에 `2`, 발견 사항이 없으면 `0`을 반환합니다.
 

@@ -1,0 +1,4 @@
+@모듈 고객(customer)
+고객(customer)은 다음 필드들로 구성되어 있다.
+    ID(id): 필수 UUID
+    이메일(email): 필수 이메일

@@ -4,7 +4,7 @@ title: RSPDL Product Requirements
 type: prd
 status: draft
 created: 2026-07-26
-version: "1.2"
+version: "1.3"
 summary: Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context.
 topics:
   - language-design
@@ -25,10 +25,10 @@ problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss
-last_updated: "2026-08-25"
+last_updated: "2026-08-26"
 owners:
   - rspdl-maintainers
-target_spec: "0.3.0"
+target_spec: "0.4.0"
 ---
 
 # RSPDL Product Requirements
@@ -66,6 +66,8 @@ target_spec: "0.3.0"
   - `DATA-002`: 생성 전 사용, 삭제 후 사용, 끊어진 참조와 가용하지 않은 입력의 파생을 진단해야 한다.
   - `DATA-003`: record model을 entity sort로 사용하는 typed relation과 endpoint 참조 무결성을 표현하고, 실제 record 없이 bounded virtual model을 탐색할 수 있어야 한다.
   - `DATA-004`: relation의 nonempty, required, unique, exclusive, exhaustive와 compatible coexistence 의도는 명시적으로 Canonical IR에 보존하며 solver가 암묵적으로 추론하지 않는다.
+  - `DATA-005`: 날짜, 시간, 날짜시간, 기간, 소수, 위도와 경도를 문자열 우회 없이 canonical value로 보존하고 각 타입에 유효한 equality·ordered comparison만 허용해야 한다.
+  - `DATA-006`: 통화·비율·단위·좌표·시간대·달력 기간·refinement·collection·typed reference는 parameterized type identity와 타입별 exact/명시적 approximate operation을 보존해야 한다.
   - `POLICY-001`: actor 또는 role, resource, action, condition, effect와 적용 범위를 표현해야 한다.
   - `POLICY-002`: conflict, gap, overlap과 unreachable을 서로 다른 결과로 분석해야 한다.
   - `POLICY-003`: decision point의 totality, default와 override를 Canonical IR에 명시적으로 보존하고, 누락 branch를 의도된 partial policy나 암묵적 우선순위로 해석하지 않는다.
@@ -109,7 +111,10 @@ target_spec: "0.3.0"
   - output-first binary relation에 Required와 Unique가 함께 있으면 ExactlyOne output relation slot으로 해석하고 Action 또는 Event direct ExistingModel input relation producer의 Create-path gap/conflict 검증
   - 화면 입력과 합계 계산을 생산자로 연결한 field provenance 검증
   - 단일 정수 필드 합계, 원본 변경 시 재계산과 내부/비표시 의도
-  - parser, formatter, Canonical domain model, Z3 constraint check와 결정적 직접 runtime policy match
+  - parser, formatter, Canonical domain model, concrete constraint check, Z3 bounded analysis와 결정적 직접 runtime policy match
+  - 날짜, 시간, UTC 날짜시간, 고정 기간, 임의 정밀도 소수, 위도와 경도 field 및 concrete equality·ordered constraint 실행
+  - 통화/백분율/닫힌 단위 수량의 parameterized type identity와 same-currency·same-dimension exact comparison, coordinate/refinement value validation, typed collection/reference Canonical IR 및 deterministic runtime JSON binding (환율 환산, 가격 산술, 반올림 정책과 가격표 구성은 비범위)
+  - 지역/시간대 날짜시간(DST offset 검증), 달력 기간의 RejectOverflow 적용, coordinate distance/radius와 CIDR containment
   - 단일 닫힌 enum decision point의 backend-neutral 정적 gap, compatible overlap 및 allow/deny conflict 분석 API와 Z3 witness
   - 하나 이상의 field를 가진 record model, 문장형 unary/binary typed relation과 `nonempty`, `required`, `unique`, `exclusive`, `exhaustive`, compatible `coexistent` 규칙
   - 모델별 finite scope에서 typed attribute constraint, endpoint integrity와 relation meta-rule을 grounding하는 bounded model finder, virtual entity/field/relation witness와 bound 한정 UNSAT rule evidence
@@ -124,7 +129,7 @@ target_spec: "0.3.0"
   - snapshot/retain lifecycle analysis, 조건부 Event field/relation producer와 structured diagnostic 확장
   - relation path 기반 다수 output 생성, 실제 relation JSON binding, output delivery, 일반 expression·통화·반올림·가격표 snapshot과 field composition
   - effective condition에 기반한 unreachable 분석
-  - 유저 플로우, 컬렉션, module import와 다국어 의미 동등성
+  - 유저 플로우, module import와 다국어 의미 동등성
   - 3항 이상 관계, 임의의 quantified formula, 실제 JSON relation binding, relation join/projection/aggregation과 CRUD transition
   - semantic dependency 기반 영향 분석과 downstream code generation
 - 성공 기준은 다음과 같다.

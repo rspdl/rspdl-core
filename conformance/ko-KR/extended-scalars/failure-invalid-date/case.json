@@ -1,0 +1,14 @@
+{
+  "spec_version": "0.4.0",
+  "locale": "ko-KR",
+  "category": "failure",
+  "expected_module": false,
+  "expected_diagnostics": [
+    {
+      "rule_id": "RSPDL-TYPE-001",
+      "message_key": "model.invalid_date"
+    }
+  ],
+  "expected_field_types": {},
+  "expected_constraint_values": []
+}

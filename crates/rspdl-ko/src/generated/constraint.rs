@@ -92,6 +92,19 @@ fn literal_comparison(parsed: &ParseMatch) -> Option<(RelationOperatorAst, Liter
             return Some((operator, literal));
         }
     }
+    for (name, operator) in [
+        ("string_greater", RelationOperatorAst::GreaterThan),
+        ("string_less", RelationOperatorAst::LessThan),
+        (
+            "string_greater_or_equal",
+            RelationOperatorAst::GreaterThanOrEqual,
+        ),
+        ("string_less_or_equal", RelationOperatorAst::LessThanOrEqual),
+    ] {
+        if let Some(capture) = parsed.capture(name) {
+            return Some((operator, LiteralAst::String(capture.value.clone())));
+        }
+    }
     for (name, operator, literal) in [
         (
             "string_equal",
@@ -172,6 +185,9 @@ impl InputAdapter<Token> for ConstraintTokenAdapter {
             "integer" => integer(tokens, position),
             "integer_before" => integer_before(tokens, position, arguments),
             "string_equal" => string_literal(tokens, position, "이어야"),
+            "string_before" => arguments
+                .first()
+                .map_or_else(Vec::new, |suffix| string_literal(tokens, position, suffix)),
             "quoted_equal" => quoted_identifier(tokens, position, "이어야"),
             "word_equal" => word_literal(tokens, position, &["이어야"], ""),
             "string_not_equal" => string_literal_not_equal(tokens, position),
@@ -396,6 +412,10 @@ mod tests {
             "항목의 값은 0 이상이어야 한다.",
             "항목의 값은 100보다 작아야 한다.",
             "항목의 값은 100 이하여야 한다.",
+            "항목의 값은 \"2026-08-13\"보다 커야 한다.",
+            "항목의 값은 \"2026-08-13\" 보다 작아야 한다.",
+            "항목의 값은 \"2026-08-13\" 이상이어야 한다.",
+            "항목의 값은 \"2026-08-13\" 이하여야 한다.",
             "항목의 값은 참이어야 한다.",
             "항목의 값은 거짓이어야 한다.",
             "항목의 값은 승인 완료이어야 한다.",
@@ -472,5 +492,16 @@ mod tests {
             };
             assert_eq!(value, expected);
         }
+    }
+
+    #[test]
+    fn generated_ordered_string_capture_excludes_the_operator_marker() {
+        let sentence = "항목의 값은 \"2026-08-13\"보다 커야 한다.";
+        let generated = parse_constraint(&constraint_tokens(sentence)).unwrap();
+        let GeneratedConstraintRight::Literal(LiteralAst::String(value)) = generated.right else {
+            panic!("ordered string comparison should capture a string literal");
+        };
+        assert_eq!(value, "2026-08-13");
+        assert_eq!(generated.operator, RelationOperatorAst::GreaterThan);
     }
 }
