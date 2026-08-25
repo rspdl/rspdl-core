@@ -285,11 +285,13 @@ pub struct CreationBranchDefinition {
 }
 
 /// The lifecycle point at which a conditional-production payload is read.
-/// This first producer slice has no post-mutation or conditional form.
+/// Event values are immutable payloads, distinct from Action pre-mutation
+/// state; no post-mutation source exists in this slice.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProducerPhase {
     PreMutation,
+    TriggerPayload,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -299,6 +301,13 @@ pub enum FieldProducerSource {
         input_id: CanonicalId,
     },
     InputField {
+        input_id: CanonicalId,
+        field_id: CanonicalId,
+    },
+    EventInput {
+        input_id: CanonicalId,
+    },
+    EventInputField {
         input_id: CanonicalId,
         field_id: CanonicalId,
     },

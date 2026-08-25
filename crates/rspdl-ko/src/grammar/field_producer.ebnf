@@ -3,13 +3,13 @@
 pub field_producer_statement =
     producer_name: @surface_name() producer_id: @canonical_id() ("은" | "는")
     (
-        action: @marked_ref("이", "가") "실행될" "때"
+        action: @marked_ref("이", "가") trigger_verb: ("실행될" | "발생할") "때"
         template: @template_string("를")
         output_model: @marked_ref("의") output_field: @marked_ref("으로", "로")
         "조합한다"
       |
         (
-            action: @marked_ref("이", "가") "실행될" "때"
+            action: @marked_ref("이", "가") trigger_verb: ("실행될" | "발생할") "때"
           | conditional_action: @marked_ref("의") condition_input: @marked_ref("이", "가") condition_variant: @marked_ref("이면", "라면")
         )
         (

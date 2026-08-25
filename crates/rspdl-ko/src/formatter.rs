@@ -310,11 +310,18 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                 let trigger = match &value.condition {
                     Some(condition) => format!(
                         "{}의 {} {}",
-                        surface(&value.action),
+                        surface(&value.trigger.name),
                         marked(&condition.input, "이", "가"),
                         marked(&condition.variant, "이면", "라면"),
                     ),
-                    None => format!("{} 실행될 때", marked(&value.action, "이", "가")),
+                    None => format!(
+                        "{} {} 때",
+                        marked(&value.trigger.name, "이", "가"),
+                        match value.trigger.kind {
+                            ProducerTriggerKindAst::Action => "실행될",
+                            ProducerTriggerKindAst::Event => "발생할",
+                        },
+                    ),
                 };
                 output.push_str(&format!(
                     "{}({}){} {} {} {}의 {} {}.\n",
@@ -338,11 +345,19 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
             }
             DeclarationAst::RelationProducer(value) => {
                 output.push_str(&format!(
-                    "{}({}){} {} 실행될 때 {} {}의 {} 연결한다.\n",
+                    "{}({}){} {} {} 때 {} {}의 {} 연결한다.\n",
                     surface(&value.declaration.name),
                     value.declaration.id,
-                    directional_marker(&value.declaration.name),
-                    marked(&value.action, "이", "가"),
+                    if has_final_consonant(&value.declaration.name) {
+                        "은"
+                    } else {
+                        "는"
+                    },
+                    marked(&value.trigger.name, "이", "가"),
+                    match value.trigger.kind {
+                        ProducerTriggerKindAst::Action => "실행될",
+                        ProducerTriggerKindAst::Event => "발생할",
+                    },
                     marked(&value.input, "을", "를"),
                     surface(&value.output_model),
                     marked(&value.relation, "으로", "로"),
@@ -609,6 +624,21 @@ mod tests {
         let source = "@모듈 기록(binding)\n알림 제목 기록(title_binding)은 점검 요청 전달이 실행될 때 알림 제목을 점검 요청 전달 알림의 제목으로 기록한다.\n요청 제목 기록(request_title_binding)은 점검 요청 전달이 실행될 때 대상 요청의 제목을 점검 요청 전달 알림의 요청 제목으로 기록한다.\n재시도 횟수 기록(retry_binding)은 점검 요청 전달이 실행될 때 상수 0을 점검 요청 전달 알림의 재시도 횟수로 기록한다.\n접수 제목 기록(received_title)은 점검 요청 전달의 요청 상태가 접수됨이면 상수 \"접수됨\"를 점검 요청 전달 알림의 제목으로 기록한다.\n";
         let original = parse(source).document.unwrap();
         let first = format_document(&original).unwrap();
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        assert_eq!(first, format_document(&reparsed.document.unwrap()).unwrap());
+    }
+
+    #[test]
+    fn event_payload_producer_sentences_round_trip_and_are_idempotent() {
+        let source = "@모듈 사건(event)\n제목 기록(title_binding)은 요청 접수됨이 발생할 때 알림 제목을 알림의 제목으로 기록한다.\n수신자 연결(recipient_binding)은 요청 접수됨이 발생할 때 수신 기술자를 알림의 수신자로 연결한다.\n";
+        let original = parse(source).document.unwrap();
+        let first = format_document(&original).unwrap();
+        assert!(first.contains("요청 접수됨이 발생할 때"));
         let reparsed = parse(&first);
         assert!(
             reparsed.diagnostics.is_empty(),

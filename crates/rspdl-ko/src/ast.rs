@@ -267,10 +267,25 @@ pub struct FieldProducerConditionAst {
     pub variant: String,
 }
 
+/// The Korean verb phrase makes the owner explicit: `실행될 때` is an Action
+/// invocation and `발생할 때` is an immutable Event payload.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProducerTriggerKindAst {
+    Action,
+    Event,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ProducerTriggerAst {
+    pub name: String,
+    pub kind: ProducerTriggerKindAst,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FieldProducerAst {
     pub declaration: NamedIdAst,
-    pub action: String,
+    pub trigger: ProducerTriggerAst,
     pub output_model: String,
     pub output_field: String,
     pub source: FieldProducerSourceAst,
@@ -281,7 +296,7 @@ pub struct FieldProducerAst {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RelationProducerAst {
     pub declaration: NamedIdAst,
-    pub action: String,
+    pub trigger: ProducerTriggerAst,
     pub input: String,
     pub output_model: String,
     pub relation: String,

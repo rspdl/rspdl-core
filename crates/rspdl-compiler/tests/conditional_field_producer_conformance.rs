@@ -93,6 +93,10 @@ fn producers(module: &rspdl_domain::SemanticModule) -> Vec<(String, String, Stri
                 FieldProducerSource::InputField { input_id, field_id } => {
                     format!("input_field:{input_id}:{field_id}")
                 }
+                FieldProducerSource::EventInput { input_id } => format!("event_input:{input_id}"),
+                FieldProducerSource::EventInputField { input_id, field_id } => {
+                    format!("event_input_field:{input_id}:{field_id}")
+                }
                 FieldProducerSource::Constant { value } => {
                     format!("constant:{}:{value:?}", value.value_type())
                 }

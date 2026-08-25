@@ -52,9 +52,9 @@ target_spec: "0.4.0"
 
 ## 가장 작은 vertical slice
 
-첫 slice는 한 Action invocation 또는 명시적 immutable Event payload에서 하나의 output record를 생성한다. Event는 typed value 또는 existing-model payload를 선언할 수 있고 creation decision은 direct enum value payload만 쓴다. field/relation producer와 delivery/retry/idempotency는 Action에만 남으며 Event에는 아직 연결하지 않는다.
+첫 slice는 한 Action invocation 또는 명시적 immutable Event payload에서 하나의 output record를 생성한다. Event는 typed value 또는 existing-model payload를 선언할 수 있고 creation decision은 direct enum value payload만 쓴다. Event payload도 required output field와 ExactlyOne relation slot을 직접 생산할 수 있으며, delivery/retry/idempotency는 아직 연결하지 않는다.
 
-2026-08-25 현재 구현된 범위는 stable-ID typed action input, direct enum conditional creation decision과 field/relation producer, 그리고 output-field-only message template이다. Korean frontend와 common analyzer는 action+output production을 만들고 ExactlyOne `Create`/`Skip`, enum coverage, same-variant conflict 및 Create variant별 required output field/relation producer gap/conflict를 검사한다. direct Value input, ExistingModel input field와 explicit scalar constant producer는 action mutation 전(`PreMutation`)에 무조건 적용하거나 production의 decision input과 같은 enum variant에만 적용한다. 현재 Korean template producer는 무조건 `PreMutation`이며 같은 output model의 String field만 `{표시 이름}`으로 참조하고 `{{`, `}}`로 literal brace를 쓴다. template dependency는 source order가 아닌 canonical graph로 검사하고 cycle을 거부한다. conditional template과 snapshot은 아직 구현하지 않았다.
+2026-08-25 현재 구현된 범위는 stable-ID typed action input, direct enum conditional creation decision과 field/relation producer, 그리고 output-field-only message template이다. Korean frontend와 common analyzer는 action 또는 event+output production을 만들고 ExactlyOne `Create`/`Skip`, enum coverage, same-variant conflict 및 Create variant별 required output field/relation producer gap/conflict를 검사한다. Action direct Value input, ExistingModel input field와 explicit scalar constant producer는 action mutation 전(`PreMutation`)에 무조건 적용하거나 production의 decision input과 같은 enum variant에만 적용한다. Event direct Value input과 ExistingModel input field, direct ExistingModel relation producer 및 output-field-only template은 immutable trigger payload(`TriggerPayload`)에서 무조건 적용한다. Event에는 조건부 producer와 constant를 지원하지 않는다. template은 같은 output model의 String field만 `{표시 이름}`으로 참조하고 `{{`, `}}`로 literal brace를 쓴다. template dependency는 source order가 아닌 canonical graph로 검사하고 cycle을 거부한다. conditional template과 snapshot은 아직 구현하지 않았다.
 
 - action은 stable-ID typed input을 선언한다. existing record input은 action 직전에 존재해야 한다.
 - output record는 하나 이상의 typed field를 가진다. output field와 output relation slot은 target과 producer span을 가진 binding으로만 채운다.
@@ -99,6 +99,14 @@ annotation과 block은 허용하지 않으며, source order는 priority가 아�
 재시도 횟수 기록(retry_binding)은 점검 요청 전달이 실행될 때 상수 0을 점검 요청 전달 알림의 재시도 횟수로 기록한다.
 접수 제목 기록(received_title)은 점검 요청 전달의 요청 상태가 접수됨이면 상수 "요청이 접수되었습니다"를 점검 요청 전달 알림의 제목으로 기록한다.
 알림 내용 조합(content_template)은 점검 요청 전달이 실행될 때 "{제목} 점검이 전달되었습니다."를 점검 전달 알림의 내용으로 조합한다.
+```
+
+Event는 같은 문장 구조에서 `실행될 때` 대신 Event-only `발생할 때`를 쓴다. Event와 같은 표시 이름의 Action이 있어도 `발생할 때`는 Event namespace만 참조한다. Event direct value와 ExistingModel input field, output-field-only template은 `TriggerPayload` producer이며 Action source와 섞일 수 없다. Event constant와 조건부 producer는 이 slice에서 `unsupported`다.
+
+```rspdl
+접수 제목 기록(received_title)은 점검 요청 접수됨이 발생할 때 알림 제목을 점검 전달 알림의 제목으로 기록한다.
+요청 제목 기록(request_title)은 점검 요청 접수됨이 발생할 때 대상 요청의 제목을 점검 전달 알림의 요청 제목으로 기록한다.
+알림 내용 조합(received_content)은 점검 요청 접수됨이 발생할 때 "{제목}: {요청 제목}"를 점검 전달 알림의 내용으로 조합한다.
 ```
 
 ## 문장형 비정규 설계 예시
@@ -249,17 +257,17 @@ CreationBranch {
 FieldProducer {
     id, output_field, condition: TypedBooleanExpr
     source: InputPath | SnapshotId | Constant | ExpressionId
-    phase: PreMutation | PostMutation, source_span
+    phase: PreMutation | TriggerPayload | PostMutation, source_span
 }
 
 RelationProducer {
     id, output_relation, condition: TypedBooleanExpr
     source: InputPath | SnapshotId | RelationPath
-    phase: PreMutation | PostMutation, source_span
+    phase: PreMutation | TriggerPayload | PostMutation, source_span
 }
 ```
 
-`InputPath`의 root는 trigger의 declared input stable ID여야 한다. 현재 payload producer slice에는 action input record field 접근과 single relation-slot input binding만 허용한다. Event는 immutable payload와 enum `Create|Skip` decision trigger만 구현하며 Event-based field/relation producers는 명시적으로 후속 slice다. 따라서 Event `Create` output의 required field나 ExactlyOne relation은 기존 payload gap 규칙으로 진단된다. `OutputRelationSlot`은 relation endpoint type과 required/unique cardinality를 갖고, `RelationProducer`도 `FieldProducer`와 같은 provenance·type·availability 검사를 받는다. future `RelationPath`는 edge 방향, cardinality, availability phase와 output instance multiplicity를 IR에 보존해야 한다. template은 `OutputFieldId`만 가지며 원본 path를 갖지 않는다. `ExpressionId`가 같은 output의 다른 field를 참조할 때 analyzer는 stable ID dependency graph를 만들고 cycle을 source 순서와 무관하게 거부한다.
+`InputPath`의 root는 trigger의 declared input stable ID여야 한다. 현재 payload producer slice에는 Action input record field 접근과 single relation-slot input binding, 그리고 Event immutable value/record payload의 같은 direct binding만 허용한다. Event `Create` output도 direct Event producer로 required field와 ExactlyOne relation을 채울 수 있고 `TriggerPayload` phase를 보존한다. Event field/relation producer는 무조건 form만 허용하며 constant, conditional source, fan-out과 join을 지원하지 않는다. `OutputRelationSlot`은 relation endpoint type과 required/unique cardinality를 갖고, `RelationProducer`도 `FieldProducer`와 같은 provenance·type·availability 검사를 받는다. future `RelationPath`는 edge 방향, cardinality, availability phase와 output instance multiplicity를 IR에 보존해야 한다. template은 `OutputFieldId`만 가지며 원본 path를 갖지 않는다. `ExpressionId`가 같은 output의 다른 field를 참조할 때 analyzer는 stable ID dependency graph를 만들고 cycle을 source 순서와 무관하게 거부한다.
 
 구현된 template producer는 `FieldProducerSource::Template { parts: Text | OutputField(CanonicalId) }`로 canonical IR에 남는다. target, result와 placeholder field는 모두 `String`이며 별도 formatting contract가 필요한 정수·금액·enum의 암시적 문자열 변환은 하지 않는다. placeholder가 가리키는 output field는 각 effective `Create` variant에 정확히 하나의 producer를 가져야 한다. optional field도 template dependency라면 누락될 수 없다. `field_evaluation_order`는 stable ID로 tie-break한 canonical topological projection이며 소비자는 원문 선언 순서를 execution order로 해석하지 않는다. `Skip`만 effective한 production은 payload gap/conflict/cycle을 내지 않지만 template syntax, link, type 오류는 그대로 보고한다.
 

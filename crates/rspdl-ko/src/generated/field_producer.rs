@@ -1,6 +1,7 @@
 //! Executable grammar shadow for pre-mutation field-producer sentences.
 use super::adapter::{match_literal, match_marked_ref};
 use super::required_capture;
+use crate::ast::ProducerTriggerKindAst;
 use crate::scanner::Token;
 use rspdl_grammar_compiler::{Capture, Grammar, InputAdapter, ParseError, TerminalMatch};
 include!(concat!(env!("OUT_DIR"), "/field_producer_grammar.rs"));
@@ -10,6 +11,7 @@ pub(crate) struct GeneratedFieldProducer {
     pub producer_name: Capture,
     pub producer_id: Capture,
     pub action: Capture,
+    pub trigger_kind: ProducerTriggerKindAst,
     pub condition_input: Option<Capture>,
     pub condition_variant: Option<Capture>,
     pub output_model: Capture,
@@ -32,6 +34,14 @@ pub(crate) fn parse_field_producer(tokens: &[Token]) -> Result<GeneratedFieldPro
             .or_else(|| parsed.capture("conditional_action"))
             .cloned()
             .expect("field producer grammar always captures an action"),
+        trigger_kind: match parsed
+            .capture("trigger_verb")
+            .map(|capture| capture.value.as_str())
+        {
+            Some("발생할") => ProducerTriggerKindAst::Event,
+            Some("실행될") | None => ProducerTriggerKindAst::Action,
+            Some(_) => unreachable!("field producer grammar only captures supported trigger verbs"),
+        },
         condition_input: parsed.capture("condition_input").cloned(),
         condition_variant: parsed.capture("condition_variant").cloned(),
         output_model: required_capture(&parsed, "output_model"),
@@ -144,7 +154,7 @@ mod tests {
     use crate::ast::{DeclarationAst, FieldProducerSourceAst};
     use crate::{TokenKind, parse as parse_document, scan};
     #[test]
-    fn executable_field_producer_grammar_accepts_the_three_source_shapes() {
+    fn executable_field_producer_grammar_accepts_action_and_event_source_shapes() {
         for (sentence, kind) in [
             (
                 "알림 제목 기록(title_binding)은 점검 요청 전달이 실행될 때 알림 제목을 점검 요청 전달 알림의 제목으로 기록한다.",
@@ -157,6 +167,10 @@ mod tests {
             (
                 "재시도 횟수 기록(retry_binding)은 점검 요청 전달이 실행될 때 상수 0을 점검 요청 전달 알림의 재시도 횟수로 기록한다.",
                 2,
+            ),
+            (
+                "알림 제목 기록(event_title_binding)은 요청 접수됨이 발생할 때 알림 제목을 알림의 제목으로 기록한다.",
+                0,
             ),
         ] {
             let tokens = scan(sentence)
@@ -178,7 +192,8 @@ mod tests {
             };
             assert_eq!(parsed.producer_name.value, hand.declaration.name);
             assert_eq!(parsed.producer_id.value, hand.declaration.id);
-            assert_eq!(parsed.action.value, hand.action);
+            assert_eq!(parsed.action.value, hand.trigger.name);
+            assert_eq!(parsed.trigger_kind, hand.trigger.kind);
             assert_eq!(parsed.output_model.value, hand.output_model);
             assert_eq!(parsed.output_field.value, hand.output_field);
             match (kind, hand.source) {
@@ -220,7 +235,7 @@ mod tests {
         else {
             panic!()
         };
-        assert_eq!(handwritten.action, "전달");
+        assert_eq!(handwritten.trigger.name, "전달");
         assert_eq!(
             handwritten
                 .condition

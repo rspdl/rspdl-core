@@ -1,6 +1,7 @@
 //! Executable grammar shadow for direct output relation-slot producers.
 use super::adapter::{match_literal, match_marked_ref};
 use super::required_capture;
+use crate::ast::ProducerTriggerKindAst;
 use crate::scanner::Token;
 use rspdl_grammar_compiler::{Capture, Grammar, InputAdapter, ParseError, TerminalMatch};
 include!(concat!(env!("OUT_DIR"), "/relation_producer_grammar.rs"));
@@ -10,6 +11,7 @@ pub(crate) struct GeneratedRelationProducer {
     pub producer_name: Capture,
     pub producer_id: Capture,
     pub action: Capture,
+    pub trigger_kind: ProducerTriggerKindAst,
     pub input: Capture,
     pub output_model: Capture,
     pub relation: Capture,
@@ -24,6 +26,11 @@ pub(crate) fn parse_relation_producer(
         producer_name: required_capture(&parsed, "producer_name"),
         producer_id: required_capture(&parsed, "producer_id"),
         action: required_capture(&parsed, "action"),
+        trigger_kind: match required_capture(&parsed, "trigger_verb").value.as_str() {
+            "실행될" => ProducerTriggerKindAst::Action,
+            "발생할" => ProducerTriggerKindAst::Event,
+            _ => unreachable!("relation producer grammar only captures supported trigger verbs"),
+        },
         input: required_capture(&parsed, "input"),
         output_model: required_capture(&parsed, "output_model"),
         relation: required_capture(&parsed, "relation"),
@@ -95,24 +102,29 @@ mod tests {
     use super::parse_relation_producer;
     use crate::{DeclarationAst, TokenKind, parse, scan};
     #[test]
-    fn generated_relation_producer_matches_handwritten_parser() {
-        let sentence = "수신자 연결(recipient_binding)은 점검 요청 전달이 실행될 때 수신 기술자를 점검 전달 알림의 수신자로 연결한다.";
-        let tokens = scan(sentence)
-            .tokens
-            .into_iter()
-            .filter(|token| !matches!(token.kind, TokenKind::Newline))
-            .collect::<Vec<_>>();
-        let generated = parse_relation_producer(&tokens).unwrap();
-        let parsed = parse(&format!("@모듈 검증(check)\n{sentence}\n"));
-        let DeclarationAst::RelationProducer(handwritten) =
-            parsed.document.unwrap().declarations.remove(0)
-        else {
-            panic!()
-        };
-        assert_eq!(generated.producer_id.value, handwritten.declaration.id);
-        assert_eq!(generated.action.value, handwritten.action);
-        assert_eq!(generated.input.value, handwritten.input);
-        assert_eq!(generated.output_model.value, handwritten.output_model);
-        assert_eq!(generated.relation.value, handwritten.relation);
+    fn generated_relation_producer_matches_action_and_event_handwritten_parser() {
+        for sentence in [
+            "수신자 연결(recipient_binding)은 점검 요청 전달이 실행될 때 수신 기술자를 점검 전달 알림의 수신자로 연결한다.",
+            "수신자 연결(event_recipient_binding)은 요청 접수됨이 발생할 때 수신 기술자를 알림의 수신자로 연결한다.",
+        ] {
+            let tokens = scan(sentence)
+                .tokens
+                .into_iter()
+                .filter(|token| !matches!(token.kind, TokenKind::Newline))
+                .collect::<Vec<_>>();
+            let generated = parse_relation_producer(&tokens).unwrap();
+            let parsed = parse(&format!("@모듈 검증(check)\n{sentence}\n"));
+            let DeclarationAst::RelationProducer(handwritten) =
+                parsed.document.unwrap().declarations.remove(0)
+            else {
+                panic!()
+            };
+            assert_eq!(generated.producer_id.value, handwritten.declaration.id);
+            assert_eq!(generated.action.value, handwritten.trigger.name);
+            assert_eq!(generated.trigger_kind, handwritten.trigger.kind);
+            assert_eq!(generated.input.value, handwritten.input);
+            assert_eq!(generated.output_model.value, handwritten.output_model);
+            assert_eq!(generated.relation.value, handwritten.relation);
+        }
     }
 }

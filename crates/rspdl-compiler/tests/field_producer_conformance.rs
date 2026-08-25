@@ -152,6 +152,10 @@ fn producers(module: &rspdl_domain::SemanticModule) -> Vec<(String, String, Stri
                     FieldProducerSource::InputField { input_id, field_id } => {
                         format!("input_field:{input_id}:{field_id}")
                     }
+                    FieldProducerSource::EventInput { .. }
+                    | FieldProducerSource::EventInputField { .. } => {
+                        panic!("Action field-producer conformance cannot contain an Event source")
+                    }
                     FieldProducerSource::Constant { value } => format!(
                         "constant:{}:{}",
                         value.value_type(),

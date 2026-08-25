@@ -619,7 +619,7 @@ fn is_field_producer_sentence(line: &Line) -> bool {
     last_sentence_word(line, 0) == Some("기록한다")
         && line.tokens.iter().any(|token| {
             matches!(&token.kind, TokenKind::Word(word)
-                if word == "실행될" || word == "이면" || word == "라면"
+                if matches!(word.as_str(), "실행될" | "발생할" | "이면" | "라면")
                     || word.ends_with("이면") || word.ends_with("라면"))
         })
 }
@@ -633,7 +633,7 @@ fn is_template_producer_sentence(line: &Line) -> bool {
         && line
             .tokens
             .iter()
-            .any(|token| matches!(&token.kind, TokenKind::Word(word) if word == "실행될"))
+            .any(|token| matches!(&token.kind, TokenKind::Word(word) if matches!(word.as_str(), "실행될" | "발생할")))
 }
 
 fn is_relation_producer_sentence(line: &Line) -> bool {
@@ -641,7 +641,7 @@ fn is_relation_producer_sentence(line: &Line) -> bool {
         && line
             .tokens
             .iter()
-            .any(|token| matches!(&token.kind, TokenKind::Word(word) if word == "실행될"))
+            .any(|token| matches!(&token.kind, TokenKind::Word(word) if matches!(word.as_str(), "실행될" | "발생할")))
 }
 
 fn is_relation_sentence(line: &Line) -> bool {
@@ -1192,15 +1192,23 @@ fn parse_field_producer(
         .next_word()
         .filter(|marker| matches!(*marker, "은" | "는"))
         .ok_or_else(|| cursor.error("ko.syntax.field_producer_topic_marker_required"))?;
-    let (action, action_marker) = cursor.marked_ref(&["의", "이", "가"])?;
-    let condition = if action_marker == "의" {
+    let (trigger_name, trigger_marker) = cursor.marked_ref(&["의", "이", "가"])?;
+    let (trigger_kind, condition) = if trigger_marker == "의" {
         let (input, _input_marker) = cursor.marked_ref(&["이", "가"])?;
         let (variant, _variant_marker) = cursor.marked_ref(&["이면", "라면"])?;
-        Some(FieldProducerConditionAst { input, variant })
+        (
+            ProducerTriggerKindAst::Action,
+            Some(FieldProducerConditionAst { input, variant }),
+        )
     } else {
-        cursor.expect_word("실행될")?;
+        let trigger_kind = if cursor.consume_word("실행될") {
+            ProducerTriggerKindAst::Action
+        } else {
+            cursor.expect_word("발생할")?;
+            ProducerTriggerKindAst::Event
+        };
         cursor.expect_word("때")?;
-        None
+        (trigger_kind, None)
     };
     let source = if is_template_producer_sentence(line) {
         let token = cursor
@@ -1240,8 +1248,15 @@ fn parse_field_producer(
     }
     cursor.expect_end()?;
     lint_marker(&declaration.name, topic, "은", "는", line.span, diagnostics);
-    if action_marker != "의" {
-        lint_marker(&action, &action_marker, "이", "가", line.span, diagnostics);
+    if trigger_marker != "의" {
+        lint_marker(
+            &trigger_name,
+            &trigger_marker,
+            "이",
+            "가",
+            line.span,
+            diagnostics,
+        );
     }
     lint_marker(
         &output_field,
@@ -1253,7 +1268,10 @@ fn parse_field_producer(
     );
     Ok(FieldProducerAst {
         declaration,
-        action,
+        trigger: ProducerTriggerAst {
+            name: trigger_name,
+            kind: trigger_kind,
+        },
         output_model,
         output_field,
         source,
@@ -1352,8 +1370,13 @@ fn parse_relation_producer(
         .next_word()
         .filter(|marker| matches!(*marker, "은" | "는"))
         .ok_or_else(|| cursor.error("ko.syntax.relation_producer_topic_marker_required"))?;
-    let (action, action_marker) = cursor.marked_ref(&["이", "가"])?;
-    cursor.expect_word("실행될")?;
+    let (trigger_name, trigger_marker) = cursor.marked_ref(&["이", "가"])?;
+    let trigger_kind = if cursor.consume_word("실행될") {
+        ProducerTriggerKindAst::Action
+    } else {
+        cursor.expect_word("발생할")?;
+        ProducerTriggerKindAst::Event
+    };
     cursor.expect_word("때")?;
     let (input, input_marker) = cursor.marked_ref(&["을", "를"])?;
     let (output_model, _) = cursor.marked_ref(&["의"])?;
@@ -1361,7 +1384,14 @@ fn parse_relation_producer(
     cursor.expect_word("연결한다")?;
     cursor.expect_end()?;
     lint_marker(&declaration.name, topic, "은", "는", line.span, diagnostics);
-    lint_marker(&action, &action_marker, "이", "가", line.span, diagnostics);
+    lint_marker(
+        &trigger_name,
+        &trigger_marker,
+        "이",
+        "가",
+        line.span,
+        diagnostics,
+    );
     lint_marker(&input, &input_marker, "을", "를", line.span, diagnostics);
     lint_marker(
         &relation,
@@ -1373,7 +1403,10 @@ fn parse_relation_producer(
     );
     Ok(RelationProducerAst {
         declaration,
-        action,
+        trigger: ProducerTriggerAst {
+            name: trigger_name,
+            kind: trigger_kind,
+        },
         input,
         output_model,
         relation,
@@ -2556,6 +2589,24 @@ mod tests {
     }
 
     #[test]
+    fn parses_event_payload_producer_sentences() {
+        let source = "@모듈 검증(check)\n제목 기록(title_binding)은 요청 접수됨이 발생할 때 알림 제목을 알림의 제목으로 기록한다.\n수신자 연결(recipient_binding)은 요청 접수됨이 발생할 때 수신 기술자를 알림의 수신자로 연결한다.\n";
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let declarations = parsed.document.unwrap().declarations;
+        let DeclarationAst::FieldProducer(field) = &declarations[0] else {
+            panic!()
+        };
+        assert_eq!(field.trigger.kind, ProducerTriggerKindAst::Event);
+        assert_eq!(field.trigger.name, "요청 접수됨");
+        let DeclarationAst::RelationProducer(relation) = &declarations[1] else {
+            panic!()
+        };
+        assert_eq!(relation.trigger.kind, ProducerTriggerKindAst::Event);
+        assert_eq!(relation.trigger.name, "요청 접수됨");
+    }
+
+    #[test]
     fn parses_a_conditional_field_producer_sentence() {
         let source = "@모듈 검증(check)\n접수 제목 기록(received_title)은 전달의 요청 상태가 접수됨이면 상수 \"요청이 접수되었습니다\"를 알림의 제목으로 기록한다.\n";
         let parsed = parse(source);
@@ -2564,7 +2615,7 @@ mod tests {
         else {
             panic!()
         };
-        assert_eq!(producer.action, "전달");
+        assert_eq!(producer.trigger.name, "전달");
         assert_eq!(
             producer
                 .condition

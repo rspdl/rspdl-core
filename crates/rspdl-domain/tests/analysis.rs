@@ -195,7 +195,11 @@ fn field_producer_at(
             id: Some(id.into()),
             span: producer_span,
         },
-        action: SurfaceRef::stable_id("publish", producer_span),
+        action: Some(SurfaceRef::stable_id("publish", producer_span)),
+        trigger: UnlinkedProductionTrigger {
+            kind: ProductionTriggerKind::Action,
+            reference: SurfaceRef::stable_id("publish", producer_span),
+        },
         output_model: SurfaceRef::stable_id("notice", producer_span),
         output_field: SurfaceRef::stable_id("body", producer_span),
         source,
@@ -1770,7 +1774,11 @@ fn relation_production_module(
     ];
     module.relation_producers.push(UnlinkedRelationProducer {
         declaration: declaration("Recipient binding", Some("recipient_binding")),
-        action: reference("publish"),
+        action: Some(reference("publish")),
+        trigger: UnlinkedProductionTrigger {
+            kind: ProductionTriggerKind::Action,
+            reference: reference("publish"),
+        },
         input: reference(producer_input),
         output_model: reference("notice"),
         relation: reference("recipient"),
@@ -2210,6 +2218,96 @@ fn common_analyzer_keeps_action_and_event_decision_inputs_owner_scoped() {
             && diagnostic.argument("trigger_kind") == Some("action")
             && diagnostic.argument("trigger_id") == Some("expense.publish")
             && diagnostic.argument("action_id") == Some("expense.publish")
+    }));
+}
+
+#[test]
+fn event_payload_producers_require_declared_event_inputs_and_typed_field_roots() {
+    let mut missing_input = event_creation_module(true);
+    let mut producer = field_producer(
+        "missing_event_payload",
+        UnlinkedFieldProducerSource::EventInput {
+            input: reference("undeclared_payload"),
+        },
+    );
+    producer.action = None;
+    producer.trigger = UnlinkedProductionTrigger {
+        kind: ProductionTriggerKind::Event,
+        reference: reference("request_received"),
+    };
+    missing_input.field_producers = vec![producer];
+    let output = analyze(missing_input);
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-001"
+            && diagnostic.message_key == "semantic.field_producer.source_input_not_found"
+            && diagnostic.argument("source") == Some("undeclared_payload")
+            && diagnostic.argument("trigger_kind") == Some("event")
+            && diagnostic.argument("trigger_id") == Some("expense.request_received")
+            && diagnostic.argument("action_id").is_none()
+    }));
+
+    let mut scalar_field_path = event_creation_module(true);
+    let mut producer = field_producer(
+        "scalar_event_field",
+        UnlinkedFieldProducerSource::EventInputField {
+            input: reference("request_status"),
+            field: reference("body"),
+        },
+    );
+    producer.action = None;
+    producer.trigger = UnlinkedProductionTrigger {
+        kind: ProductionTriggerKind::Event,
+        reference: reference("request_received"),
+    };
+    scalar_field_path.field_producers = vec![producer];
+    let output = analyze(scalar_field_path);
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-002"
+            && diagnostic.message_key == "semantic.field_producer.type_mismatch"
+            && diagnostic.argument("trigger_kind") == Some("event")
+            && diagnostic.argument("trigger_id") == Some("expense.request_received")
+            && diagnostic.argument("action_id").is_none()
+    }));
+
+    let mut unknown_field = event_creation_module(true);
+    unknown_field.models.push(UnlinkedDataModel {
+        declaration: declaration("Request", Some("request")),
+        fields: vec![UnlinkedField {
+            declaration: declaration("Title", Some("title")),
+            required: true,
+            value_type: UnlinkedTypeReference::String,
+            span: span(),
+        }],
+        span: span(),
+    });
+    unknown_field.events[0].inputs.push(UnlinkedEventInput {
+        declaration: declaration("Request", Some("target_request")),
+        kind: UnlinkedEventInputKind::ExistingModel {
+            model: reference("request"),
+        },
+        span: span(),
+    });
+    let mut producer = field_producer(
+        "unknown_event_field",
+        UnlinkedFieldProducerSource::EventInputField {
+            input: reference("target_request"),
+            field: reference("missing_field"),
+        },
+    );
+    producer.action = None;
+    producer.trigger = UnlinkedProductionTrigger {
+        kind: ProductionTriggerKind::Event,
+        reference: reference("request_received"),
+    };
+    unknown_field.field_producers = vec![producer];
+    let output = analyze(unknown_field);
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-LINK-003"
+            && diagnostic.message_key == "semantic.field.not_found"
+            && diagnostic.argument("reference") == Some("missing_field")
+            && diagnostic.argument("trigger_kind") == Some("event")
+            && diagnostic.argument("trigger_id") == Some("expense.request_received")
+            && diagnostic.argument("action_id").is_none()
     }));
 }
 

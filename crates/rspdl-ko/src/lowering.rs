@@ -377,6 +377,20 @@ impl StableIdIndex {
         self.model_reference(candidate.existing_model_name.as_deref()?, span, diagnostics)
     }
 
+    fn event_input_model_reference(
+        &self,
+        event: Option<&SurfaceRef>,
+        input: Option<&SurfaceRef>,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let candidate = self.event_inputs.iter().find(|candidate| {
+            Some(candidate.action_id.as_str()) == event.map(SurfaceRef::id)
+                && Some(candidate.symbol.id.as_str()) == input.map(SurfaceRef::id)
+        })?;
+        self.model_reference(candidate.existing_model_name.as_deref()?, span, diagnostics)
+    }
+
     fn field_reference(
         &self,
         model: Option<&SurfaceRef>,
@@ -925,7 +939,7 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                 };
                 module.creation_branches.push(UnlinkedCreationBranch {
                     declaration: declaration(&value.declaration, true),
-                    action,
+                    action: action.clone(),
                     trigger: UnlinkedProductionTrigger {
                         kind: trigger_kind,
                         reference: trigger_ref,
@@ -941,7 +955,21 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                 });
             }
             DeclarationAst::FieldProducer(value) => {
-                let action = index.action_reference(&value.action, value.span, &mut diagnostics);
+                let trigger_kind = match value.trigger.kind {
+                    ProducerTriggerKindAst::Action => ProductionTriggerKind::Action,
+                    ProducerTriggerKindAst::Event => ProductionTriggerKind::Event,
+                };
+                let trigger = match trigger_kind {
+                    ProductionTriggerKind::Action => {
+                        index.action_reference(&value.trigger.name, value.span, &mut diagnostics)
+                    }
+                    ProductionTriggerKind::Event => {
+                        index.event_reference(&value.trigger.name, value.span, &mut diagnostics)
+                    }
+                };
+                let action = (trigger_kind == ProductionTriggerKind::Action)
+                    .then(|| trigger.clone())
+                    .flatten();
                 let output_model =
                     index.model_reference(&value.output_model, value.span, &mut diagnostics);
                 let output_field = index.field_reference(
@@ -952,42 +980,87 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                 );
                 let source = match &value.source {
                     FieldProducerSourceAst::ActionInput { input } => {
-                        UnlinkedFieldProducerSource::ActionInput {
-                            input: required_reference(
-                                index.action_input_reference(
-                                    action.as_ref(),
-                                    input,
-                                    value.span,
-                                    &mut diagnostics,
-                                ),
+                        let input = if trigger_kind == ProductionTriggerKind::Action {
+                            index.action_input_reference(
+                                action.as_ref(),
+                                input,
                                 value.span,
-                            ),
+                                &mut diagnostics,
+                            )
+                        } else {
+                            index.event_input_reference(
+                                trigger.as_ref(),
+                                input,
+                                value.span,
+                                &mut diagnostics,
+                            )
+                        };
+                        match trigger_kind {
+                            ProductionTriggerKind::Action => {
+                                UnlinkedFieldProducerSource::ActionInput {
+                                    input: required_reference(input, value.span),
+                                }
+                            }
+                            ProductionTriggerKind::Event => {
+                                UnlinkedFieldProducerSource::EventInput {
+                                    input: required_reference(input, value.span),
+                                }
+                            }
                         }
                     }
                     FieldProducerSourceAst::InputField { input, field } => {
-                        let input = index.action_input_reference(
-                            action.as_ref(),
-                            input,
-                            value.span,
-                            &mut diagnostics,
-                        );
-                        let source_model = index.action_input_model_reference(
-                            action.as_ref(),
-                            input.as_ref(),
-                            value.span,
-                            &mut diagnostics,
-                        );
-                        UnlinkedFieldProducerSource::InputField {
-                            input: required_reference(input, value.span),
-                            field: required_reference(
-                                index.field_reference(
-                                    source_model.as_ref(),
-                                    field,
-                                    value.span,
-                                    &mut diagnostics,
-                                ),
+                        let input = if trigger_kind == ProductionTriggerKind::Action {
+                            index.action_input_reference(
+                                action.as_ref(),
+                                input,
                                 value.span,
+                                &mut diagnostics,
+                            )
+                        } else {
+                            index.event_input_reference(
+                                trigger.as_ref(),
+                                input,
+                                value.span,
+                                &mut diagnostics,
+                            )
+                        };
+                        let source_model = if trigger_kind == ProductionTriggerKind::Action {
+                            index.action_input_model_reference(
+                                action.as_ref(),
+                                input.as_ref(),
+                                value.span,
+                                &mut diagnostics,
+                            )
+                        } else {
+                            index.event_input_model_reference(
+                                trigger.as_ref(),
+                                input.as_ref(),
+                                value.span,
+                                &mut diagnostics,
+                            )
+                        };
+                        let field = required_reference(
+                            index.field_reference(
+                                source_model.as_ref(),
+                                field,
+                                value.span,
+                                &mut diagnostics,
                             ),
+                            value.span,
+                        );
+                        match trigger_kind {
+                            ProductionTriggerKind::Action => {
+                                UnlinkedFieldProducerSource::InputField {
+                                    input: required_reference(input, value.span),
+                                    field,
+                                }
+                            }
+                            ProductionTriggerKind::Event => {
+                                UnlinkedFieldProducerSource::EventInputField {
+                                    input: required_reference(input, value.span),
+                                    field,
+                                }
+                            }
                         }
                     }
                     FieldProducerSourceAst::Constant { literal } => {
@@ -1070,19 +1143,24 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                 };
                 module.field_producers.push(UnlinkedFieldProducer {
                     declaration: declaration(&value.declaration, true),
-                    action: required_reference(action.clone(), value.span),
+                    action: action.clone(),
+                    trigger: UnlinkedProductionTrigger {
+                        kind: trigger_kind,
+                        reference: required_reference(trigger.clone(), value.span),
+                    },
                     output_model: required_reference(output_model, value.span),
                     output_field: required_reference(output_field, value.span),
                     source,
                     condition: value.condition.as_ref().map(|condition| {
+                        let action = action.as_ref();
                         let input = index.action_input_reference(
-                            action.as_ref(),
+                            action,
                             &condition.input,
                             value.span,
                             &mut diagnostics,
                         );
                         let enum_type = index.action_input_enum_reference(
-                            action.as_ref(),
+                            action,
                             input.as_ref(),
                             value.span,
                             &mut diagnostics,
@@ -1113,20 +1191,47 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                 });
             }
             DeclarationAst::RelationProducer(value) => {
-                let action = index.action_reference(&value.action, value.span, &mut diagnostics);
-                let input = index.action_input_reference(
-                    action.as_ref(),
-                    &value.input,
-                    value.span,
-                    &mut diagnostics,
-                );
+                let trigger_kind = match value.trigger.kind {
+                    ProducerTriggerKindAst::Action => ProductionTriggerKind::Action,
+                    ProducerTriggerKindAst::Event => ProductionTriggerKind::Event,
+                };
+                let trigger = match trigger_kind {
+                    ProductionTriggerKind::Action => {
+                        index.action_reference(&value.trigger.name, value.span, &mut diagnostics)
+                    }
+                    ProductionTriggerKind::Event => {
+                        index.event_reference(&value.trigger.name, value.span, &mut diagnostics)
+                    }
+                };
+                let action = (trigger_kind == ProductionTriggerKind::Action)
+                    .then(|| trigger.clone())
+                    .flatten();
+                let input = if trigger_kind == ProductionTriggerKind::Action {
+                    index.action_input_reference(
+                        action.as_ref(),
+                        &value.input,
+                        value.span,
+                        &mut diagnostics,
+                    )
+                } else {
+                    index.event_input_reference(
+                        trigger.as_ref(),
+                        &value.input,
+                        value.span,
+                        &mut diagnostics,
+                    )
+                };
                 let output_model =
                     index.model_reference(&value.output_model, value.span, &mut diagnostics);
                 let relation =
                     index.relation_reference(&value.relation, value.span, &mut diagnostics);
                 module.relation_producers.push(UnlinkedRelationProducer {
                     declaration: declaration(&value.declaration, true),
-                    action: required_reference(action, value.span),
+                    action,
+                    trigger: UnlinkedProductionTrigger {
+                        kind: trigger_kind,
+                        reference: required_reference(trigger, value.span),
+                    },
                     input: required_reference(input, value.span),
                     output_model: required_reference(output_model, value.span),
                     relation: required_reference(relation, value.span),

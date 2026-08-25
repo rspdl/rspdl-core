@@ -40,9 +40,9 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 - stable ID와 typed existing-model/enum·scalar input을 가진 문장형 action input 선언
 - direct enum action input의 문장형 conditional ExactlyOne Create/Skip과 enum coverage·same-variant conflict 검증
 - immutable typed Event payload의 direct enum input으로 conditional ExactlyOne Create/Skip과 coverage·same-variant conflict 검증
-- conditional production의 required output field에 direct action input, ExistingModel input field 또는 typed constant를 `PreMutation` producer로 기록하며, 무조건 또는 같은 decision enum variant 조건별 Create path gap/conflict를 진단
-- 같은 output의 String field만 참조하는 무조건 message template을 `PreMutation` producer로 조합하고 dependency gap/conflict·cycle과 canonical evaluation order를 검증
-- Required와 Unique가 모두 성립하는 output-first binary relation을 ExactlyOne output slot으로 해석하고 direct ExistingModel input relation producer를 검증
+- conditional production의 required output field에 direct action input, ExistingModel input field 또는 typed constant를 `PreMutation` producer로, immutable Event value·ExistingModel payload를 `TriggerPayload` producer로 기록하며 Create path gap/conflict를 진단
+- 같은 output의 String field만 참조하는 무조건 message template을 Action `PreMutation` 또는 Event `TriggerPayload` producer로 조합하고 dependency gap/conflict·cycle과 canonical evaluation order를 검증
+- Required와 Unique가 모두 성립하는 output-first binary relation을 ExactlyOne output slot으로 해석하고 Action 또는 Event의 direct ExistingModel input relation producer를 검증
 - `필드의 합계` 계산 dependency와 원본 변경 시 재계산 선언
 - 생산자 없는 필드 사용 오류와 미조회 입력 필드 안내
 - 화면 또는 action 생성 경로가 없는 모델의 조회·수정·삭제·계산 사용 오류

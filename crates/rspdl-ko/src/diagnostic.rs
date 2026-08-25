@@ -318,9 +318,13 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "create_branch_ids")
         ),
         "semantic.field_producer.source_input_not_found" => format!(
-            "생산자 {}의 행동 입력 {}을 찾을 수 없습니다.",
+            "생산자 {}의 trigger 입력 {}을 찾을 수 없습니다.",
             argument(diagnostic, "producer_id"),
             argument(diagnostic, "source")
+        ),
+        "semantic.field_producer.source_trigger_owner_mismatch" => format!(
+            "생산자 {}의 source는 해당 trigger의 선언 입력이어야 합니다.",
+            argument(diagnostic, "producer_id")
         ),
         "semantic.field_producer.type_mismatch" => match diagnostic.argument("source_type") {
             Some(source_type) => format!(
@@ -340,7 +344,19 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             ),
         },
         "semantic.creation_production.field_producer_without_creation_decision" => format!(
-            "생산자 {}은 생산 결정이 없는 행동/output에 붙을 수 없습니다.",
+            "생산자 {}은 생산 결정이 없는 trigger/output에 붙을 수 없습니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.event_field_producer.conditional_unsupported" => format!(
+            "Event 생산자 {}은 현재 조건을 가질 수 없습니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.event_field_producer.constant_unsupported" => format!(
+            "Event 생산자 {}은 현재 상수를 source로 사용할 수 없습니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.producer.legacy_action_incompatible" => format!(
+            "생산자 {}의 legacy Action reference는 tagged trigger와 함께 사용할 수 없습니다.",
             argument(diagnostic, "producer_id")
         ),
         "semantic.creation_production.field_producer_conflict" => format!(
@@ -373,7 +389,7 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "dependency_type")
         ),
         "semantic.creation_production.relation_producer_without_creation_decision" => format!(
-            "관계 생산자 {}은 생산 결정이 없는 행동/output에 붙을 수 없습니다.",
+            "관계 생산자 {}은 생산 결정이 없는 trigger/output에 붙을 수 없습니다.",
             argument(diagnostic, "producer_id")
         ),
         "semantic.creation_production.relation_producer_not_exactly_one_slot" => format!(
@@ -382,7 +398,7 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "relation_id")
         ),
         "semantic.relation_producer.source_input_invalid" => format!(
-            "관계 생산자 {}의 행동 입력 {}을 찾을 수 없습니다.",
+            "관계 생산자 {}의 trigger 입력 {}을 찾을 수 없습니다.",
             argument(diagnostic, "producer_id"),
             argument(diagnostic, "source")
         ),
@@ -828,9 +844,13 @@ mod tests {
         ];
         for key in [
             "semantic.field_producer.source_input_not_found",
+            "semantic.field_producer.source_trigger_owner_mismatch",
             "semantic.field_producer.type_mismatch",
             "semantic.creation_production.field_producer_without_creation_decision",
             "semantic.creation_production.field_producer_conflict",
+            "semantic.event_field_producer.conditional_unsupported",
+            "semantic.event_field_producer.constant_unsupported",
+            "semantic.producer.legacy_action_incompatible",
         ] {
             let diagnostic = arguments.into_iter().fold(
                 Diagnostic::error("RSPDL-TEST", key, TextRange::default()),

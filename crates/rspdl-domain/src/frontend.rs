@@ -280,11 +280,10 @@ pub struct UnlinkedCreationBranch {
     pub span: TextRange,
 }
 
-/// An unconditional payload binding applied before the action mutates state.
-///
-/// A field producer is deliberately separate from a creation branch: this
-/// slice attaches it to every `Create` branch of its already-declared
-/// action/output production rather than inferring a conditional payload rule.
+/// A payload binding owned by either an action invocation or an immutable
+/// event payload. A field producer is deliberately separate from a creation
+/// branch: this slice attaches it to every `Create` branch of its already
+/// declared trigger/output production rather than inferring a payload rule.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum UnlinkedFieldProducerSource {
@@ -292,6 +291,13 @@ pub enum UnlinkedFieldProducerSource {
         input: SurfaceRef,
     },
     InputField {
+        input: SurfaceRef,
+        field: SurfaceRef,
+    },
+    EventInput {
+        input: SurfaceRef,
+    },
+    EventInputField {
         input: SurfaceRef,
         field: SurfaceRef,
     },
@@ -324,7 +330,11 @@ pub enum UnlinkedFieldProducerCondition {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedFieldProducer {
     pub declaration: UnlinkedDeclaration,
-    pub action: SurfaceRef,
+    /// Compatibility projection for Action-owned producers. Event producers
+    /// intentionally omit this action-shaped field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<SurfaceRef>,
+    pub trigger: UnlinkedProductionTrigger,
     pub output_model: SurfaceRef,
     pub output_field: SurfaceRef,
     pub source: UnlinkedFieldProducerSource,
@@ -332,13 +342,17 @@ pub struct UnlinkedFieldProducer {
     pub span: TextRange,
 }
 
-/// A direct pre-mutation action input binding to an output-owned relation
-/// slot. Relation slot identity itself is derived from an existing binary
-/// relation with both Required and Unique cardinality constraints.
+/// A direct trigger input binding to an output-owned relation slot. Relation
+/// slot identity itself is derived from an existing binary relation with both
+/// Required and Unique cardinality constraints.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedRelationProducer {
     pub declaration: UnlinkedDeclaration,
-    pub action: SurfaceRef,
+    /// Compatibility projection for Action-owned producers. Event producers
+    /// intentionally omit this action-shaped field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<SurfaceRef>,
+    pub trigger: UnlinkedProductionTrigger,
     pub input: SurfaceRef,
     pub output_model: SurfaceRef,
     pub relation: SurfaceRef,
