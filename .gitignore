@@ -10,3 +10,4 @@ __pycache__/
 /bindings/node/node_modules/
 /bindings/node/npm/
 /bindings/node/rspdl.*.node
+.env
