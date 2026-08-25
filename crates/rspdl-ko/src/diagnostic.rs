@@ -298,6 +298,14 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "field_id"),
             argument(diagnostic, "producer_ids")
         ),
+        "semantic.field_producer.condition_not_creation_decision_variant" => format!(
+            "생산자 {}의 조건 {}={}은 생산 {}의 결정 입력 {}의 값이어야 합니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "input_id"),
+            argument(diagnostic, "variant_id"),
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "decision_input_id")
+        ),
         "semantic.constraint.operand_type_mismatch" => {
             "제약의 양쪽 operand 타입이 다릅니다.".into()
         }

@@ -45,7 +45,7 @@ Locale Source -> Locale AST -> Stable-ID UnlinkedModule -> Link/Type Check -> Se
 - action의 데이터 결과는 action·model `SurfaceRef`, `create|update|delete` mutation과 source range를 가진 `UnlinkedActionDataMutation`으로 보존한다. Linking 뒤에는 `ActionDataMutationDefinition.span`과 기존 `Compilation.action_data_mutation_provenance` sidecar가 같은 UTF-8 byte `TextRange`를 유지한다.
 - conditional creation branch는 explicit declaration ID, action/input/variant/output `SurfaceRef`, `Create|Skip`과 span을 가진 `UnlinkedCreationBranch`로 보존한다. frontend는 action의 direct input과 그 enum 안의 variant만 표시 이름에서 stable ID로 연결한다.
 - analyzer는 `(action_id, output_model_id)`별 `ConditionalProductionDefinition`을 만들고 `ExactlyOne` instance cardinality, `decision_input_id`와 canonically sorted branch를 보존한다. enum coverage/conflict와 Create path required-field producer gap/conflict는 core가 판정한다.
-- unconditional field producer는 declaration ID, action/output model/output field `SurfaceRef`, direct action input·ExistingModel input field·literal source와 span을 가진 `UnlinkedFieldProducer`로 보존한다. frontend는 display names만 stable IDs로 lower하고, analyzer는 existing production attachment, exact type, `PreMutation`, Create-path field cardinality를 판정한다.
+- field producer는 declaration ID, action/output model/output field `SurfaceRef`, optional direct enum input+variant condition, direct action input·ExistingModel input field·literal source와 span을 가진 `UnlinkedFieldProducer`로 보존한다. frontend는 display names만 stable IDs로 lower한다. analyzer는 existing production attachment, exact type, `PreMutation`, condition input이 production `decision_input_id`와 같은 enum이고 variant가 그 enum 소속인지, Create variant별 field cardinality를 판정한다. general boolean, multi-axis, default/override condition은 지원하지 않는다.
 - `SemanticModule`은 모든 참조와 타입이 해석된 Canonical IR이며 source-backed record마다 선언 또는 규칙의 `span`을 보존한다. 여러 문장을 병합하는 screen은 최초 문장을, 각 operation은 자기 문장을 가리킨다.
 - 재계산 dependency는 기존 `DerivationDefinition.recalculate_when_changed_field_ids`와 함께 source-backed `RecalculationDefinition`으로 보존한다.
 - frontend output은 신뢰하지 않는다. 공통 analyzer가 ID 문법, 참조 존재성, 타입과 교차 선언 invariant를 다시 검증한다.
@@ -170,7 +170,7 @@ Constraint, policy, conditional production과 relation meta-rule의 anonymous ID
 - analyzer test는 Locale source 없이 hand-authored `UnlinkedModule`만 사용한다.
 - compiler conformance는 action mutation의 `SourceId`와 UTF-8 byte `TextRange`가 `Compilation`까지 보존되는지 검사한다.
 - conditional-production conformance는 normal/failure/boundary/false-positive Create/Skip cases, exact structured diagnostics와 source-order 독립 semantic projection을 검사한다.
-- field-producer conformance는 세 source form, missing/type/duplicate payload diagnostics, explicit `0`/`false`/empty string 및 source-order 독립성을 검사한다.
+- field-producer conformance는 세 source form, 무조건/enum-variant 조건 IR projection, variant별 missing/type/duplicate payload diagnostics, explicit `0`/`false`/empty string 및 source-order 독립성을 검사한다.
 - source provenance conformance는 각 record의 span으로 원문을 UTF-8 slice할 수 있는지, multi-file span이 containing file 기준인지, 위치 변화가 generated ID를 바꾸지 않는지 검사한다.
 - 동일한 stable ID와 의미를 가진 Locale별 fixture는 Canonical ID, semantic result와 `rule_id`, `message_key`, `arguments`가 같아야 한다.
 - 정상, 실패, 경계와 오탐 방지 fixture는 공통 analyzer를 통해 실행한다.

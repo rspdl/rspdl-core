@@ -244,6 +244,14 @@ pub enum FieldProducerSourceAst {
     Constant { literal: LiteralAst },
 }
 
+/// The only payload condition in this slice: one direct enum action input
+/// equal to one of that enum's declared variants.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FieldProducerConditionAst {
+    pub input: String,
+    pub variant: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FieldProducerAst {
     pub declaration: NamedIdAst,
@@ -251,6 +259,7 @@ pub struct FieldProducerAst {
     pub output_model: String,
     pub output_field: String,
     pub source: FieldProducerSourceAst,
+    pub condition: Option<FieldProducerConditionAst>,
     pub span: Span,
 }
 

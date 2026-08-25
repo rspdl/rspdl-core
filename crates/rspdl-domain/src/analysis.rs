@@ -10,17 +10,17 @@ use crate::{
     ConditionalProductionDefinition, ConstraintDefinition, ConstraintOperand,
     CreationBranchDefinition, CreationDecision, DataModelDefinition, DataMutationKind,
     DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition, EnumType,
-    EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, FieldProducerDefinition,
-    FieldProducerSource, ModelError, PolicyDefinition, PolicyEffect, ProducerPhase,
-    ProductionCardinality, RecalculationDefinition, RelationDefinition, RelationOperator,
-    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
-    ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SourceId, SurfaceRef,
-    TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind, UnlinkedConstraint,
-    UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedFieldIntent,
-    UnlinkedFieldProducer, UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule,
-    UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation,
-    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedScreen,
-    UnlinkedSumDerivation, UnlinkedTypeReference,
+    EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, FieldProducerCondition,
+    FieldProducerDefinition, FieldProducerSource, ModelError, PolicyDefinition, PolicyEffect,
+    ProducerPhase, ProductionCardinality, RecalculationDefinition, RelationDefinition,
+    RelationOperator, RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition,
+    ScreenDefinition, ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity,
+    SourceId, SurfaceRef, TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind,
+    UnlinkedConstraint, UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration,
+    UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerCondition,
+    UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
+    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -1025,7 +1025,7 @@ fn analyze_conditional_productions(
             &right.id,
         ))
     });
-    analyze_unconditional_field_producers(
+    analyze_field_producers(
         field_producer_values,
         module_id,
         actions,
@@ -1045,10 +1045,11 @@ struct ResolvedFieldProducerSource {
     evidence: String,
 }
 
-/// Links the unconditional field-producer slice. Producers do not create a
-/// production: they only enrich a previously linked action/output decision.
+/// Links field producers. They do not create a production: they only enrich a
+/// previously linked action/output decision. A conditional producer is scoped
+/// to exactly one variant of that production's direct enum decision input.
 #[allow(clippy::too_many_arguments)]
-fn analyze_unconditional_field_producers(
+fn analyze_field_producers(
     values: Vec<UnlinkedFieldProducer>,
     module_id: &CanonicalId,
     actions: &[ActionDefinition],
@@ -1113,6 +1114,18 @@ fn analyze_unconditional_field_producers(
             .iter()
             .find(|action| action.id == action_id)
             .expect("a production action was linked from this action table");
+        let condition = match resolve_field_producer_condition(
+            value.condition.as_ref(),
+            action,
+            enums,
+            &producer_id,
+            &productions[production_index],
+            value.span,
+            diagnostics,
+        ) {
+            Some(condition) => condition,
+            None => continue,
+        };
         let Some(source) = resolve_field_producer_source(
             &value.source,
             &producer_id,
@@ -1148,6 +1161,7 @@ fn analyze_unconditional_field_producers(
                 id: producer_id,
                 output_field_id: output_field.id.clone(),
                 source: source.source,
+                condition,
                 phase: ProducerPhase::PreMutation,
                 span: value.span,
             });
@@ -1157,79 +1171,177 @@ fn analyze_unconditional_field_producers(
         production
             .field_producers
             .sort_by(|left, right| left.id.cmp(&right.id));
-        let create_branch_ids = production
-            .branches
-            .iter()
-            .filter(|branch| branch.decision == CreationDecision::Create)
-            .map(|branch| branch.id.clone())
-            .collect::<Vec<_>>();
-        if create_branch_ids.is_empty() {
+        let create_branches_by_variant = production.branches.iter().fold(
+            BTreeMap::<CanonicalId, Vec<&CreationBranchDefinition>>::new(),
+            |mut grouped, branch| {
+                if branch.decision == CreationDecision::Create {
+                    grouped
+                        .entry(branch.variant_id.clone())
+                        .or_default()
+                        .push(branch);
+                }
+                grouped
+            },
+        );
+        if create_branches_by_variant.is_empty() {
             continue;
         }
         let output_model = models
             .values()
             .find(|model| model.id == production.output_model_id)
             .expect("production output was linked above");
-        let producers_by_field = production.field_producers.iter().fold(
-            BTreeMap::<CanonicalId, Vec<&FieldProducerDefinition>>::new(),
-            |mut grouped, producer| {
-                grouped
-                    .entry(producer.output_field_id.clone())
-                    .or_default()
-                    .push(producer);
-                grouped
-            },
-        );
-        for field in &output_model.fields {
-            let producers = producers_by_field
-                .get(&field.id)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            if producers.is_empty() && field.required {
-                let payload_span = production
-                    .branches
+        for (variant_id, create_branches) in create_branches_by_variant {
+            let create_branch_ids = create_branches
+                .iter()
+                .map(|branch| branch.id.clone())
+                .collect::<Vec<_>>();
+            let witness_span = create_branches[0].span;
+            for field in &output_model.fields {
+                let producers = production
+                    .field_producers
                     .iter()
-                    .find(|branch| branch.decision == CreationDecision::Create)
-                    .expect("a create branch was checked above")
-                    .span;
-                diagnostics.push(
-                    Diagnostic::error(
-                        "RSPDL-PROD-003",
-                        "semantic.creation_production.required_field_producer_missing",
-                        payload_span,
-                    )
-                    .with_argument("production_id", &production.id)
-                    .with_argument("action_id", &production.action_id)
-                    .with_argument("output_model_id", &production.output_model_id)
-                    .with_argument("field_id", &field.id)
-                    .with_argument("create_branch_ids", joined_ids_csv(&create_branch_ids)),
-                );
-            }
-            if producers.len() > 1 {
-                diagnostics.push(
-                    Diagnostic::error(
-                        "RSPDL-PROD-004",
-                        "semantic.creation_production.field_producer_conflict",
-                        producers[0].span,
-                    )
-                    .with_argument("production_id", &production.id)
-                    .with_argument("action_id", &production.action_id)
-                    .with_argument("output_model_id", &production.output_model_id)
-                    .with_argument("field_id", &field.id)
-                    .with_argument(
-                        "producer_ids",
-                        joined_ids_csv(
-                            &producers
-                                .iter()
-                                .map(|producer| producer.id.clone())
-                                .collect::<Vec<_>>(),
-                        ),
-                    )
-                    .with_argument("create_branch_ids", joined_ids_csv(&create_branch_ids)),
-                );
+                    .filter(|producer| {
+                        producer.output_field_id == field.id
+                            && producer_applies_to_variant(
+                                producer,
+                                &production.decision_input_id,
+                                &variant_id,
+                            )
+                    })
+                    .collect::<Vec<_>>();
+                if producers.is_empty() && field.required {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "RSPDL-PROD-003",
+                            "semantic.creation_production.required_field_producer_missing",
+                            witness_span,
+                        )
+                        .with_argument("production_id", &production.id)
+                        .with_argument("action_id", &production.action_id)
+                        .with_argument("output_model_id", &production.output_model_id)
+                        .with_argument("field_id", &field.id)
+                        .with_argument("variant_id", &variant_id)
+                        .with_argument("create_branch_ids", joined_ids_csv(&create_branch_ids)),
+                    );
+                }
+                if producers.len() > 1 {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "RSPDL-PROD-004",
+                            "semantic.creation_production.field_producer_conflict",
+                            producers[0].span,
+                        )
+                        .with_argument("production_id", &production.id)
+                        .with_argument("action_id", &production.action_id)
+                        .with_argument("output_model_id", &production.output_model_id)
+                        .with_argument("field_id", &field.id)
+                        .with_argument(
+                            "producer_ids",
+                            joined_ids_csv(
+                                &producers
+                                    .iter()
+                                    .map(|producer| producer.id.clone())
+                                    .collect::<Vec<_>>(),
+                            ),
+                        )
+                        .with_argument("variant_id", &variant_id)
+                        .with_argument("create_branch_ids", joined_ids_csv(&create_branch_ids)),
+                    );
+                }
             }
         }
     }
+}
+
+fn producer_applies_to_variant(
+    producer: &FieldProducerDefinition,
+    decision_input_id: &CanonicalId,
+    variant_id: &CanonicalId,
+) -> bool {
+    match &producer.condition {
+        None => true,
+        Some(FieldProducerCondition::EnumVariant {
+            input_id,
+            variant_id: producer_variant,
+        }) => input_id == decision_input_id && producer_variant == variant_id,
+    }
+}
+
+/// Conditions deliberately have a smaller domain than generic predicates.
+/// Keeping every invalid shape under PROD-007 avoids accepting a second
+/// decision axis by accident and gives frontends one stable contract.
+fn resolve_field_producer_condition(
+    condition: Option<&UnlinkedFieldProducerCondition>,
+    action: &ActionDefinition,
+    enums: &[EnumDefinition],
+    producer_id: &CanonicalId,
+    production: &ConditionalProductionDefinition,
+    span: TextRange,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<Option<FieldProducerCondition>> {
+    let Some(UnlinkedFieldProducerCondition::EnumVariant { input, variant }) = condition else {
+        return Some(None);
+    };
+    let invalid = |diagnostics: &mut Vec<Diagnostic>, input_id: &str, variant_id: &str| {
+        diagnostics.push(
+            Diagnostic::error(
+                "RSPDL-PROD-007",
+                "semantic.field_producer.condition_not_creation_decision_variant",
+                span,
+            )
+            .with_argument("production_id", &production.id)
+            .with_argument("producer_id", producer_id)
+            .with_argument("action_id", &production.action_id)
+            .with_argument("output_model_id", &production.output_model_id)
+            .with_argument("decision_input_id", &production.decision_input_id)
+            .with_argument("input_id", input_id)
+            .with_argument("variant_id", variant_id),
+        );
+    };
+    if !validate_reference(input, "RSPDL-PROD-007", diagnostics)
+        || !validate_reference(variant, "RSPDL-PROD-007", diagnostics)
+    {
+        return None;
+    }
+    let Some(input_definition) = action
+        .inputs
+        .iter()
+        .find(|candidate| member_reference_matches(&candidate.id, &candidate.local_id, input))
+    else {
+        invalid(diagnostics, input.id(), variant.id());
+        return None;
+    };
+    let ActionInputKind::Value {
+        value_type: CanonicalType::Enum(enum_type),
+    } = &input_definition.kind
+    else {
+        invalid(diagnostics, &input_definition.id.to_string(), variant.id());
+        return None;
+    };
+    let variant_definition = enums
+        .iter()
+        .find(|definition| definition.id == *enum_type.id())
+        .and_then(|definition| {
+            definition.variants.iter().find(|candidate| {
+                member_reference_matches(&candidate.id, &candidate.local_id, variant)
+            })
+        });
+    let Some(variant_definition) = variant_definition else {
+        invalid(diagnostics, &input_definition.id.to_string(), variant.id());
+        return None;
+    };
+    if input_definition.id != production.decision_input_id {
+        invalid(
+            diagnostics,
+            &input_definition.id.to_string(),
+            &variant_definition.id.to_string(),
+        );
+        return None;
+    }
+    Some(Some(FieldProducerCondition::EnumVariant {
+        input_id: input_definition.id.clone(),
+        variant_id: variant_definition.id.clone(),
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]

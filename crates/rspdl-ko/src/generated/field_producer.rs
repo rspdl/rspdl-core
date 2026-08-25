@@ -10,6 +10,8 @@ pub(crate) struct GeneratedFieldProducer {
     pub producer_name: Capture,
     pub producer_id: Capture,
     pub action: Capture,
+    pub condition_input: Option<Capture>,
+    pub condition_variant: Option<Capture>,
     pub output_model: Capture,
     pub output_field: Capture,
     pub input: Option<Capture>,
@@ -23,7 +25,13 @@ pub(crate) fn parse_field_producer(tokens: &[Token]) -> Result<GeneratedFieldPro
     Ok(GeneratedFieldProducer {
         producer_name: required_capture(&parsed, "producer_name"),
         producer_id: required_capture(&parsed, "producer_id"),
-        action: required_capture(&parsed, "action"),
+        action: parsed
+            .capture("action")
+            .or_else(|| parsed.capture("conditional_action"))
+            .cloned()
+            .expect("field producer grammar always captures an action"),
+        condition_input: parsed.capture("condition_input").cloned(),
+        condition_variant: parsed.capture("condition_variant").cloned(),
         output_model: required_capture(&parsed, "output_model"),
         output_field: required_capture(&parsed, "output_field"),
         input: parsed.capture("input").cloned(),
@@ -174,6 +182,34 @@ mod tests {
                 _ => panic!(),
             }
         }
+    }
+
+    #[test]
+    fn executable_field_producer_grammar_matches_the_conditional_shape() {
+        let sentence = "접수 제목 기록(received_title)은 전달의 요청 상태가 접수됨이면 상수 \"요청이 접수되었습니다\"를 알림의 제목으로 기록한다.";
+        let tokens = scan(sentence)
+            .tokens
+            .into_iter()
+            .filter(|token| !matches!(token.kind, TokenKind::Newline))
+            .collect::<Vec<_>>();
+        let generated = parse_field_producer(&tokens).unwrap();
+        assert_eq!(generated.action.value, "전달");
+        assert_eq!(generated.condition_input.unwrap().value, "요청 상태");
+        assert_eq!(generated.condition_variant.unwrap().value, "접수됨");
+
+        let document = parse_document(&format!("@모듈 검증(check)\n{sentence}\n"));
+        let DeclarationAst::FieldProducer(handwritten) =
+            document.document.unwrap().declarations.remove(0)
+        else {
+            panic!()
+        };
+        assert_eq!(handwritten.action, "전달");
+        assert_eq!(
+            handwritten
+                .condition
+                .map(|condition| (condition.input, condition.variant)),
+            Some(("요청 상태".into(), "접수됨".into()))
+        );
     }
 
     #[test]

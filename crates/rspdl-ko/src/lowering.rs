@@ -6,10 +6,10 @@ use rspdl_domain::{
     UnlinkedActionDataMutation, UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint,
     UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum,
     UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent, UnlinkedFieldProducer,
-    UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
-    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation,
-    UnlinkedTypeReference,
+    UnlinkedFieldProducerCondition, UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule,
+    UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation,
+    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
+    UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 use crate::ast::*;
@@ -227,6 +227,27 @@ impl StableIdIndex {
             .enum_type_name
             .as_deref()?;
         self.enum_reference(enum_type_name, span, diagnostics)
+    }
+
+    /// Conditional producer diagnostics belong to the common analyzer. When
+    /// the input is not an enum (or the variant belongs to another enum), keep
+    /// a stable-ID candidate rather than turning a Korean display token into a
+    /// frontend-only canonical-ID failure.
+    fn enum_variant_reference_any(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        resolve_symbols(
+            self.enums
+                .iter()
+                .flat_map(|enum_symbols| enum_symbols.variants.iter()),
+            value,
+            "enum_variant",
+            span,
+            diagnostics,
+        )
     }
 
     fn action_input_model_reference(
@@ -751,7 +772,7 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                     index.model_reference(&value.output_model, value.span, &mut diagnostics);
                 module.creation_branches.push(UnlinkedCreationBranch {
                     declaration: declaration(&value.declaration, true),
-                    action: required_reference(action, value.span),
+                    action: required_reference(action.clone(), value.span),
                     input: required_reference(input, value.span),
                     variant,
                     output_model: required_reference(output_model, value.span),
@@ -845,10 +866,45 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                 };
                 module.field_producers.push(UnlinkedFieldProducer {
                     declaration: declaration(&value.declaration, true),
-                    action: required_reference(action, value.span),
+                    action: required_reference(action.clone(), value.span),
                     output_model: required_reference(output_model, value.span),
                     output_field: required_reference(output_field, value.span),
                     source,
+                    condition: value.condition.as_ref().map(|condition| {
+                        let input = index.action_input_reference(
+                            action.as_ref(),
+                            &condition.input,
+                            value.span,
+                            &mut diagnostics,
+                        );
+                        let enum_type = index.action_input_enum_reference(
+                            action.as_ref(),
+                            input.as_ref(),
+                            value.span,
+                            &mut diagnostics,
+                        );
+                        let variant = enum_type
+                            .as_ref()
+                            .and_then(|enum_type| {
+                                index.enum_variant_reference(
+                                    Some(enum_type.id()),
+                                    &condition.variant,
+                                    value.span,
+                                    &mut diagnostics,
+                                )
+                            })
+                            .or_else(|| {
+                                index.enum_variant_reference_any(
+                                    &condition.variant,
+                                    value.span,
+                                    &mut diagnostics,
+                                )
+                            });
+                        UnlinkedFieldProducerCondition::EnumVariant {
+                            input: required_reference(input, value.span),
+                            variant: required_reference(variant, value.span),
+                        }
+                    }),
                     span: value.span,
                 });
             }

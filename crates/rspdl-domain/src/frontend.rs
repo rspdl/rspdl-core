@@ -264,12 +264,22 @@ pub enum UnlinkedFieldProducerSource {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
+pub enum UnlinkedFieldProducerCondition {
+    EnumVariant {
+        input: SurfaceRef,
+        variant: SurfaceRef,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedFieldProducer {
     pub declaration: UnlinkedDeclaration,
     pub action: SurfaceRef,
     pub output_model: SurfaceRef,
     pub output_field: SurfaceRef,
     pub source: UnlinkedFieldProducerSource,
+    pub condition: Option<UnlinkedFieldProducerCondition>,
     pub span: TextRange,
 }
 

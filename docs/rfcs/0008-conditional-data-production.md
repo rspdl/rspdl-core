@@ -54,7 +54,7 @@ target_spec: "0.4.0"
 
 첫 slice는 한 action invocation의 pre-state에서 하나의 output record를 생성한다. field producer는 typed action input, input record의 field, constant 및 명시적 pre-state snapshot만 지원한다. 목표 의미의 trigger는 `Action`과 명시적으로 선언된 `Event`를 구분하지만 첫 slice는 `Action`만 lower한다.
 
-2026-08-25 현재 구현된 범위는 stable-ID typed action input, direct enum conditional creation decision과 무조건적 field producer다. Korean frontend와 common analyzer는 action+output production을 만들고 ExactlyOne `Create`/`Skip`, enum coverage, same-variant conflict 및 Create path의 required output field producer gap/conflict를 검사한다. producer는 direct Value input, ExistingModel input field 또는 explicit scalar constant를 action mutation 전(`PreMutation`)에 모든 Create branch에 똑같이 적용한다. conditional field producer, relation producer, snapshot, template은 아직 구현하지 않았다.
+2026-08-25 현재 구현된 범위는 stable-ID typed action input, direct enum conditional creation decision과 field producer다. Korean frontend와 common analyzer는 action+output production을 만들고 ExactlyOne `Create`/`Skip`, enum coverage, same-variant conflict 및 Create variant별 required output field producer gap/conflict를 검사한다. producer는 direct Value input, ExistingModel input field 또는 explicit scalar constant를 action mutation 전(`PreMutation`)에 무조건 적용하거나 production의 decision input과 같은 enum variant에만 적용한다. relation producer, snapshot, template은 아직 구현하지 않았다.
 
 - action은 stable-ID typed input을 선언한다. existing record input은 action 직전에 존재해야 한다.
 - output record는 하나 이상의 typed field를 가진다. output field와 output relation slot은 target과 producer span을 가진 binding으로만 채운다.
@@ -76,14 +76,15 @@ target_spec: "0.4.0"
 
 annotation과 block은 허용하지 않으며, source order는 priority가 아니다. 아래 비정규 예시는 설계 목표를 설명할 뿐 현재 정규 문법이 아니다.
 
-### 구현된 무조건적 field producer 문형
+### 구현된 field producer 문형
 
-아래 세 문형은 같은 action+output production에만 붙는 `PreMutation` binding이다. `상수`는 현재 integer, string, boolean과 target enum에 정확히 연결되는 named literal만 쓴다. relation, expression, snapshot/template과 조건부 field binding은 이 문형으로 해석하지 않는다.
+아래 세 무조건 문형과 단일 enum-variant 조건 문형은 같은 action+output production에만 붙는 `PreMutation` binding이다. `상수`는 현재 integer, string, boolean과 target enum에 정확히 연결되는 named literal만 쓴다. 조건은 production의 direct `Value(Enum)` decision input 및 그 enum variant와 정확히 같아야 한다. 일반 boolean, 다중 축, default/override, relation, expression, snapshot/template은 이 문형으로 해석하지 않는다.
 
 ```rspdl
 알림 제목 기록(title_binding)은 점검 요청 전달이 실행될 때 알림 제목을 점검 요청 전달 알림의 제목으로 기록한다.
 요청 제목 기록(request_title_binding)은 점검 요청 전달이 실행될 때 대상 요청의 제목을 점검 요청 전달 알림의 요청 제목으로 기록한다.
 재시도 횟수 기록(retry_binding)은 점검 요청 전달이 실행될 때 상수 0을 점검 요청 전달 알림의 재시도 횟수로 기록한다.
+접수 제목 기록(received_title)은 점검 요청 전달의 요청 상태가 접수됨이면 상수 "요청이 접수되었습니다"를 점검 요청 전달 알림의 제목으로 기록한다.
 ```
 
 ## 문장형 비정규 설계 예시

@@ -275,12 +275,21 @@ pub enum FieldProducerSource {
         value: CanonicalValue,
     },
 }
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
+pub enum FieldProducerCondition {
+    EnumVariant {
+        input_id: CanonicalId,
+        variant_id: CanonicalId,
+    },
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FieldProducerDefinition {
     pub id: CanonicalId,
     pub output_field_id: CanonicalId,
     pub source: FieldProducerSource,
+    pub condition: Option<FieldProducerCondition>,
     pub phase: ProducerPhase,
     pub span: TextRange,
 }

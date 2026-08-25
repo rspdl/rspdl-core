@@ -3,10 +3,10 @@ use rspdl_domain::{
     ScreenOperationKind, SurfaceRef, TextRange, UnlinkedAction, UnlinkedActionDataMutation,
     UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint, UnlinkedCreationBranch,
     UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField,
-    UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerSource, UnlinkedLiteral,
-    UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRelation,
-    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
-    UnlinkedTypeReference, analyze,
+    UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerCondition,
+    UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
+    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
+    UnlinkedScreen, UnlinkedTypeReference, analyze,
 };
 
 fn span() -> TextRange {
@@ -191,8 +191,23 @@ fn field_producer_at(
         output_model: SurfaceRef::stable_id("notice", producer_span),
         output_field: SurfaceRef::stable_id("body", producer_span),
         source,
+        condition: None,
         span: producer_span,
     }
+}
+
+fn conditional_field_producer(
+    id: &str,
+    source: UnlinkedFieldProducerSource,
+    input: &str,
+    variant: &str,
+) -> UnlinkedFieldProducer {
+    let mut producer = field_producer(id, source);
+    producer.condition = Some(UnlinkedFieldProducerCondition::EnumVariant {
+        input: reference(input),
+        variant: reference(variant),
+    });
+    producer
 }
 
 fn exhaustive_creation_branches(decision: CreationDecision) -> Vec<UnlinkedCreationBranch> {
@@ -902,19 +917,259 @@ fn conditional_creation_field_producers_detect_duplicate_target_evidence_canonic
     ];
 
     let output = analyze(module);
-    let diagnostic = output
+    let diagnostics = output
         .diagnostics
         .iter()
-        .find(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-004")
-        .expect("same output field has two producers");
+        .filter(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-004")
+        .collect::<Vec<_>>();
+    assert_eq!(diagnostics.len(), 2, "one witness per Create variant");
+    assert!(diagnostics.iter().all(|diagnostic| {
+        diagnostic.argument("producer_ids") == Some("expense.a_first,expense.z_second")
+    }));
     assert_eq!(
-        diagnostic.argument("producer_ids"),
-        Some("expense.a_first,expense.z_second")
+        diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.argument("create_branch_ids"))
+            .collect::<Vec<_>>(),
+        vec![
+            Some("expense.draft_branch"),
+            Some("expense.published_branch")
+        ]
+    );
+}
+
+#[test]
+fn conditional_field_producers_cover_distinct_create_variants_with_direct_and_existing_sources() {
+    let mut module = conditional_creation_module(
+        true,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("Title", Some("title")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::String,
+                },
+                span: span(),
+            },
+            UnlinkedActionInput {
+                declaration: declaration("Request", Some("request")),
+                kind: UnlinkedActionInputKind::ExistingModel {
+                    model: reference("request"),
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.models.push(UnlinkedDataModel {
+        declaration: declaration("Request", Some("request")),
+        fields: vec![UnlinkedField {
+            declaration: declaration("Title", Some("title")),
+            required: true,
+            value_type: UnlinkedTypeReference::String,
+            span: span(),
+        }],
+        span: span(),
+    });
+    module.field_producers = vec![
+        conditional_field_producer(
+            "received_title",
+            UnlinkedFieldProducerSource::ActionInput {
+                input: reference("title"),
+            },
+            "status",
+            "draft",
+        ),
+        conditional_field_producer(
+            "published_title",
+            UnlinkedFieldProducerSource::InputField {
+                input: reference("request"),
+                field: reference("title"),
+            },
+            "status",
+            "published",
+        ),
+    ];
+
+    let output = analyze(module);
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    let producers = &output.module.unwrap().conditional_productions[0].field_producers;
+    assert_eq!(producers.len(), 2);
+    assert!(matches!(
+        producers[0].condition,
+        Some(rspdl_domain::FieldProducerCondition::EnumVariant { .. })
+    ));
+}
+
+#[test]
+fn conditional_field_producer_reports_gaps_and_conflicts_per_create_variant() {
+    let mut gap = conditional_creation_module(
+        true,
+        vec![enum_decision_input("status")],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    gap.field_producers = vec![conditional_field_producer(
+        "draft_title",
+        UnlinkedFieldProducerSource::Constant {
+            literal: UnlinkedLiteral::String {
+                value: "draft".into(),
+                span: span(),
+            },
+        },
+        "status",
+        "draft",
+    )];
+    let gap = analyze(gap);
+    let missing = gap
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-003")
+        .expect("published branch must have a payload gap");
+    assert_eq!(
+        missing.argument("variant_id"),
+        Some("expense.status.published")
     );
     assert_eq!(
-        diagnostic.argument("create_branch_ids"),
-        Some("expense.draft_branch,expense.published_branch")
+        missing.argument("create_branch_ids"),
+        Some("expense.published_branch")
     );
+
+    let mut duplicate = conditional_creation_module(
+        true,
+        vec![enum_decision_input("status")],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    duplicate.field_producers = ["z_draft", "a_draft"]
+        .into_iter()
+        .map(|id| {
+            conditional_field_producer(
+                id,
+                UnlinkedFieldProducerSource::Constant {
+                    literal: UnlinkedLiteral::String {
+                        value: id.into(),
+                        span: span(),
+                    },
+                },
+                "status",
+                "draft",
+            )
+        })
+        .collect();
+    let duplicate = analyze(duplicate);
+    let conflicts = duplicate
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-004")
+        .collect::<Vec<_>>();
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(
+        conflicts[0].argument("variant_id"),
+        Some("expense.status.draft")
+    );
+    assert_eq!(
+        conflicts[0].argument("producer_ids"),
+        Some("expense.a_draft,expense.z_draft")
+    );
+}
+
+#[test]
+fn conditional_producer_only_conflicts_with_an_unconditional_producer_in_its_variant() {
+    let mut module = conditional_creation_module(
+        true,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("Title", Some("title")),
+                kind: UnlinkedActionInputKind::Value {
+                    value_type: UnlinkedTypeReference::String,
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    module.field_producers = vec![
+        field_producer(
+            "always",
+            UnlinkedFieldProducerSource::ActionInput {
+                input: reference("title"),
+            },
+        ),
+        conditional_field_producer(
+            "draft_override",
+            UnlinkedFieldProducerSource::ActionInput {
+                input: reference("title"),
+            },
+            "status",
+            "draft",
+        ),
+    ];
+    let output = analyze(module);
+    let conflicts = output
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-004")
+        .collect::<Vec<_>>();
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(
+        conflicts[0].argument("variant_id"),
+        Some("expense.status.draft")
+    );
+}
+
+#[test]
+fn conditional_field_producer_rejects_every_non_decision_condition_shape() {
+    let make_module =
+        |condition_input: &str, condition_variant: &str, extra_inputs: Vec<UnlinkedActionInput>| {
+            let mut inputs = vec![enum_decision_input("status")];
+            inputs.extend(extra_inputs);
+            let mut module = conditional_creation_module(
+                false,
+                inputs,
+                exhaustive_creation_branches(CreationDecision::Skip),
+            );
+            module.field_producers = vec![conditional_field_producer(
+                "invalid_condition",
+                UnlinkedFieldProducerSource::Constant {
+                    literal: UnlinkedLiteral::String {
+                        value: "x".into(),
+                        span: span(),
+                    },
+                },
+                condition_input,
+                condition_variant,
+            )];
+            analyze(module)
+        };
+    let non_enum = make_module(
+        "text",
+        "draft",
+        vec![UnlinkedActionInput {
+            declaration: declaration("Text", Some("text")),
+            kind: UnlinkedActionInputKind::Value {
+                value_type: UnlinkedTypeReference::String,
+            },
+            span: span(),
+        }],
+    );
+    let wrong_axis = make_module(
+        "other_status",
+        "draft",
+        vec![enum_decision_input("other_status")],
+    );
+    let unknown_variant = make_module("status", "missing", Vec::new());
+    for output in [non_enum, wrong_axis, unknown_variant] {
+        assert_eq!(
+            output
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.rule_id == "RSPDL-PROD-007")
+                .count(),
+            1,
+            "{:?}",
+            output.diagnostics
+        );
+    }
 }
 
 #[test]

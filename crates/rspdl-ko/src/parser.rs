@@ -587,10 +587,11 @@ fn is_creation_branch_sentence(line: &Line) -> bool {
 
 fn is_field_producer_sentence(line: &Line) -> bool {
     last_sentence_word(line, 0) == Some("기록한다")
-        && line
-            .tokens
-            .iter()
-            .any(|token| matches!(&token.kind, TokenKind::Word(word) if word == "실행될"))
+        && line.tokens.iter().any(|token| {
+            matches!(&token.kind, TokenKind::Word(word)
+                if word == "실행될" || word == "이면" || word == "라면"
+                    || word.ends_with("이면") || word.ends_with("라면"))
+        })
 }
 
 fn is_relation_sentence(line: &Line) -> bool {
@@ -1117,9 +1118,16 @@ fn parse_field_producer(
         .next_word()
         .filter(|marker| matches!(*marker, "은" | "는"))
         .ok_or_else(|| cursor.error("ko.syntax.field_producer_topic_marker_required"))?;
-    let (action, action_marker) = cursor.marked_ref(&["이", "가"])?;
-    cursor.expect_word("실행될")?;
-    cursor.expect_word("때")?;
+    let (action, action_marker) = cursor.marked_ref(&["의", "이", "가"])?;
+    let condition = if action_marker == "의" {
+        let (input, _input_marker) = cursor.marked_ref(&["이", "가"])?;
+        let (variant, _variant_marker) = cursor.marked_ref(&["이면", "라면"])?;
+        Some(FieldProducerConditionAst { input, variant })
+    } else {
+        cursor.expect_word("실행될")?;
+        cursor.expect_word("때")?;
+        None
+    };
     let source = if cursor.consume_word("상수") {
         let (literal, _marker) = cursor.field_producer_literal_marked()?;
         FieldProducerSourceAst::Constant { literal }
@@ -1142,7 +1150,9 @@ fn parse_field_producer(
     cursor.expect_word("기록한다")?;
     cursor.expect_end()?;
     lint_marker(&declaration.name, topic, "은", "는", line.span, diagnostics);
-    lint_marker(&action, &action_marker, "이", "가", line.span, diagnostics);
+    if action_marker != "의" {
+        lint_marker(&action, &action_marker, "이", "가", line.span, diagnostics);
+    }
     lint_marker(
         &output_field,
         &output_marker,
@@ -1157,6 +1167,7 @@ fn parse_field_producer(
         output_model,
         output_field,
         source,
+        condition,
         span: line.span,
     })
 }
@@ -2312,6 +2323,30 @@ mod tests {
         ));
         assert!(
             matches!(producers[2].source, FieldProducerSourceAst::Constant { literal: LiteralAst::Integer(ref value) } if value == "0")
+        );
+        assert!(
+            producers
+                .iter()
+                .all(|producer| producer.condition.is_none())
+        );
+    }
+
+    #[test]
+    fn parses_a_conditional_field_producer_sentence() {
+        let source = "@모듈 검증(check)\n접수 제목 기록(received_title)은 전달의 요청 상태가 접수됨이면 상수 \"요청이 접수되었습니다\"를 알림의 제목으로 기록한다.\n";
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let DeclarationAst::FieldProducer(producer) = &parsed.document.unwrap().declarations[0]
+        else {
+            panic!()
+        };
+        assert_eq!(producer.action, "전달");
+        assert_eq!(
+            producer
+                .condition
+                .as_ref()
+                .map(|condition| (&condition.input, &condition.variant)),
+            Some((&"요청 상태".into(), &"접수됨".into()))
         );
     }
 
