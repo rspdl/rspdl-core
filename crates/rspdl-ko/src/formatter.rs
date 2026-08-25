@@ -290,6 +290,18 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     marked(&value.output_field, "으로", "로"),
                 ));
             }
+            DeclarationAst::RelationProducer(value) => {
+                output.push_str(&format!(
+                    "{}({}){} {} 실행될 때 {} {}의 {} 연결한다.\n",
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    directional_marker(&value.declaration.name),
+                    marked(&value.action, "이", "가"),
+                    marked(&value.input, "을", "를"),
+                    surface(&value.output_model),
+                    marked(&value.relation, "으로", "로"),
+                ));
+            }
             DeclarationAst::Policy(value) => {
                 let role = marked(&value.role, "은", "는");
                 let field = marked(&value.field, "을", "를");

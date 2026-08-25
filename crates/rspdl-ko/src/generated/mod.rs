@@ -6,6 +6,7 @@ mod field_producer;
 mod policy;
 mod provenance;
 mod relation;
+mod relation_producer;
 
 use rspdl_grammar_compiler::{Capture, ParseMatch};
 

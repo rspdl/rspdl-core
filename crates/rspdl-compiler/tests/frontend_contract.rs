@@ -69,6 +69,7 @@ impl Frontend for TestFrontend {
                 }],
                 creation_branches: Vec::new(),
                 field_producers: Vec::new(),
+                relation_producers: Vec::new(),
                 policies: Vec::new(),
             }),
             diagnostics: Vec::<Diagnostic>::new(),

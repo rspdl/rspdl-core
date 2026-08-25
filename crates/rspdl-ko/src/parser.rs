@@ -123,6 +123,10 @@ pub fn parse(source: &str) -> ParseOutput {
                 parse_field_producer(line, body, &mut diagnostics)
                     .map(DeclarationAst::FieldProducer)
             }
+            Some(DeclarationKind::RelationProducer) => {
+                parse_relation_producer(line, body, &mut diagnostics)
+                    .map(DeclarationAst::RelationProducer)
+            }
             Some(DeclarationKind::Policy) => {
                 parse_policy(line, body, &mut diagnostics).map(DeclarationAst::Policy)
             }
@@ -205,6 +209,7 @@ enum DeclarationKind {
     ActionInput,
     CreationBranch,
     FieldProducer,
+    RelationProducer,
     Policy,
 }
 
@@ -227,6 +232,7 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
         _ if is_action_input_sentence(line) => Some(DeclarationKind::ActionInput),
         _ if is_creation_branch_sentence(line) => Some(DeclarationKind::CreationBranch),
         _ if is_field_producer_sentence(line) => Some(DeclarationKind::FieldProducer),
+        _ if is_relation_producer_sentence(line) => Some(DeclarationKind::RelationProducer),
         _ if is_relation_sentence(line) => Some(DeclarationKind::Relation),
         _ if is_nonempty_sentence(line) => Some(DeclarationKind::RelationalConstraint(
             RelationalConstraintDeclarationKind::NonEmpty,
@@ -592,6 +598,14 @@ fn is_field_producer_sentence(line: &Line) -> bool {
                 if word == "실행될" || word == "이면" || word == "라면"
                     || word.ends_with("이면") || word.ends_with("라면"))
         })
+}
+
+fn is_relation_producer_sentence(line: &Line) -> bool {
+    last_sentence_word(line, 0) == Some("연결한다")
+        && line
+            .tokens
+            .iter()
+            .any(|token| matches!(&token.kind, TokenKind::Word(word) if word == "실행될"))
 }
 
 fn is_relation_sentence(line: &Line) -> bool {
@@ -1168,6 +1182,58 @@ fn parse_field_producer(
         output_field,
         source,
         condition,
+        span: line.span,
+    })
+}
+
+fn parse_relation_producer(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<RelationProducerAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "relation_producer")?;
+    let tokens = sentence_tokens(line)?;
+    let id_index = tokens
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-078",
+                "ko.syntax.relation_producer_stable_id_required",
+                line.span,
+            )
+        })?;
+    let declaration = parse_name_with_id_tokens(tokens, 0, id_index, line.span)?;
+    let mut cursor = BodyCursor::new(&tokens[id_index + 1..], line.span);
+    let topic = cursor
+        .next_word()
+        .filter(|marker| matches!(*marker, "은" | "는"))
+        .ok_or_else(|| cursor.error("ko.syntax.relation_producer_topic_marker_required"))?;
+    let (action, action_marker) = cursor.marked_ref(&["이", "가"])?;
+    cursor.expect_word("실행될")?;
+    cursor.expect_word("때")?;
+    let (input, input_marker) = cursor.marked_ref(&["을", "를"])?;
+    let (output_model, _) = cursor.marked_ref(&["의"])?;
+    let (relation, relation_marker) = cursor.marked_ref(&["으로", "로"])?;
+    cursor.expect_word("연결한다")?;
+    cursor.expect_end()?;
+    lint_marker(&declaration.name, topic, "은", "는", line.span, diagnostics);
+    lint_marker(&action, &action_marker, "이", "가", line.span, diagnostics);
+    lint_marker(&input, &input_marker, "을", "를", line.span, diagnostics);
+    lint_marker(
+        &relation,
+        &relation_marker,
+        "으로",
+        "로",
+        line.span,
+        diagnostics,
+    );
+    Ok(RelationProducerAst {
+        declaration,
+        action,
+        input,
+        output_model,
+        relation,
         span: line.span,
     })
 }

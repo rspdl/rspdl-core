@@ -8,8 +8,8 @@ use rspdl_domain::{
     UnlinkedEnumVariant, UnlinkedField, UnlinkedFieldIntent, UnlinkedFieldProducer,
     UnlinkedFieldProducerCondition, UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule,
     UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation,
-    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
-    UnlinkedSumDerivation, UnlinkedTypeReference,
+    UnlinkedRelationProducer, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind,
+    UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
 use crate::ast::*;
@@ -440,6 +440,7 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         actions: Vec::new(),
         creation_branches: Vec::new(),
         field_producers: Vec::new(),
+        relation_producers: Vec::new(),
         policies: Vec::new(),
     };
 
@@ -905,6 +906,27 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                             variant: required_reference(variant, value.span),
                         }
                     }),
+                    span: value.span,
+                });
+            }
+            DeclarationAst::RelationProducer(value) => {
+                let action = index.action_reference(&value.action, value.span, &mut diagnostics);
+                let input = index.action_input_reference(
+                    action.as_ref(),
+                    &value.input,
+                    value.span,
+                    &mut diagnostics,
+                );
+                let output_model =
+                    index.model_reference(&value.output_model, value.span, &mut diagnostics);
+                let relation =
+                    index.relation_reference(&value.relation, value.span, &mut diagnostics);
+                module.relation_producers.push(UnlinkedRelationProducer {
+                    declaration: declaration(&value.declaration, true),
+                    action: required_reference(action, value.span),
+                    input: required_reference(input, value.span),
+                    output_model: required_reference(output_model, value.span),
+                    relation: required_reference(relation, value.span),
                     span: value.span,
                 });
             }

@@ -5,8 +5,8 @@ use rspdl_domain::{
     UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField,
     UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerCondition,
     UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedRelation, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole,
-    UnlinkedScreen, UnlinkedTypeReference, analyze,
+    UnlinkedRelation, UnlinkedRelationProducer, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedTypeReference, analyze,
 };
 
 fn span() -> TextRange {
@@ -43,6 +43,7 @@ fn empty_module(name: &str) -> UnlinkedModule {
         actions: Vec::new(),
         creation_branches: Vec::new(),
         field_producers: Vec::new(),
+        relation_producers: Vec::new(),
         policies: Vec::new(),
     }
 }
@@ -1676,6 +1677,159 @@ fn relation_cardinality_sentence_must_name_the_anchor_model() {
             && diagnostic.argument("expected_model_id") == Some("expense.project")
             && diagnostic.argument("actual_model_id") == Some("expense.user")
     }));
+}
+
+fn relation_production_module(
+    relation_parameters: Vec<&str>,
+    producer_input: &str,
+) -> UnlinkedModule {
+    let mut module = conditional_creation_module(
+        false,
+        vec![
+            enum_decision_input("status"),
+            UnlinkedActionInput {
+                declaration: declaration("Recipient", Some("recipient_technician")),
+                kind: UnlinkedActionInputKind::ExistingModel {
+                    model: reference("technician"),
+                },
+                span: span(),
+            },
+            UnlinkedActionInput {
+                declaration: declaration("Auditor", Some("auditor_input")),
+                kind: UnlinkedActionInputKind::ExistingModel {
+                    model: reference("auditor"),
+                },
+                span: span(),
+            },
+        ],
+        exhaustive_creation_branches(CreationDecision::Create),
+    );
+    for (name, id) in [("Technician", "technician"), ("Auditor", "auditor")] {
+        module.models.push(UnlinkedDataModel {
+            declaration: declaration(name, Some(id)),
+            fields: vec![UnlinkedField {
+                declaration: declaration("Name", Some("name")),
+                required: true,
+                value_type: UnlinkedTypeReference::String,
+                span: span(),
+            }],
+            span: span(),
+        });
+    }
+    module.relations.push(UnlinkedRelation {
+        declaration: declaration("Recipient", Some("recipient")),
+        parameter_models: relation_parameters.into_iter().map(reference).collect(),
+        span: span(),
+    });
+    let anchor = module.relations[0].parameter_models[0].clone();
+    module.relational_constraints = vec![
+        UnlinkedRelationalConstraint {
+            declaration: declaration("", None),
+            constraint: UnlinkedRelationalConstraintKind::Required {
+                model: anchor.clone(),
+                relation: reference("recipient"),
+            },
+            span: span(),
+        },
+        UnlinkedRelationalConstraint {
+            declaration: declaration("", None),
+            constraint: UnlinkedRelationalConstraintKind::Unique {
+                model: anchor,
+                relation: reference("recipient"),
+            },
+            span: span(),
+        },
+    ];
+    module.relation_producers.push(UnlinkedRelationProducer {
+        declaration: declaration("Recipient binding", Some("recipient_binding")),
+        action: reference("publish"),
+        input: reference(producer_input),
+        output_model: reference("notice"),
+        relation: reference("recipient"),
+        span: span(),
+    });
+    module
+}
+
+#[test]
+fn common_analyzer_preserves_typed_exactly_one_relation_slot_and_direct_source() {
+    let output = analyze(relation_production_module(
+        vec!["notice", "technician"],
+        "recipient_technician",
+    ));
+
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    let production = &output.module.unwrap().conditional_productions[0];
+    assert_eq!(production.relation_slots.len(), 1);
+    let slot = &production.relation_slots[0];
+    assert_eq!(slot.relation_id.as_str(), "expense.recipient");
+    assert_eq!(slot.output_model_id.as_str(), "expense.notice");
+    assert_eq!(slot.endpoint_model_id.as_str(), "expense.technician");
+    assert_eq!(
+        slot.cardinality,
+        rspdl_domain::RelationSlotCardinality::ExactlyOne
+    );
+    assert_eq!(production.relation_producers.len(), 1);
+    assert_eq!(
+        production.relation_producers[0].input_id.as_str(),
+        "expense.publish.recipient_technician"
+    );
+}
+
+#[test]
+fn common_analyzer_rejects_relation_source_endpoint_and_action_owner_mismatches() {
+    let endpoint = analyze(relation_production_module(
+        vec!["notice", "technician"],
+        "auditor_input",
+    ));
+    assert!(endpoint.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-002"
+            && diagnostic.message_key == "semantic.relation_producer.source_endpoint_mismatch"
+            && diagnostic.argument("endpoint_model_id") == Some("expense.technician")
+    }));
+
+    let mut other_action =
+        relation_production_module(vec!["notice", "technician"], "other.recipient_technician");
+    other_action.actions.push(UnlinkedAction {
+        declaration: declaration("Other", Some("other")),
+        inputs: vec![UnlinkedActionInput {
+            declaration: declaration("Recipient", Some("recipient_technician")),
+            kind: UnlinkedActionInputKind::ExistingModel {
+                model: reference("technician"),
+            },
+            span: span(),
+        }],
+        span: span(),
+    });
+    let other_action = analyze(other_action);
+    assert!(other_action.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-002"
+            && diagnostic.message_key == "semantic.relation_producer.source_input_invalid"
+    }));
+}
+
+#[test]
+fn common_analyzer_never_projects_reversed_or_ternary_relations_as_output_slots() {
+    let reversed = analyze(relation_production_module(
+        vec!["technician", "notice"],
+        "recipient_technician",
+    ));
+    assert!(reversed.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-PROD-007"
+            && diagnostic.message_key
+                == "semantic.creation_production.relation_producer_not_exactly_one_slot"
+    }));
+
+    let ternary = analyze(relation_production_module(
+        vec!["notice", "technician", "auditor"],
+        "recipient_technician",
+    ));
+    assert!(ternary.diagnostics.iter().any(|diagnostic| {
+        diagnostic.rule_id == "RSPDL-REL-001"
+            && diagnostic.message_key == "semantic.relation.arity_unsupported"
+            && diagnostic.argument("actual") == Some("3")
+    }));
+    assert!(ternary.module.is_none());
 }
 
 fn data_usage_module(include_input: bool, include_read: bool) -> UnlinkedModule {

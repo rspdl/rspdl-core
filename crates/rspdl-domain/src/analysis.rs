@@ -11,15 +11,16 @@ use crate::{
     CreationBranchDefinition, CreationDecision, DataModelDefinition, DataMutationKind,
     DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition, EnumType,
     EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, FieldProducerCondition,
-    FieldProducerDefinition, FieldProducerSource, ModelError, PolicyDefinition, PolicyEffect,
-    ProducerPhase, ProductionCardinality, RecalculationDefinition, RelationDefinition,
-    RelationOperator, RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition,
-    ScreenDefinition, ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity,
-    SourceId, SurfaceRef, TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind,
-    UnlinkedConstraint, UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration,
-    UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerCondition,
-    UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
+    FieldProducerDefinition, FieldProducerSource, ModelError, OutputRelationSlotDefinition,
+    PolicyDefinition, PolicyEffect, ProducerPhase, ProductionCardinality, RecalculationDefinition,
+    RelationDefinition, RelationOperator, RelationProducerDefinition, RelationSlotCardinality,
+    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
+    ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SourceId, SurfaceRef,
+    TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind, UnlinkedConstraint,
+    UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedFieldIntent,
+    UnlinkedFieldProducer, UnlinkedFieldProducerCondition, UnlinkedFieldProducerSource,
+    UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation,
+    UnlinkedRelation, UnlinkedRelationProducer, UnlinkedRelationalConstraint,
     UnlinkedRelationalConstraintKind, UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTypeReference,
 };
 
@@ -258,18 +259,6 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         action.inputs.sort_by(|left, right| left.id.cmp(&right.id));
     }
 
-    let conditional_productions = analyze_conditional_productions(
-        module.creation_branches,
-        module.field_producers,
-        &module_id,
-        &actions,
-        &action_names,
-        &models_by_name,
-        &enums,
-        &mut top_level_ids,
-        &mut diagnostics,
-    );
-
     let mut relations = Vec::new();
     let mut relation_names = BTreeSet::new();
     for value in module.relations {
@@ -299,10 +288,26 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         }
     }
     validate_relation_compatibility(&relational_constraints_with_spans, &mut diagnostics);
-    let relational_constraints = relational_constraints_with_spans
-        .into_iter()
-        .map(|(definition, _)| definition)
-        .collect();
+    let relational_constraints: Vec<RelationalConstraintDefinition> =
+        relational_constraints_with_spans
+            .into_iter()
+            .map(|(definition, _)| definition)
+            .collect();
+
+    let conditional_productions = analyze_conditional_productions(
+        module.creation_branches,
+        module.field_producers,
+        module.relation_producers,
+        &module_id,
+        &actions,
+        &action_names,
+        &models_by_name,
+        &enums,
+        &relations,
+        &relational_constraints,
+        &mut top_level_ids,
+        &mut diagnostics,
+    );
 
     let DataUsageAnalysis {
         screens,
@@ -815,11 +820,14 @@ struct ResolvedCreationBranch {
 fn analyze_conditional_productions(
     values: Vec<UnlinkedCreationBranch>,
     field_producer_values: Vec<UnlinkedFieldProducer>,
+    relation_producer_values: Vec<crate::UnlinkedRelationProducer>,
     module_id: &CanonicalId,
     actions: &[ActionDefinition],
     action_names: &BTreeMap<String, CanonicalId>,
     models: &BTreeMap<String, DataModelDefinition>,
     enums: &[EnumDefinition],
+    relations: &[RelationDefinition],
+    relational_constraints: &[RelationalConstraintDefinition],
     top_level_ids: &mut BTreeSet<CanonicalId>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Vec<ConditionalProductionDefinition> {
@@ -1002,7 +1010,7 @@ fn analyze_conditional_productions(
         productions.push(ConditionalProductionDefinition {
             id: production_id,
             action_id,
-            output_model_id,
+            output_model_id: output_model_id.clone(),
             instance_cardinality: ProductionCardinality::ExactlyOne,
             decision_input_id,
             branches: branches
@@ -1015,6 +1023,12 @@ fn analyze_conditional_productions(
                 })
                 .collect(),
             field_producers: Vec::new(),
+            relation_slots: output_relation_slots(
+                &output_model_id,
+                relations,
+                relational_constraints,
+            ),
+            relation_producers: Vec::new(),
             span: representative_span,
         });
     }
@@ -1032,6 +1046,17 @@ fn analyze_conditional_productions(
         action_names,
         models,
         enums,
+        top_level_ids,
+        diagnostics,
+        &mut productions,
+    );
+    analyze_relation_producers(
+        relation_producer_values,
+        module_id,
+        actions,
+        action_names,
+        models,
+        relations,
         top_level_ids,
         diagnostics,
         &mut productions,
@@ -1264,6 +1289,249 @@ fn producer_applies_to_variant(
             input_id,
             variant_id: producer_variant,
         }) => input_id == decision_input_id && producer_variant == variant_id,
+    }
+}
+
+fn output_relation_slots(
+    output_model_id: &CanonicalId,
+    relations: &[RelationDefinition],
+    constraints: &[RelationalConstraintDefinition],
+) -> Vec<OutputRelationSlotDefinition> {
+    let required = constraints
+        .iter()
+        .filter_map(|constraint| match &constraint.constraint {
+            RelationalConstraintKind::Required { relation_id } => Some(relation_id),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let unique = constraints
+        .iter()
+        .filter_map(|constraint| match &constraint.constraint {
+            RelationalConstraintKind::Unique { relation_id } => Some(relation_id),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let mut slots = relations
+        .iter()
+        .filter(|relation| {
+            relation.parameter_model_ids.len() == 2
+                && relation.parameter_model_ids[0] == *output_model_id
+                && required.contains(&relation.id)
+                && unique.contains(&relation.id)
+        })
+        .map(|relation| OutputRelationSlotDefinition {
+            relation_id: relation.id.clone(),
+            output_model_id: output_model_id.clone(),
+            endpoint_model_id: relation.parameter_model_ids[1].clone(),
+            cardinality: RelationSlotCardinality::ExactlyOne,
+            span: relation.span,
+        })
+        .collect::<Vec<_>>();
+    slots.sort_by(|left, right| left.relation_id.cmp(&right.relation_id));
+    slots
+}
+
+#[allow(clippy::too_many_arguments)]
+fn analyze_relation_producers(
+    values: Vec<UnlinkedRelationProducer>,
+    module_id: &CanonicalId,
+    actions: &[ActionDefinition],
+    action_names: &BTreeMap<String, CanonicalId>,
+    models: &BTreeMap<String, DataModelDefinition>,
+    relations: &[RelationDefinition],
+    top_level_ids: &mut BTreeSet<CanonicalId>,
+    diagnostics: &mut Vec<Diagnostic>,
+    productions: &mut [ConditionalProductionDefinition],
+) {
+    let indexes = productions
+        .iter()
+        .enumerate()
+        .map(|(index, production)| {
+            (
+                (
+                    production.action_id.clone(),
+                    production.output_model_id.clone(),
+                ),
+                index,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    for value in values {
+        let Some(producer_id) = canonical_member(&value.declaration, module_id, diagnostics) else {
+            continue;
+        };
+        duplicate_id(
+            &producer_id,
+            value.declaration.span,
+            top_level_ids,
+            diagnostics,
+        );
+        let Some(action_id) = resolve_named_id("action", action_names, &value.action, diagnostics)
+        else {
+            continue;
+        };
+        let Some(output_model) = resolve_model(models, &value.output_model, diagnostics) else {
+            continue;
+        };
+        let Some(&production_index) = indexes.get(&(action_id.clone(), output_model.id.clone()))
+        else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-PROD-007",
+                    "semantic.creation_production.relation_producer_without_creation_decision",
+                    value.span,
+                )
+                .with_argument("producer_id", &producer_id)
+                .with_argument("action_id", &action_id)
+                .with_argument("output_model_id", &output_model.id),
+            );
+            continue;
+        };
+        let Some(relation) = resolve_relation(relations, &value.relation, diagnostics) else {
+            continue;
+        };
+        let production = &productions[production_index];
+        let Some(slot) = production
+            .relation_slots
+            .iter()
+            .find(|slot| slot.relation_id == relation.id)
+        else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-PROD-007",
+                    "semantic.creation_production.relation_producer_not_exactly_one_slot",
+                    value.span,
+                )
+                .with_argument("producer_id", &producer_id)
+                .with_argument("production_id", &production.id)
+                .with_argument("action_id", &action_id)
+                .with_argument("output_model_id", &output_model.id)
+                .with_argument("relation_id", &relation.id),
+            );
+            continue;
+        };
+        let action = actions
+            .iter()
+            .find(|action| action.id == action_id)
+            .expect("linked action");
+        let Some(input) = action
+            .inputs
+            .iter()
+            .find(|input| member_reference_matches(&input.id, &input.local_id, &value.input))
+        else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-PROD-002",
+                    "semantic.relation_producer.source_input_invalid",
+                    value.input.span(),
+                )
+                .with_argument("producer_id", &producer_id)
+                .with_argument("action_id", &action_id)
+                .with_argument("relation_id", &relation.id)
+                .with_argument("source", value.input.id()),
+            );
+            continue;
+        };
+        let matches_endpoint = matches!(
+            &input.kind,
+            ActionInputKind::ExistingModel { model_id } if *model_id == slot.endpoint_model_id
+        );
+        if !matches_endpoint {
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-PROD-002",
+                    "semantic.relation_producer.source_endpoint_mismatch",
+                    value.span,
+                )
+                .with_argument("producer_id", &producer_id)
+                .with_argument("action_id", &action_id)
+                .with_argument("output_model_id", &output_model.id)
+                .with_argument("relation_id", &relation.id)
+                .with_argument("input_id", &input.id)
+                .with_argument("endpoint_model_id", &slot.endpoint_model_id),
+            );
+            continue;
+        }
+        productions[production_index]
+            .relation_producers
+            .push(RelationProducerDefinition {
+                id: producer_id,
+                relation_id: relation.id.clone(),
+                input_id: input.id.clone(),
+                phase: ProducerPhase::PreMutation,
+                span: value.span,
+            });
+    }
+    for production in productions {
+        production
+            .relation_producers
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        let create_branches = production
+            .branches
+            .iter()
+            .filter(|branch| branch.decision == CreationDecision::Create)
+            .fold(
+                BTreeMap::<CanonicalId, Vec<&CreationBranchDefinition>>::new(),
+                |mut groups, branch| {
+                    groups
+                        .entry(branch.variant_id.clone())
+                        .or_default()
+                        .push(branch);
+                    groups
+                },
+            );
+        for (variant_id, branches) in create_branches {
+            let branch_ids = branches
+                .iter()
+                .map(|branch| branch.id.clone())
+                .collect::<Vec<_>>();
+            for slot in &production.relation_slots {
+                let producers = production
+                    .relation_producers
+                    .iter()
+                    .filter(|producer| producer.relation_id == slot.relation_id)
+                    .collect::<Vec<_>>();
+                if producers.is_empty() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "RSPDL-PROD-003",
+                            "semantic.creation_production.required_relation_producer_missing",
+                            branches[0].span,
+                        )
+                        .with_argument("production_id", &production.id)
+                        .with_argument("action_id", &production.action_id)
+                        .with_argument("output_model_id", &production.output_model_id)
+                        .with_argument("relation_id", &slot.relation_id)
+                        .with_argument("variant_id", &variant_id)
+                        .with_argument("create_branch_ids", joined_ids_csv(&branch_ids)),
+                    );
+                }
+                if producers.len() > 1 {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "RSPDL-PROD-004",
+                            "semantic.creation_production.relation_producer_conflict",
+                            producers[0].span,
+                        )
+                        .with_argument("production_id", &production.id)
+                        .with_argument("action_id", &production.action_id)
+                        .with_argument("output_model_id", &production.output_model_id)
+                        .with_argument("relation_id", &slot.relation_id)
+                        .with_argument("variant_id", &variant_id)
+                        .with_argument("create_branch_ids", joined_ids_csv(&branch_ids))
+                        .with_argument(
+                            "producer_ids",
+                            joined_ids_csv(
+                                &producers
+                                    .iter()
+                                    .map(|producer| producer.id.clone())
+                                    .collect::<Vec<_>>(),
+                            ),
+                        ),
+                    );
+                }
+            }
+        }
     }
 }
 

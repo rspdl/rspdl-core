@@ -361,6 +361,12 @@ pub fn compile_files_with_frontend(
                                     .iter()
                                     .map(|producer| &producer.id),
                             )
+                            .chain(
+                                production
+                                    .relation_producers
+                                    .iter()
+                                    .map(|producer| &producer.id),
+                            )
                     }),
             )
             .chain(module.policies.iter().map(|value| &value.id))
@@ -1498,6 +1504,27 @@ mod tests {
             file.diagnostics.iter().any(|diagnostic| {
                 diagnostic.rule_id == "RSPDL-LINK-002"
                     && diagnostic.argument("symbol_id") == Some("shared.body_binding")
+            })
+        }));
+    }
+
+    #[test]
+    fn duplicate_qualified_relation_producer_ids_across_modules_are_link_errors() {
+        let source = |module_name: &str, module_id: &str| {
+            format!(
+                "@모듈 {module_name}({module_id})\n상태(status)는 다음 값 중 하나다.\n    접수됨(received)\n기술자(technician)는 다음 필드들로 구성되어 있다.\n    이름(name): 필수 문자열\n알림(notice)은 다음 필드들로 구성되어 있다.\n    내용(body): 선택 문자열\n알림은 기술자를 수신자(recipient)로 가질 수 있다.\n모든 알림은 수신자를 하나 이상 가져야 한다.\n각 알림은 수신자를 최대 하나만 가질 수 있다.\n전달(assign)은 행동이다.\n전달은 상태를 요청 상태(request_status)로 입력받는다.\n전달은 기존 기술자를 수신 기술자(recipient_technician)로 입력받는다.\n접수 생성(received_create)은 전달의 요청 상태가 접수됨이면 알림을 하나 생성한다.\n수신자 연결(shared.recipient_binding)은 전달이 실행될 때 수신 기술자를 알림의 수신자로 연결한다.\n"
+            )
+        };
+        let compilation = compile_ko_files(vec![
+            KoSource::new("one.rspdl", source("하나", "one")),
+            KoSource::new("two.rspdl", source("둘", "two")),
+        ]);
+
+        assert!(compilation.has_errors());
+        assert!(compilation.files.iter().all(|file| {
+            file.diagnostics.iter().any(|diagnostic| {
+                diagnostic.rule_id == "RSPDL-LINK-002"
+                    && diagnostic.argument("symbol_id") == Some("shared.recipient_binding")
             })
         }));
     }

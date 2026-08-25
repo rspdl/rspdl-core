@@ -283,6 +283,19 @@ pub struct UnlinkedFieldProducer {
     pub span: TextRange,
 }
 
+/// A direct pre-mutation action input binding to an output-owned relation
+/// slot. Relation slot identity itself is derived from an existing binary
+/// relation with both Required and Unique cardinality constraints.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedRelationProducer {
+    pub declaration: UnlinkedDeclaration,
+    pub action: SurfaceRef,
+    pub input: SurfaceRef,
+    pub output_model: SurfaceRef,
+    pub relation: SurfaceRef,
+    pub span: TextRange,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedPolicy {
     pub declaration: UnlinkedDeclaration,
@@ -315,5 +328,7 @@ pub struct UnlinkedModule {
     pub creation_branches: Vec<UnlinkedCreationBranch>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub field_producers: Vec<UnlinkedFieldProducer>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relation_producers: Vec<UnlinkedRelationProducer>,
     pub policies: Vec<UnlinkedPolicy>,
 }

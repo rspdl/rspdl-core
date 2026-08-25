@@ -17,8 +17,8 @@ pub use ast::{
     DataMutationKindAst, DeclarationAst, DocumentAst, EnumAst, EnumValueAst, FieldAst,
     FieldIntentAst, FieldIntentKindAst, FieldProducerAst, FieldProducerConditionAst,
     FieldProducerSourceAst, LiteralAst, ModuleAst, NamedIdAst, OperandAst, PolicyAst,
-    PolicyEffectAst, RecalculationAst, RelationOperatorAst, RoleAst, ScreenAst,
-    ScreenOperationKindAst, SumDerivationAst, TypeReferenceAst,
+    PolicyEffectAst, RecalculationAst, RelationOperatorAst, RelationProducerAst, RoleAst,
+    ScreenAst, ScreenOperationKindAst, SumDerivationAst, TypeReferenceAst,
 };
 pub use diagnostic::render_diagnostic;
 pub use formatter::{FormatError, format_document};

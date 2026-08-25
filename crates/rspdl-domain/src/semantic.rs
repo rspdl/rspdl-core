@@ -294,6 +294,32 @@ pub struct FieldProducerDefinition {
     pub span: TextRange,
 }
 
+/// An output-owned ExactlyOne slot derived from a binary relation whose first
+/// endpoint is the output model and which has both Required and Unique rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationSlotCardinality {
+    ExactlyOne,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct OutputRelationSlotDefinition {
+    pub relation_id: CanonicalId,
+    pub output_model_id: CanonicalId,
+    pub endpoint_model_id: CanonicalId,
+    pub cardinality: RelationSlotCardinality,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RelationProducerDefinition {
+    pub id: CanonicalId,
+    pub relation_id: CanonicalId,
+    pub input_id: CanonicalId,
+    pub phase: ProducerPhase,
+    pub span: TextRange,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ConditionalProductionDefinition {
     pub id: CanonicalId,
@@ -304,6 +330,10 @@ pub struct ConditionalProductionDefinition {
     pub branches: Vec<CreationBranchDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub field_producers: Vec<FieldProducerDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relation_slots: Vec<OutputRelationSlotDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relation_producers: Vec<RelationProducerDefinition>,
     pub span: TextRange,
 }
 

@@ -263,6 +263,16 @@ pub struct FieldProducerAst {
     pub span: Span,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RelationProducerAst {
+    pub declaration: NamedIdAst,
+    pub action: String,
+    pub input: String,
+    pub output_model: String,
+    pub relation: String,
+    pub span: Span,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyEffectAst {
@@ -299,6 +309,7 @@ pub enum DeclarationAst {
     ActionInput(ActionInputAst),
     CreationBranch(CreationBranchAst),
     FieldProducer(FieldProducerAst),
+    RelationProducer(RelationProducerAst),
     Policy(PolicyAst),
 }
 

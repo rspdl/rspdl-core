@@ -79,6 +79,12 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "ko.syntax.field_producer_literal_marker_required" => {
             "상수 literal 뒤에는 을 또는 를이 필요합니다.".into()
         }
+        "ko.syntax.relation_producer_stable_id_required" => {
+            "관계 생산자의 stable ID가 필요합니다.".into()
+        }
+        "ko.syntax.relation_producer_topic_marker_required" => {
+            "관계 생산자 이름 뒤에는 은 또는 는이 필요합니다.".into()
+        }
         "ko.syntax.field_list_required" => "필드 목록이 필요합니다.".into(),
         "ko.syntax.field_list_empty_name" => "빈 필드 이름은 사용할 수 없습니다.".into(),
         "ko.syntax.field_list_invalid" => "필드 목록 형식이 올바르지 않습니다.".into(),
@@ -296,6 +302,39 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             "생산 {}의 field {}에 producer {}가 함께 선언되었습니다.",
             argument(diagnostic, "production_id"),
             argument(diagnostic, "field_id"),
+            argument(diagnostic, "producer_ids")
+        ),
+        "semantic.creation_production.relation_producer_without_creation_decision" => format!(
+            "관계 생산자 {}은 생산 결정이 없는 행동/output에 붙을 수 없습니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.creation_production.relation_producer_not_exactly_one_slot" => format!(
+            "관계 생산자 {}의 관계 {}은 ExactlyOne output slot이 아닙니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "relation_id")
+        ),
+        "semantic.relation_producer.source_input_invalid" => format!(
+            "관계 생산자 {}의 행동 입력 {}을 찾을 수 없습니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "source")
+        ),
+        "semantic.relation_producer.source_endpoint_mismatch" => format!(
+            "관계 생산자 {}의 입력 {}은 관계 {}의 endpoint {}와 맞지 않습니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "input_id"),
+            argument(diagnostic, "relation_id"),
+            argument(diagnostic, "endpoint_model_id")
+        ),
+        "semantic.creation_production.required_relation_producer_missing" => format!(
+            "생산 {}의 관계 slot {}은 생성 branch {}에서 연결되지 않습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "relation_id"),
+            argument(diagnostic, "create_branch_ids")
+        ),
+        "semantic.creation_production.relation_producer_conflict" => format!(
+            "생산 {}의 관계 slot {}에 producer {}가 함께 선언되었습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "relation_id"),
             argument(diagnostic, "producer_ids")
         ),
         "semantic.field_producer.condition_not_creation_decision_variant" => format!(
