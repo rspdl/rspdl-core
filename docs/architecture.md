@@ -3,7 +3,7 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "1.2"
+version: "1.3"
 summary: Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded model finding, cross-language SDK distribution, dependency direction, and tests.
 topics:
   - rust
@@ -25,13 +25,14 @@ related:
   - finite-relational-model-finding
   - executable-frontend-grammar-compiler
   - python-node-sdk-distribution
+  - conditional-data-production
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - frontend-grammar-implementation-drift
   - downstream-analysis-integration-friction
   - semantic-source-provenance-loss
-last_updated: "2026-08-24"
+last_updated: "2026-08-26"
 owners:
   - rspdl-maintainers
 target_spec: "0.3.0"
@@ -200,7 +201,7 @@ Locale에 독립적인 compiler domain을 소유한다.
 - 타입, 데이터, 플로우와 정책 의미 규칙
 - 단일 닫힌 enum decision point의 backend-neutral 조건 공간 분석
 - unary/binary relation, 관계 meta-rule과 finite-scope grounding
-- 화면 field producer/consumer graph와 합계 derivation dependency
+- 화면 field producer/consumer graph, 합계 derivation dependency와 Action/Event conditional output production
 - Canonical IR과 진단의 안정적인 serialization
 
 사람에게 표시할 번역 문장은 domain diagnostic에 저장하지 않는다. Domain은 message key와 구조화된 argument를 반환한다.
@@ -222,6 +223,7 @@ Controlled Korean surface language 전체를 소유한다.
 - 조사와 공백을 정규화하는 formatter
 - Locale 표시 이름을 stable-ID `SurfaceRef`로 연결하는 Unlinked IR lowering
 - 화면 동작, 합계 계산, 재계산과 필드 사용 의도 문장의 parsing과 formatting
+- typed Action input, immutable Event payload, conditional Create/Skip과 output field/relation/template producer 문장의 parsing과 formatting
 - field가 하나 이상인 record model, 문장형 unary/binary relation과 `nonempty`, `required`, `unique`, `exclusive`, `exhaustive`, compatible `coexistent` 규칙의 parsing과 formatting
 - 문서 metadata인 `@모듈` 외 domain annotation을 거부하는 whitelist
 - 한국어 syntax diagnostic의 message key와 argument
@@ -469,6 +471,14 @@ Python과 Node.js binding은 같은 wire request를 사용했을 때 response를
 - 화면 입력과 합계 계산의 field producer graph
 - 생산자 없는 소비, 재계산 누락과 미조회 입력 진단
 - 교차 모델 합계 dependency와 관계 범위 `unknown` 보존
+
+[Conditional Data Production for Notifications and Prices](rfcs/0008-conditional-data-production.md)는 다음 output production vertical slice를 구현한다.
+
+- stable-ID typed Action input과 immutable typed Event payload
+- direct enum input의 ExactlyOne `Create`/`Skip`, enum coverage와 same-variant conflict
+- Action `PreMutation` 또는 Event `TriggerPayload`에서 required output field와 ExactlyOne relation slot을 채우는 typed producer
+- 같은 output의 String field만 참조하는 message template, dependency gap/conflict/cycle과 canonical evaluation order
+- trigger owner, source type과 lifecycle phase를 보존하는 Canonical IR 및 structured diagnostic
 
 정적 정책 분석의 기반 slice는 단일 닫힌 enum 변수와 독립 allow/deny branch를 입력으로 받아 다음을 구현한다.
 
