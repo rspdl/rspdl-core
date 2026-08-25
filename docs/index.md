@@ -23,6 +23,7 @@ related:
   - frontend-grammar-implementation-drift
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss
+  - conditional-data-production
   - controlled-korean-surface-grammar
   - field-provenance-and-sum-derivation
   - finite-relational-model-finding
@@ -30,7 +31,7 @@ related:
   - total-policy-condition-space-analysis
   - typed-domains-and-logic-core
   - frontend-semantic-analysis-contract
-last_updated: "2026-08-24"
+last_updated: "2026-08-26"
 owners:
   - rspdl-maintainers
 ---
@@ -55,6 +56,7 @@ owners:
 | `frontend-grammar-implementation-drift` | `problem` | `active` | [Frontend Grammar Implementation Drift](problems/0003-frontend-grammar-implementation-drift.md) | Normative grammar and executable parsers are maintained separately, causing repeated implementation work and undetected drift as surface languages grow. | - | `frontend-development`, `executable-grammar`, `parser-maintenance`, `specification-drift`, `regression-safety` |
 | `policy-consistency-blind-spots` | `problem` | `active` | [Policy Consistency Blind Spots](problems/0002-policy-consistency-blind-spots.md) | Prose planning hides contradictory, uncovered, overlapping, and unreachable policy branches that become visible only during implementation. | - | `policy-conflict`, `policy-gap`, `condition-coverage`, `counterexample` |
 | `semantic-source-provenance-loss` | `problem` | `active` | [Semantic Source Provenance Loss](problems/0005-semantic-source-provenance-loss.md) | Semantic records lose their source locations during analysis, preventing reordered downstream views from returning users to the declarations that produced them. | - | `semantic-ir`, `source-provenance`, `downstream-navigation`, `explainability` |
+| `conditional-data-production` | `rfc` | `proposed` | [Conditional Data Production for Notifications and Prices](rfcs/0008-conditional-data-production.md) | Defines Korean sentence-shaped conditional outputs with typed provenance, lifecycle availability, and condition-space analysis. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `semantic-source-provenance-loss` | `conditional-production`, `notification`, `pricing`, `field-provenance`, `lifecycle`, `policy-analysis`, `canonical-ir` |
 | `controlled-korean-surface-grammar` | `rfc` | `proposed` | [Controlled Korean Surface Grammar](rfcs/0001-controlled-korean-surface-grammar.md) | Proposes a deterministic Korean surface grammar that treats particles and endings as structural markers rather than morphology. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `frontend-grammar-implementation-drift` | `ko-KR`, `controlled-language`, `surface-grammar`, `cfg`, `parser`, `diagnostics` |
 | `field-provenance-and-sum-derivation` | `rfc` | `implemented` | [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md) | Defines sentence-shaped screen operations, action data mutations, provenance checks, sum dependencies, and recalculation triggers. | `data-lifecycle-modeling-gap`, `semantic-source-provenance-loss` | `data-lifecycle`, `field-provenance`, `screen-usage`, `action-result`, `derivation`, `aggregation`, `diagnostics` |
 | `finite-relational-model-finding` | `rfc` | `implemented` | [Finite Relational Rules and Bounded Model Finding](rfcs/0007-finite-relational-model-finding.md) | Defines unary and binary relations, explicit relational meta-rules, and bounded virtual-data model finding without runtime records. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `first-order-logic`, `relation`, `bounded-model-finding`, `cardinality`, `counterexample` |

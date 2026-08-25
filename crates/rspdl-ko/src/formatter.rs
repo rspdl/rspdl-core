@@ -218,6 +218,151 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     "는"
                 }
             )),
+            DeclarationAst::Event(value) => output.push_str(&format!(
+                "{}({}){} 사건이다.\n",
+                surface(&value.declaration.name),
+                value.declaration.id,
+                if has_final_consonant(&value.declaration.name) {
+                    "은"
+                } else {
+                    "는"
+                }
+            )),
+            DeclarationAst::ActionInput(value) => {
+                let input_type = match &value.kind {
+                    ActionInputKindAst::ExistingModel { model } => {
+                        format!("기존 {}", marked(model, "을", "를"))
+                    }
+                    ActionInputKindAst::Value { value_type } => {
+                        marked(&type_reference(value_type), "을", "를")
+                    }
+                };
+                output.push_str(&format!(
+                    "{} {} {}({}){} 입력받는다.\n",
+                    marked(&value.action, "은", "는"),
+                    input_type,
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    directional_marker(&value.declaration.name),
+                ));
+            }
+            DeclarationAst::EventInput(value) => {
+                let input_type = match &value.kind {
+                    ActionInputKindAst::ExistingModel { model } => {
+                        format!("기존 {}", marked(model, "을", "를"))
+                    }
+                    ActionInputKindAst::Value { value_type } => {
+                        marked(&type_reference(value_type), "을", "를")
+                    }
+                };
+                output.push_str(&format!(
+                    "{} {} {}({}){} 담는다.\n",
+                    marked(&value.event, "은", "는"),
+                    input_type,
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    directional_marker(&value.declaration.name)
+                ));
+            }
+            DeclarationAst::CreationBranch(value) => {
+                output.push_str(&format!(
+                    "{}({}){} {}의 {} {} {} {}.\n",
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    if has_final_consonant(&value.declaration.name) {
+                        "은"
+                    } else {
+                        "는"
+                    },
+                    surface(&value.action),
+                    marked(&value.input, "이", "가"),
+                    marked(&value.variant, "이면", "라면"),
+                    marked(&value.output_model, "을", "를"),
+                    match value.decision {
+                        CreationDecisionAst::Create => "하나 생성한다",
+                        CreationDecisionAst::Skip => "생성하지 않는다",
+                    }
+                ));
+            }
+            DeclarationAst::FieldProducer(value) => {
+                if matches!(value.source, FieldProducerSourceAst::Template { .. })
+                    && value.condition.is_some()
+                {
+                    return Err(FormatError::unsupported_constraint(
+                        "조건부 template producer는 현재 Korean 문법으로 표현할 수 없습니다.",
+                    ));
+                }
+                let source = match &value.source {
+                    FieldProducerSourceAst::ActionInput { input } => marked(input, "을", "를"),
+                    FieldProducerSourceAst::InputField { input, field } => {
+                        format!("{}의 {}", surface(input), marked(field, "을", "를"))
+                    }
+                    FieldProducerSourceAst::Constant { literal } => {
+                        format!("상수 {}", marked(&literal_text(literal), "을", "를"))
+                    }
+                    FieldProducerSourceAst::Template { value } => {
+                        format!(
+                            "{}를",
+                            serde_json::to_string(value).expect("template string serializes")
+                        )
+                    }
+                };
+                let trigger = match &value.condition {
+                    Some(condition) => format!(
+                        "{}의 {} {}",
+                        surface(&value.trigger.name),
+                        marked(&condition.input, "이", "가"),
+                        marked(&condition.variant, "이면", "라면"),
+                    ),
+                    None => format!(
+                        "{} {} 때",
+                        marked(&value.trigger.name, "이", "가"),
+                        match value.trigger.kind {
+                            ProducerTriggerKindAst::Action => "실행될",
+                            ProducerTriggerKindAst::Event => "발생할",
+                        },
+                    ),
+                };
+                output.push_str(&format!(
+                    "{}({}){} {} {} {}의 {} {}.\n",
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    if has_final_consonant(&value.declaration.name) {
+                        "은"
+                    } else {
+                        "는"
+                    },
+                    trigger,
+                    source,
+                    surface(&value.output_model),
+                    marked(&value.output_field, "으로", "로"),
+                    if matches!(value.source, FieldProducerSourceAst::Template { .. }) {
+                        "조합한다"
+                    } else {
+                        "기록한다"
+                    },
+                ));
+            }
+            DeclarationAst::RelationProducer(value) => {
+                output.push_str(&format!(
+                    "{}({}){} {} {} 때 {} {}의 {} 연결한다.\n",
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    if has_final_consonant(&value.declaration.name) {
+                        "은"
+                    } else {
+                        "는"
+                    },
+                    marked(&value.trigger.name, "이", "가"),
+                    match value.trigger.kind {
+                        ProducerTriggerKindAst::Action => "실행될",
+                        ProducerTriggerKindAst::Event => "발생할",
+                    },
+                    marked(&value.input, "을", "를"),
+                    surface(&value.output_model),
+                    marked(&value.relation, "으로", "로"),
+                ));
+            }
             DeclarationAst::Policy(value) => {
                 let role = marked(&value.role, "은", "는");
                 let field = marked(&value.field, "을", "를");
@@ -236,6 +381,15 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
         }
     }
     Ok(output)
+}
+
+fn type_reference(value: &TypeReferenceAst) -> String {
+    match value {
+        TypeReferenceAst::String => "문자열".to_owned(),
+        TypeReferenceAst::Integer => "정수".to_owned(),
+        TypeReferenceAst::Boolean => "불리언".to_owned(),
+        TypeReferenceAst::Named(value) => surface(value),
+    }
 }
 
 fn reference_list(references: &[String]) -> String {
@@ -313,15 +467,6 @@ fn constraint(expression: &ConstraintExpressionAst) -> Result<String, FormatErro
         _ => Err(FormatError::unsupported_constraint(
             "Korean v0.1 문법은 제약의 왼쪽 피연산자로 필드만 지원합니다.",
         )),
-    }
-}
-
-fn type_reference(value: &TypeReferenceAst) -> String {
-    match value {
-        TypeReferenceAst::String => "문자열".into(),
-        TypeReferenceAst::Integer => "정수".into(),
-        TypeReferenceAst::Boolean => "불리언".into(),
-        TypeReferenceAst::Named(value) => surface(value),
     }
 }
 
@@ -430,7 +575,7 @@ mod tests {
 
     #[test]
     fn formatting_is_idempotent() {
-        let source = "@모듈 승인(approval)\n상태(state)는 다음 값 중 하나다.\n  작성 중(draft)\n신청(request)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n신청의 금액은 0보다 커야 한다.\n관리자(manager)는 역할이다.\n등록(register)은 행동이다.\n변경(change)은 행동이다.\n등록이 실행되면 신청을 생성한다.\n변경이 실행되면 신청을 수정한다.\n관리자는 신청의 금액을 변경할 수 있다.\n";
+        let source = "@모듈 승인(approval)\n상태(state)는 다음 값 중 하나다.\n  작성 중(draft)\n신청(request)은 다음 필드들로 구성되어 있다.\n  금액(amount): 필수 정수\n신청의 금액은 0보다 커야 한다.\n관리자(manager)는 역할이다.\n등록(register)은 행동이다.\n변경(change)은 행동이다.\n등록은 기존 신청을 대상 신청(request)으로 입력받는다.\n등록은 문자열을 요청 메모(note)로 입력받는다.\n등록이 실행되면 신청을 생성한다.\n변경이 실행되면 신청을 수정한다.\n관리자는 신청의 금액을 변경할 수 있다.\n";
         let original = parse(source).document.unwrap();
         let original_module = semantic_module(&original);
         let first = format_document(&original).unwrap();
@@ -439,6 +584,27 @@ mod tests {
         let second = format_document(&formatted).unwrap();
         assert_eq!(first, second);
         assert_eq!(original_module, semantic_module(&formatted));
+    }
+
+    #[test]
+    fn event_header_input_and_creation_branches_round_trip() {
+        let source = "@모듈 사건(event)\n상태(status)는 다음 값 중 하나다.\n    접수됨(received)\n    보류됨(held)\n알림(notice)은 다음 필드들로 구성되어 있다.\n    내용(content): 선택 문자열\n요청 접수됨(request_received)은 사건이다.\n요청 접수됨은 상태를 요청 상태(request_status)로 담는다.\n접수 알림 생성(received_create)은 요청 접수됨의 요청 상태가 접수됨이면 알림을 하나 생성한다.\n보류 알림 미생성(held_skip)은 요청 접수됨의 요청 상태가 보류됨이면 알림을 생성하지 않는다.\n";
+        let original = parse(source);
+        assert!(
+            original.diagnostics.is_empty(),
+            "{:?}",
+            original.diagnostics
+        );
+        let first = format_document(&original.document.unwrap()).unwrap();
+        assert!(first.contains("요청 접수됨(request_received)은 사건이다."));
+        assert!(first.contains("요청 접수됨은 상태를 요청 상태(request_status)로 담는다."));
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        assert_eq!(first, format_document(&reparsed.document.unwrap()).unwrap());
     }
 
     #[test]
@@ -451,6 +617,68 @@ mod tests {
         let reparsed = parse(&formatted).document.unwrap();
 
         assert_eq!(original_module, semantic_module(&reparsed));
+    }
+
+    #[test]
+    fn field_producer_sentences_round_trip_and_are_idempotent() {
+        let source = "@모듈 기록(binding)\n알림 제목 기록(title_binding)은 점검 요청 전달이 실행될 때 알림 제목을 점검 요청 전달 알림의 제목으로 기록한다.\n요청 제목 기록(request_title_binding)은 점검 요청 전달이 실행될 때 대상 요청의 제목을 점검 요청 전달 알림의 요청 제목으로 기록한다.\n재시도 횟수 기록(retry_binding)은 점검 요청 전달이 실행될 때 상수 0을 점검 요청 전달 알림의 재시도 횟수로 기록한다.\n접수 제목 기록(received_title)은 점검 요청 전달의 요청 상태가 접수됨이면 상수 \"접수됨\"를 점검 요청 전달 알림의 제목으로 기록한다.\n";
+        let original = parse(source).document.unwrap();
+        let first = format_document(&original).unwrap();
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        assert_eq!(first, format_document(&reparsed.document.unwrap()).unwrap());
+    }
+
+    #[test]
+    fn event_payload_producer_sentences_round_trip_and_are_idempotent() {
+        let source = "@모듈 사건(event)\n제목 기록(title_binding)은 요청 접수됨이 발생할 때 알림 제목을 알림의 제목으로 기록한다.\n수신자 연결(recipient_binding)은 요청 접수됨이 발생할 때 수신 기술자를 알림의 수신자로 연결한다.\n";
+        let original = parse(source).document.unwrap();
+        let first = format_document(&original).unwrap();
+        assert!(first.contains("요청 접수됨이 발생할 때"));
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        assert_eq!(first, format_document(&reparsed.document.unwrap()).unwrap());
+    }
+
+    #[test]
+    fn template_strings_with_quotes_and_literal_braces_round_trip() {
+        let source = r#"@모듈 기록(binding)
+알림 내용 조합(content_template)은 점검 요청 전달이 실행될 때 "\"{알림 제목}\" {{원문}}"를 점검 요청 전달 알림의 내용으로 조합한다.
+"#;
+        let original = parse(source);
+        assert!(
+            original.diagnostics.is_empty(),
+            "{:?}",
+            original.diagnostics
+        );
+        let document = original.document.unwrap();
+        let first = format_document(&document).unwrap();
+        assert!(first.contains("\\\"{알림 제목}\\\" {{원문}}"));
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        assert_eq!(first, format_document(&reparsed.document.unwrap()).unwrap());
+
+        let mut conditional = document;
+        let DeclarationAst::FieldProducer(producer) = &mut conditional.declarations[0] else {
+            panic!()
+        };
+        producer.condition = Some(FieldProducerConditionAst {
+            input: "상태".into(),
+            variant: "접수됨".into(),
+        });
+        assert!(format_document(&conditional).is_err());
     }
 
     #[test]
@@ -522,6 +750,41 @@ mod tests {
         );
         let reparsed = reparsed.document.unwrap();
 
+        assert_eq!(original_module, semantic_module(&reparsed));
+        assert_eq!(first, format_document(&reparsed).unwrap());
+    }
+
+    #[test]
+    fn conditional_creation_sentences_round_trip_and_are_idempotent() {
+        let source = r#"@모듈 알림(notifications)
+상태(status)는 다음 값 중 하나다.
+  접수됨(received)
+  보류됨(on_hold)
+점검 요청 전달 알림(notice)은 다음 필드들로 구성되어 있다.
+  내용(content): 선택 문자열
+점검 요청 전달(assign_request)은 행동이다.
+점검 요청 전달은 상태를 요청 상태(request_status)로 입력받는다.
+접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.
+보류 상태 알림 미생성(on_hold_notice_skip)은 점검 요청 전달의 요청 상태가 보류됨이면 점검 요청 전달 알림을 생성하지 않는다.
+"#;
+        let original = parse(source);
+        assert!(
+            original.diagnostics.is_empty(),
+            "{:?}",
+            original.diagnostics
+        );
+        let original = original.document.unwrap();
+        let original_module = semantic_module(&original);
+        let first = format_document(&original).unwrap();
+        assert!(first.contains("접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다."));
+        assert!(first.contains("보류 상태 알림 미생성(on_hold_notice_skip)은 점검 요청 전달의 요청 상태가 보류됨이면 점검 요청 전달 알림을 생성하지 않는다."));
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        let reparsed = reparsed.document.unwrap();
         assert_eq!(original_module, semantic_module(&reparsed));
         assert_eq!(first, format_document(&reparsed).unwrap());
     }

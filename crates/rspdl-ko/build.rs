@@ -34,6 +34,7 @@ fn compile_grammar(grammar_path: &std::path::Path, output_dir: &std::path::Path)
     let source = fs::read_to_string(grammar_path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", grammar_path.display()));
     let compiled = GrammarCompiler::new([
+        "action_input_type",
         "annotated_decl",
         "canonical_id",
         "comma_ref",
@@ -41,14 +42,17 @@ fn compile_grammar(grammar_path: &std::path::Path, output_dir: &std::path::Path)
         "field_item",
         "integer",
         "integer_before",
+        "literal",
         "marked_ref",
         "natural_decl",
         "quoted_equal",
         "quoted_not_equal",
         "screen_model_ref",
+        "source_direct",
         "string_equal",
         "string_not_equal",
         "surface_name",
+        "template_string",
         "word_equal",
         "word_not_equal",
     ])

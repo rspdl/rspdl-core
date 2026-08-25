@@ -18,6 +18,7 @@ related:
   - natural-korean-domain-grammar
   - core-application-boundary
   - rspdl-language-prd
+  - conditional-data-production
 problem_refs:
   - data-lifecycle-modeling-gap
   - semantic-source-provenance-loss
@@ -100,7 +101,7 @@ target_spec: "0.2.0"
 - 화면 `create`와 행동 `create`는 순서와 무관한 구조적 model producer다. 화면 read/update/delete, 계산의 source·target model과 행동 update/delete는 producer가 필요한 consumer다.
 - 화면 ID는 행동 ID가 아니다. 같은 화면에서 수정·삭제 capability를 모두 제공하는 것만으로 행동 결과 충돌을 만들지 않는다.
 - action mutation의 source provenance는 진단과 downstream traceability를 위한 metadata이며 action·model·mutation semantic identity나 conflict key에는 참여하지 않는다.
-- 삭제 이후 조회·수정, 조건부 생성과 path별 availability는 성공으로 추측하지 않고 지원 범위 밖에 둔다.
+- 삭제 이후 조회·수정, 조건부 생성과 path별 availability는 현재 구현에서 성공으로 추측하지 않고 지원 범위 밖에 둔다. 행동 input, output binding, snapshot과 path별 availability의 목표 의미 계약은 [조건부 데이터 생산 RFC](0008-conditional-data-production.md)가 소유하며, 이 RFC의 구조적 화면 producer 분석을 그 계약의 구현으로 오해하지 않는다.
 - 행동 결과의 조건, 실행 순서, field 단위 mutation과 read/derive 결과는 아직 지원하지 않는다.
 - 교차 모델 합계는 semantic dependency를 보존하지만 relation/join이 도입되기 전까지 실제 집계 레코드 범위를 실행하지 않는다.
 - 화면의 stable ID와 데이터 동작은 core 의미지만 화면 배치, widget, navigation과 시각 상태는 application projection이다.

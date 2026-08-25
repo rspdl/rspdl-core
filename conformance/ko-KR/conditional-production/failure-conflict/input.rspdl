@@ -1,0 +1,11 @@
+@모듈 조건부 생산(conditional)
+상태(status)는 다음 값 중 하나다.
+    접수됨(received)
+    보류됨(held)
+알림(notice)은 다음 필드들로 구성되어 있다.
+    내용(body): 선택 문자열
+전달(assign)은 행동이다.
+전달은 상태를 요청 상태(request_status)로 입력받는다.
+접수 생성(received_create)은 전달의 요청 상태가 접수됨이면 알림을 하나 생성한다.
+접수 미생성(received_skip)은 전달의 요청 상태가 접수됨이면 알림을 생성하지 않는다.
+보류 미생성(held_skip)은 전달의 요청 상태가 보류됨이면 알림을 생성하지 않는다.

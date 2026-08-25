@@ -4,7 +4,7 @@ title: RSPDL Product Requirements
 type: prd
 status: draft
 created: 2026-07-26
-version: "1.1"
+version: "1.2"
 summary: Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context.
 topics:
   - language-design
@@ -20,11 +20,12 @@ related:
   - field-provenance-and-sum-derivation
   - total-policy-condition-space-analysis
   - finite-relational-model-finding
+  - conditional-data-production
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss
-last_updated: "2026-08-24"
+last_updated: "2026-08-25"
 owners:
   - rspdl-maintainers
 target_spec: "0.3.0"
@@ -71,6 +72,11 @@ target_spec: "0.3.0"
   - `POLICY-004`: 초기 조건부 decision point는 선언된 유효 입력 domain 전체를 명시적 branch, default 또는 no-op 결과로 덮어야 하며, 조건의 반대 영역을 생략한 채 의도된 미정의로 간주할 수 없다.
   - `POLICY-005`: 상태별 조건부 invariant와 겹치는 branch 사이의 priority를 구분하고, source 순서·조건의 겉보기 구체성·effect 이름에서 priority를 추론하지 않는다.
   - `POLICY-006`: overlap은 effect compatibility와 분리해 판정하며, 배타적 decision slot, post-state와 cross-field·lifecycle invariant로 동작 충돌의 근거를 표현해야 한다.
+  - `PROD-001`: 행동 또는 명시된 사건의 조건에 따라 typed output record를 생성하거나 명시적으로 생성하지 않는 conditional data production을 표현해야 한다. 이는 권한 effect의 임의 확장이 아니라 output instance와 field producer를 갖는 별도 의미 모델이다.
+  - `PROD-002`: 필수 output field와 relation slot은 모든 effective creation path에서 action input, relation path, snapshot, constant 또는 지원되는 expression 중 정확히 하나의 typed provenance producer를 가져야 한다. producer 없음은 gap이고 양립 불가능한 복수 producer는 conflict다.
+  - `PROD-003`: template은 output record의 선언된 field만 placeholder로 참조해야 하며, 원본 model path나 입력받지 않은 값을 직접 참조할 수 없다.
+  - `PROD-004`: output provenance는 source span, typed path와 lifecycle phase를 보존해야 하며, 생성 전·삭제 후 source를 payload에 쓰려면 explicit snapshot 또는 retain provenance가 있어야 한다.
+  - `PROD-005`: 알림의 발신자·수신자·대상은 typed output relation slot으로, 메시지와 가격의 금액·통화·할인은 typed output field로 표현하며 relation cardinality, field composition, rounding과 external source는 선언된 계약 없이 추론하지 않는다.
 - 언어와 호환성 요구사항은 다음과 같다.
   - `SYNTAX-001`: 초기 문법은 자유 자연어가 아닌 구조화된 블록 형식이어야 한다.
   - `SYNTAX-002`: `@` annotation은 domain 의미가 아닌 문서 수준 metadata에만 허용한다. 현재 허용 목록은 문서의 module identity를 선언하는 `@모듈` 하나다.
@@ -98,6 +104,9 @@ target_spec: "0.3.0"
   - 한국어 module, enum, record field, field constraint, role, action과 조건 없는 allow 또는 deny policy
   - 문장형 화면 create/read/update/delete와 field input/read/update 선언
   - 문장형 action create/update/delete 결과와 동일 action·model의 mutation conflict 검증
+  - stable-ID typed action input의 한국어 문형, common linking/type checking, source-backed Canonical IR과 결정적 JSON 직렬화
+  - direct enum action 또는 immutable Event payload의 한국어 conditional ExactlyOne Create/Skip, enum coverage와 same-variant conflict, Action direct input·ExistingModel input field·constant의 `PreMutation` producer 및 Event direct value·ExistingModel input field의 `TriggerPayload` producer, 무조건 output-field-only message template와 variant별 required output field gap/conflict
+  - output-first binary relation에 Required와 Unique가 함께 있으면 ExactlyOne output relation slot으로 해석하고 Action 또는 Event direct ExistingModel input relation producer의 Create-path gap/conflict 검증
   - 화면 입력과 합계 계산을 생산자로 연결한 field provenance 검증
   - 단일 정수 필드 합계, 원본 변경 시 재계산과 내부/비표시 의도
   - parser, formatter, Canonical domain model, Z3 constraint check와 결정적 직접 runtime policy match
@@ -112,6 +121,8 @@ target_spec: "0.3.0"
   - relation/join 기반 교차 모델 집계 실행과 일반 계산식
   - 조건부 정책의 한국어 표면 문법, Canonical IR lowering과 compiler structured diagnostic 연결
   - 다중 입력 domain과 일반 effect compatibility, 조건부 field requiredness, explicit default와 override
+  - snapshot/retain lifecycle analysis, 조건부 Event field/relation producer와 structured diagnostic 확장
+  - relation path 기반 다수 output 생성, 실제 relation JSON binding, output delivery, 일반 expression·통화·반올림·가격표 snapshot과 field composition
   - effective condition에 기반한 unreachable 분석
   - 유저 플로우, 컬렉션, module import와 다국어 의미 동등성
   - 3항 이상 관계, 임의의 quantified formula, 실제 JSON relation binding, relation join/projection/aggregation과 CRUD transition
@@ -145,3 +156,4 @@ target_spec: "0.3.0"
 - [Korean Domain Frontend Language Specification](rfcs/0004-natural-korean-domain-grammar.md)
 - [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)
 - [Total Policy Condition Spaces and SMT-First Consistency Analysis](rfcs/0006-total-policy-condition-space-analysis.md)
+- [Conditional Data Production for Notifications and Prices](rfcs/0008-conditional-data-production.md)

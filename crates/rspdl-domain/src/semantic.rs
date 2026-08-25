@@ -210,6 +210,186 @@ pub struct RoleDefinition {
 pub struct ActionDefinition {
     pub id: CanonicalId,
     pub name: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<ActionInputDefinition>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EventDefinition {
+    pub id: CanonicalId,
+    pub name: String,
+    pub inputs: Vec<EventInputDefinition>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EventInputDefinition {
+    pub id: CanonicalId,
+    pub local_id: CanonicalId,
+    pub name: String,
+    pub kind: EventInputKind,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
+pub enum EventInputKind {
+    ExistingModel { model_id: CanonicalId },
+    Value { value_type: CanonicalType },
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum ProductionTriggerDefinition {
+    Action(CanonicalId),
+    Event(CanonicalId),
+}
+
+/// One typed, explicitly named input declared by an action.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ActionInputDefinition {
+    pub id: CanonicalId,
+    pub local_id: CanonicalId,
+    pub name: String,
+    pub kind: ActionInputKind,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
+pub enum ActionInputKind {
+    ExistingModel { model_id: CanonicalId },
+    Value { value_type: CanonicalType },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CreationDecision {
+    Create,
+    Skip,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductionCardinality {
+    ExactlyOne,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CreationBranchDefinition {
+    pub id: CanonicalId,
+    pub variant_id: CanonicalId,
+    pub decision: CreationDecision,
+    pub span: TextRange,
+}
+
+/// The lifecycle point at which a conditional-production payload is read.
+/// Event values are immutable payloads, distinct from Action pre-mutation
+/// state; no post-mutation source exists in this slice.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProducerPhase {
+    PreMutation,
+    TriggerPayload,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
+pub enum FieldProducerSource {
+    ActionInput {
+        input_id: CanonicalId,
+    },
+    InputField {
+        input_id: CanonicalId,
+        field_id: CanonicalId,
+    },
+    EventInput {
+        input_id: CanonicalId,
+    },
+    EventInputField {
+        input_id: CanonicalId,
+        field_id: CanonicalId,
+    },
+    Constant {
+        value: CanonicalValue,
+    },
+    Template {
+        parts: Vec<TemplatePart>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum TemplatePart {
+    Text { value: String },
+    OutputField { field_id: CanonicalId },
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
+pub enum FieldProducerCondition {
+    EnumVariant {
+        input_id: CanonicalId,
+        variant_id: CanonicalId,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FieldProducerDefinition {
+    pub id: CanonicalId,
+    pub output_field_id: CanonicalId,
+    pub source: FieldProducerSource,
+    pub condition: Option<FieldProducerCondition>,
+    pub phase: ProducerPhase,
+    pub span: TextRange,
+}
+
+/// An output-owned ExactlyOne slot derived from a binary relation whose first
+/// endpoint is the output model and which has both Required and Unique rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationSlotCardinality {
+    ExactlyOne,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct OutputRelationSlotDefinition {
+    pub relation_id: CanonicalId,
+    pub output_model_id: CanonicalId,
+    pub endpoint_model_id: CanonicalId,
+    pub cardinality: RelationSlotCardinality,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RelationProducerDefinition {
+    pub id: CanonicalId,
+    pub relation_id: CanonicalId,
+    pub input_id: CanonicalId,
+    pub phase: ProducerPhase,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ConditionalProductionDefinition {
+    pub id: CanonicalId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<CanonicalId>,
+    pub trigger: ProductionTriggerDefinition,
+    pub output_model_id: CanonicalId,
+    pub instance_cardinality: ProductionCardinality,
+    pub decision_input_id: CanonicalId,
+    pub branches: Vec<CreationBranchDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub field_producers: Vec<FieldProducerDefinition>,
+    /// Canonical dependency-respecting projection for consumers that render or
+    /// evaluate output payloads. It never relies on source declaration order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub field_evaluation_order: Vec<CanonicalId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relation_slots: Vec<OutputRelationSlotDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relation_producers: Vec<RelationProducerDefinition>,
     pub span: TextRange,
 }
 
@@ -257,5 +437,9 @@ pub struct SemanticModule {
     pub constraints: Vec<ConstraintDefinition>,
     pub roles: Vec<RoleDefinition>,
     pub actions: Vec<ActionDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<EventDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conditional_productions: Vec<ConditionalProductionDefinition>,
     pub policies: Vec<PolicyDefinition>,
 }

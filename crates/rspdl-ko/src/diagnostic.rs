@@ -46,6 +46,61 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "ko.syntax.action_data_mutation_invalid" => {
             "행동 결과는 생성한다, 수정한다, 삭제한다 중 하나여야 합니다.".into()
         }
+        "ko.syntax.action_input_stable_id_required" => {
+            "행동 입력의 표시 이름 뒤에 stable ID가 필요합니다.".into()
+        }
+        "ko.syntax.action_input_name_marker_required" => {
+            "행동 입력 이름과 stable ID 뒤에는 로 또는 으로가 필요합니다.".into()
+        }
+        "ko.syntax.creation_branch_stable_id_required" => {
+            "조건부 생성 branch의 표시 이름 뒤에 stable ID가 필요합니다.".into()
+        }
+        "ko.syntax.creation_branch_topic_marker_required" => {
+            "조건부 생성 branch 이름 뒤에는 은 또는 는이 필요합니다.".into()
+        }
+        "ko.syntax.creation_branch_result_invalid" => {
+            "조건부 생성 결과는 하나 생성한다 또는 생성하지 않는다여야 합니다.".into()
+        }
+        "ko.syntax.creation_branch_condition_marker_invalid" => {
+            "조건부 생성 조건은 행동의 입력이 enum 값이면 형식이어야 합니다.".into()
+        }
+        "ko.syntax.creation_branch_result_marker_invalid" => {
+            "조건부 생성 결과의 output model 뒤에는 을 또는 를이 필요합니다.".into()
+        }
+        "ko.syntax.field_producer_stable_id_required" => {
+            "필드 생산자의 stable ID가 필요합니다.".into()
+        }
+        "ko.syntax.field_producer_topic_marker_required" => {
+            "필드 생산자 이름 뒤에는 은 또는 는이 필요합니다.".into()
+        }
+        "ko.syntax.field_producer_literal_required" => {
+            "상수 생산자에는 literal이 필요합니다.".into()
+        }
+        "ko.syntax.field_producer_literal_marker_required" => {
+            "상수 literal 뒤에는 을 또는 를이 필요합니다.".into()
+        }
+        "ko.syntax.template_string_required" => {
+            "알림 내용 조합에는 문자열 template이 필요합니다.".into()
+        }
+        "ko.syntax.template_unmatched_brace" => {
+            "template의 { 또는 } 짝이 맞지 않습니다. literal brace는 {{ 또는 }}로 쓰세요.".into()
+        }
+        "ko.syntax.template_empty_placeholder" => {
+            "template placeholder는 비워둘 수 없습니다.".into()
+        }
+        "ko.syntax.template_nested_placeholder" => {
+            "template placeholder 안에 {를 중첩할 수 없습니다.".into()
+        }
+        "ko.syntax.template_path_placeholder_forbidden" => format!(
+            "template placeholder {}은 output field 이름 하나여야 하며 경로를 쓸 수 없습니다.",
+            argument(diagnostic, "placeholder")
+        ),
+        "ko.syntax.relation_producer_stable_id_required" => {
+            "관계 생산자의 stable ID가 필요합니다.".into()
+        }
+        "ko.syntax.relation_producer_topic_marker_required" => {
+            "관계 생산자 이름 뒤에는 은 또는 는이 필요합니다.".into()
+        }
         "ko.syntax.field_list_required" => "필드 목록이 필요합니다.".into(),
         "ko.syntax.field_list_empty_name" => "빈 필드 이름은 사용할 수 없습니다.".into(),
         "ko.syntax.field_list_invalid" => "필드 목록 형식이 올바르지 않습니다.".into(),
@@ -195,6 +250,185 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
                 object_marker(reference)
             )
         }
+        "semantic.creation_branch.decision_input_not_found" => {
+            let trigger_id = diagnostic
+                .argument("trigger_id")
+                .or_else(|| diagnostic.argument("action_id"))
+                .unwrap_or("<?>");
+            if diagnostic.argument("trigger_kind") == Some("event") {
+                format!(
+                    "사건 {trigger_id}에서 조건 입력 {}을 찾을 수 없습니다.",
+                    argument(diagnostic, "reference")
+                )
+            } else {
+                format!(
+                    "행동 {trigger_id}에서 조건 입력 {}을 찾을 수 없습니다.",
+                    argument(diagnostic, "reference")
+                )
+            }
+        }
+        "semantic.creation_branch.decision_input_requires_enum" => format!(
+            "조건부 생성 입력 {}은 닫힌 열거형 값이어야 합니다.",
+            argument(diagnostic, "input_id")
+        ),
+        "semantic.creation_branch.variant_not_in_decision_enum" => format!(
+            "조건 값 {}은 입력 {}의 열거형 {}에 속하지 않습니다.",
+            argument(diagnostic, "reference"),
+            argument(diagnostic, "input_id"),
+            argument(diagnostic, "enum_id")
+        ),
+        "semantic.creation_branch.legacy_action_incompatible" => {
+            if diagnostic.argument("trigger_kind") == Some("event") {
+                format!(
+                    "사건 {}을 조건부 생성 branch의 행동 호환 참조로 함께 지정할 수 없습니다.",
+                    argument(diagnostic, "trigger_id")
+                )
+            } else {
+                format!(
+                    "조건부 생성 branch의 행동 호환 참조 {}은 트리거 {}와 같아야 합니다.",
+                    diagnostic
+                        .argument("legacy_action_id")
+                        .or_else(|| diagnostic.argument("legacy_action_reference"))
+                        .unwrap_or("<?>"),
+                    argument(diagnostic, "trigger_id")
+                )
+            }
+        }
+        "semantic.creation_production.mixed_decision_inputs" => format!(
+            "생산 {}은 하나의 조건 입력만 사용해야 하지만 {}을 함께 사용합니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "input_ids")
+        ),
+        "semantic.creation_production.variant_conflict" => format!(
+            "생산 {}의 값 {}에 branch {}가 함께 선언되었습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "variant_id"),
+            argument(diagnostic, "branch_ids")
+        ),
+        "semantic.creation_production.variant_coverage_missing" => format!(
+            "생산 {}의 조건 입력 {}에서 값 {}가 빠졌습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "input_id"),
+            argument(diagnostic, "missing_variant_ids")
+        ),
+        "semantic.creation_production.required_field_producer_missing" => format!(
+            "생산 {}의 필수 field {}는 생성 branch {}에서 값을 생산하지 않습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "field_id"),
+            argument(diagnostic, "create_branch_ids")
+        ),
+        "semantic.field_producer.source_input_not_found" => format!(
+            "생산자 {}의 trigger 입력 {}을 찾을 수 없습니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "source")
+        ),
+        "semantic.field_producer.source_trigger_owner_mismatch" => format!(
+            "생산자 {}의 source는 해당 trigger의 선언 입력이어야 합니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.field_producer.type_mismatch" => match diagnostic.argument("source_type") {
+            Some(source_type) => format!(
+                "생산자 {}의 source {} 타입 {}은 output field {}의 {} 타입과 맞지 않습니다.",
+                argument(diagnostic, "producer_id"),
+                argument(diagnostic, "source"),
+                source_type,
+                argument(diagnostic, "output_field_id"),
+                argument(diagnostic, "output_type")
+            ),
+            None => format!(
+                "생산자 {}의 source {}은 output field {}의 {} 타입 값으로 사용할 수 없습니다.",
+                argument(diagnostic, "producer_id"),
+                argument(diagnostic, "source"),
+                argument(diagnostic, "output_field_id"),
+                argument(diagnostic, "output_type")
+            ),
+        },
+        "semantic.creation_production.field_producer_without_creation_decision" => format!(
+            "생산자 {}은 생산 결정이 없는 trigger/output에 붙을 수 없습니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.event_field_producer.conditional_unsupported" => format!(
+            "Event 생산자 {}은 현재 조건을 가질 수 없습니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.event_field_producer.constant_unsupported" => format!(
+            "Event 생산자 {}은 현재 상수를 source로 사용할 수 없습니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.producer.legacy_action_incompatible" => format!(
+            "생산자 {}의 legacy Action reference는 tagged trigger와 함께 사용할 수 없습니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.creation_production.field_producer_conflict" => format!(
+            "생산 {}의 field {}에 producer {}가 함께 선언되었습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "field_id"),
+            argument(diagnostic, "producer_ids")
+        ),
+        "semantic.template.dependency_producer_missing" => format!(
+            "template target {}가 참조한 output field {}는 생성 branch {}에서 값을 생산하지 않습니다.",
+            argument(diagnostic, "target_field_id"),
+            argument(diagnostic, "dependency_field_id"),
+            argument(diagnostic, "create_branch_ids")
+        ),
+        "semantic.template.dependency_producer_conflict" => format!(
+            "template target {}가 참조한 output field {}에 producer {}가 함께 선언되었습니다.",
+            argument(diagnostic, "target_field_id"),
+            argument(diagnostic, "dependency_field_id"),
+            argument(diagnostic, "producer_ids")
+        ),
+        "semantic.template.dependency_cycle" => format!(
+            "생산 {}의 template output field 의존성이 순환합니다: {}.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "cycle_field_ids")
+        ),
+        "semantic.template.placeholder_not_string" => format!(
+            "template 생산자 {}가 참조한 output field {}의 타입 {}은 문자열이 아닙니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "dependency_field_id"),
+            argument(diagnostic, "dependency_type")
+        ),
+        "semantic.creation_production.relation_producer_without_creation_decision" => format!(
+            "관계 생산자 {}은 생산 결정이 없는 trigger/output에 붙을 수 없습니다.",
+            argument(diagnostic, "producer_id")
+        ),
+        "semantic.creation_production.relation_producer_not_exactly_one_slot" => format!(
+            "관계 생산자 {}의 관계 {}은 ExactlyOne output slot이 아닙니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "relation_id")
+        ),
+        "semantic.relation_producer.source_input_invalid" => format!(
+            "관계 생산자 {}의 trigger 입력 {}을 찾을 수 없습니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "source")
+        ),
+        "semantic.relation_producer.source_endpoint_mismatch" => format!(
+            "관계 생산자 {}의 입력 {}은 관계 {}의 endpoint {}와 맞지 않습니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "input_id"),
+            argument(diagnostic, "relation_id"),
+            argument(diagnostic, "endpoint_model_id")
+        ),
+        "semantic.creation_production.required_relation_producer_missing" => format!(
+            "생산 {}의 관계 slot {}은 생성 branch {}에서 연결되지 않습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "relation_id"),
+            argument(diagnostic, "create_branch_ids")
+        ),
+        "semantic.creation_production.relation_producer_conflict" => format!(
+            "생산 {}의 관계 slot {}에 producer {}가 함께 선언되었습니다.",
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "relation_id"),
+            argument(diagnostic, "producer_ids")
+        ),
+        "semantic.field_producer.condition_not_creation_decision_variant" => format!(
+            "생산자 {}의 조건 {}={}은 생산 {}의 결정 입력 {}의 값이어야 합니다.",
+            argument(diagnostic, "producer_id"),
+            argument(diagnostic, "input_id"),
+            argument(diagnostic, "variant_id"),
+            argument(diagnostic, "production_id"),
+            argument(diagnostic, "decision_input_id")
+        ),
         "semantic.constraint.operand_type_mismatch" => {
             "제약의 양쪽 operand 타입이 다릅니다.".into()
         }
@@ -263,6 +497,10 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "action_id"),
             argument(diagnostic, "model_id"),
             argument(diagnostic, "mutations")
+        ),
+        "semantic.action_input.duplicate_id" => format!(
+            "같은 행동에서 입력 stable ID {}가 중복 선언되었습니다.",
+            argument(diagnostic, "id")
         ),
         "semantic.derivation.sum_requires_integer" => {
             "합계의 원본과 결과 필드는 모두 정수여야 합니다.".into()
@@ -392,6 +630,8 @@ fn syntax_kind(kind: &str) -> &str {
         "sum_derivation" => "계산",
         "recalculation" => "재계산",
         "field_intent" => "필드 사용 의도",
+        "creation_branch" => "조건부 생성 branch",
+        "field_producer" => "필드 생산자",
         "relation" => "관계 선언",
         "entity" => "개체 선언",
         "relational_constraint" => "관계 메타 규칙",
@@ -541,6 +781,84 @@ mod tests {
             )
             .with_argument("relation_ids", relations);
             assert_eq!(render_diagnostic(&diagnostic), expected);
+        }
+    }
+
+    #[test]
+    fn renders_conditional_creation_core_diagnostics() {
+        let arguments = [
+            ("action_id", "notice.assign"),
+            ("reference", "status"),
+            ("input_id", "notice.assign.status"),
+            ("enum_id", "notice.status"),
+            ("production_id", "notice.production_x"),
+            ("input_ids", "notice.assign.status,notice.assign.kind"),
+            ("variant_id", "notice.status.received"),
+            ("branch_ids", "notice.first,notice.second"),
+            ("missing_variant_ids", "notice.status.held"),
+            ("field_id", "notice.output.body"),
+            ("create_branch_ids", "notice.first"),
+        ];
+        for key in [
+            "semantic.creation_branch.decision_input_not_found",
+            "semantic.creation_branch.decision_input_requires_enum",
+            "semantic.creation_branch.variant_not_in_decision_enum",
+            "semantic.creation_production.mixed_decision_inputs",
+            "semantic.creation_production.variant_conflict",
+            "semantic.creation_production.variant_coverage_missing",
+            "semantic.creation_production.required_field_producer_missing",
+        ] {
+            let diagnostic = arguments.into_iter().fold(
+                Diagnostic::error("RSPDL-TEST", key, TextRange::default()),
+                |diagnostic, (argument, value)| diagnostic.with_argument(argument, value),
+            );
+            let rendered = render_diagnostic(&diagnostic);
+            assert_ne!(rendered, key, "{key}");
+            assert!(!rendered.contains("<?>"), "{key}: {rendered}");
+        }
+    }
+
+    #[test]
+    fn renders_field_producer_diagnostics_without_raw_keys_or_missing_arguments() {
+        for key in [
+            "ko.syntax.field_producer_stable_id_required",
+            "ko.syntax.field_producer_topic_marker_required",
+            "ko.syntax.field_producer_literal_required",
+            "ko.syntax.field_producer_literal_marker_required",
+        ] {
+            assert_ne!(
+                render_diagnostic(&Diagnostic::error("RSPDL-TEST", key, TextRange::default())),
+                key
+            );
+        }
+
+        let arguments = [
+            ("producer_id", "notice.title_binding"),
+            ("source", "notice.assign.title"),
+            ("source_type", "integer"),
+            ("output_field_id", "notice.output.title"),
+            ("output_type", "string"),
+            ("production_id", "notice.production_x"),
+            ("field_id", "notice.output.title"),
+            ("producer_ids", "notice.first,notice.second"),
+        ];
+        for key in [
+            "semantic.field_producer.source_input_not_found",
+            "semantic.field_producer.source_trigger_owner_mismatch",
+            "semantic.field_producer.type_mismatch",
+            "semantic.creation_production.field_producer_without_creation_decision",
+            "semantic.creation_production.field_producer_conflict",
+            "semantic.event_field_producer.conditional_unsupported",
+            "semantic.event_field_producer.constant_unsupported",
+            "semantic.producer.legacy_action_incompatible",
+        ] {
+            let diagnostic = arguments.into_iter().fold(
+                Diagnostic::error("RSPDL-TEST", key, TextRange::default()),
+                |diagnostic, (argument, value)| diagnostic.with_argument(argument, value),
+            );
+            let rendered = render_diagnostic(&diagnostic);
+            assert_ne!(rendered, key, "{key}");
+            assert!(!rendered.contains("<?>"), "{key}: {rendered}");
         }
     }
 }

@@ -31,6 +31,24 @@ pub(crate) struct GeneratedActionDataMutation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct GeneratedActionInput {
+    pub action: Capture,
+    pub existing: Option<Capture>,
+    pub input_type: Capture,
+    pub input_name: Capture,
+    pub input_id: Capture,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct GeneratedEventInput {
+    pub event: Capture,
+    pub input_type: Capture,
+    pub input_name: Capture,
+    pub input_id: Capture,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct GeneratedSumDerivation {
     pub target_model: Capture,
     pub target_field: Capture,
@@ -72,6 +90,35 @@ pub(crate) fn parse_action_data_mutation(
         action: required_capture(&parsed, "action"),
         model: required_capture(&parsed, "model"),
         operation: required_capture(&parsed, "operation"),
+    })
+}
+
+pub(crate) fn parse_action_input(tokens: &[Token]) -> Result<GeneratedActionInput, ParseError> {
+    let parsed = parse("action_input_statement", tokens)?;
+    Ok(GeneratedActionInput {
+        action: required_capture(&parsed, "action"),
+        existing: tokens.iter().find_map(|token| match &token.kind {
+            TokenKind::Word(value) if value == "기존" => Some(Capture {
+                value: value.clone(),
+                start: token.span.start,
+                end: token.span.end,
+            }),
+            _ => None,
+        }),
+        input_type: required_capture(&parsed, "input_type"),
+        input_name: required_capture(&parsed, "input_name"),
+        input_id: required_capture(&parsed, "input_id"),
+    })
+}
+
+#[allow(dead_code)]
+pub(crate) fn parse_event_input(tokens: &[Token]) -> Result<GeneratedEventInput, ParseError> {
+    let parsed = parse("event_input_statement", tokens)?;
+    Ok(GeneratedEventInput {
+        event: required_capture(&parsed, "event"),
+        input_type: required_capture(&parsed, "input_type"),
+        input_name: required_capture(&parsed, "input_name"),
+        input_id: required_capture(&parsed, "input_id"),
     })
 }
 
@@ -134,12 +181,24 @@ impl InputAdapter<Token> for ProvenanceTokenAdapter {
     ) -> Vec<TerminalMatch> {
         match matcher {
             "marked_ref" => match_marked_ref(tokens, position, arguments),
+            "action_input_type" => action_input_type(tokens, position, arguments),
             "screen_model_ref" => screen_model_reference(tokens, position, arguments),
             "surface_name" => surface_name_prefixes(tokens, position),
             "canonical_id" => canonical_id(tokens, position),
             "comma_ref" => comma_reference(tokens, position),
             _ => Vec::new(),
         }
+    }
+}
+
+fn action_input_type(tokens: &[Token], position: usize, markers: &[String]) -> Vec<TerminalMatch> {
+    if matches!(
+        tokens.get(position).map(|token| &token.kind),
+        Some(TokenKind::Word(value)) if value == "기존"
+    ) {
+        Vec::new()
+    } else {
+        match_marked_ref(tokens, position, markers)
     }
 }
 
@@ -238,7 +297,8 @@ fn comma_reference(tokens: &[Token], position: usize) -> Vec<TerminalMatch> {
 #[cfg(test)]
 mod tests {
     use crate::ast::{
-        DataMutationKindAst, DeclarationAst, FieldIntentKindAst, ScreenOperationKindAst,
+        ActionInputKindAst, DataMutationKindAst, DeclarationAst, FieldIntentKindAst,
+        ScreenOperationKindAst, TypeReferenceAst,
     };
     use crate::scanner::TokenKind;
     use crate::{Diagnostic, parse as parse_document, scan};
@@ -419,6 +479,51 @@ mod tests {
             assert_eq!(generated.field.value, handwritten.field, "{sentence}");
             assert_eq!(generated.intent.value, intent_words(expected), "{sentence}");
             assert_eq!(handwritten.intent, expected, "{sentence}");
+        }
+    }
+
+    #[test]
+    fn generated_action_inputs_match_handwritten_ast_captures() {
+        for sentence in [
+            "주문 취소는 주문 상태를 상태(status)로 입력받는다.",
+            "주문 취소는 문자열을 취소 사유(reason)로 입력받는다.",
+            "주문 취소는 기존 주문을 대상 주문(target_order)으로 입력받는다.",
+        ] {
+            let DeclarationAst::ActionInput(handwritten) = oracle(sentence).unwrap() else {
+                panic!("oracle did not return an action input")
+            };
+            let generated = parse_action_input(&sentence_tokens(sentence)).unwrap();
+            assert_eq!(generated.action.value, handwritten.action, "{sentence}");
+            assert_eq!(
+                generated.input_name.value, handwritten.declaration.name,
+                "{sentence}"
+            );
+            assert_eq!(
+                generated.input_id.value, handwritten.declaration.id,
+                "{sentence}"
+            );
+            match handwritten.kind {
+                ActionInputKindAst::ExistingModel { model } => {
+                    assert_eq!(
+                        generated
+                            .existing
+                            .as_ref()
+                            .map(|value| value.value.as_str()),
+                        Some("기존")
+                    );
+                    assert_eq!(generated.input_type.value, model);
+                }
+                ActionInputKindAst::Value { value_type } => {
+                    assert!(generated.existing.is_none());
+                    let expected = match value_type {
+                        TypeReferenceAst::String => "문자열".to_owned(),
+                        TypeReferenceAst::Integer => "정수".to_owned(),
+                        TypeReferenceAst::Boolean => "불리언".to_owned(),
+                        TypeReferenceAst::Named(name) => name,
+                    };
+                    assert_eq!(generated.input_type.value, expected);
+                }
+            }
         }
     }
 

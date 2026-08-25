@@ -1,0 +1,4 @@
+@모듈 주문(ordering)
+
+주문 접수(receive_order)는 행동이다.
+주문 접수는 결제 상태를 요청 상태(status)로 입력받는다.

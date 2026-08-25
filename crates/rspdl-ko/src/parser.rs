@@ -112,6 +112,32 @@ pub fn parse(source: &str) -> ParseOutput {
                     })
                 })
             }
+            Some(DeclarationKind::Event) => {
+                parse_event(line, body, &mut diagnostics).map(|declaration| {
+                    DeclarationAst::Event(EventAst {
+                        declaration,
+                        span: line.span,
+                    })
+                })
+            }
+            Some(DeclarationKind::ActionInput) => {
+                parse_action_input(line, body, &mut diagnostics).map(DeclarationAst::ActionInput)
+            }
+            Some(DeclarationKind::EventInput) => {
+                parse_event_input(line, body, &mut diagnostics).map(DeclarationAst::EventInput)
+            }
+            Some(DeclarationKind::CreationBranch) => {
+                parse_creation_branch(line, body, &mut diagnostics)
+                    .map(DeclarationAst::CreationBranch)
+            }
+            Some(DeclarationKind::FieldProducer) => {
+                parse_field_producer(line, body, &mut diagnostics)
+                    .map(DeclarationAst::FieldProducer)
+            }
+            Some(DeclarationKind::RelationProducer) => {
+                parse_relation_producer(line, body, &mut diagnostics)
+                    .map(DeclarationAst::RelationProducer)
+            }
             Some(DeclarationKind::Policy) => {
                 parse_policy(line, body, &mut diagnostics).map(DeclarationAst::Policy)
             }
@@ -191,6 +217,12 @@ enum DeclarationKind {
     Constraint,
     Role,
     Action,
+    Event,
+    ActionInput,
+    EventInput,
+    CreationBranch,
+    FieldProducer,
+    RelationProducer,
     Policy,
 }
 
@@ -210,6 +242,13 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
         _ if is_data_model_header(line) => Some(DeclarationKind::DataModel),
         _ if is_role_sentence(line) => Some(DeclarationKind::Role),
         _ if is_action_sentence(line) => Some(DeclarationKind::Action),
+        _ if is_event_sentence(line) => Some(DeclarationKind::Event),
+        _ if is_action_input_sentence(line) => Some(DeclarationKind::ActionInput),
+        _ if is_event_input_sentence(line) => Some(DeclarationKind::EventInput),
+        _ if is_creation_branch_sentence(line) => Some(DeclarationKind::CreationBranch),
+        _ if is_template_producer_sentence(line) => Some(DeclarationKind::FieldProducer),
+        _ if is_field_producer_sentence(line) => Some(DeclarationKind::FieldProducer),
+        _ if is_relation_producer_sentence(line) => Some(DeclarationKind::RelationProducer),
         _ if is_relation_sentence(line) => Some(DeclarationKind::Relation),
         _ if is_nonempty_sentence(line) => Some(DeclarationKind::RelationalConstraint(
             RelationalConstraintDeclarationKind::NonEmpty,
@@ -552,6 +591,57 @@ fn is_role_sentence(line: &Line) -> bool {
 
 fn is_action_sentence(line: &Line) -> bool {
     sentence_words_end_with(line, &["행동이다"])
+}
+
+fn is_event_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["사건이다"])
+}
+
+fn is_action_input_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["입력받는다"])
+}
+
+fn is_event_input_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["담는다"])
+}
+
+fn is_creation_branch_sentence(line: &Line) -> bool {
+    let ends_with_creation = last_sentence_word(line, 0) == Some("생성한다")
+        || (last_sentence_word(line, 0) == Some("않는다")
+            && last_sentence_word(line, 1) == Some("생성하지"));
+    ends_with_creation
+        && line.tokens.iter().any(|token| {
+            matches!(&token.kind, TokenKind::Word(word) if matches!(word.as_str(), "이면" | "라면") || word.ends_with("이면") || word.ends_with("라면"))
+        })
+}
+
+fn is_field_producer_sentence(line: &Line) -> bool {
+    last_sentence_word(line, 0) == Some("기록한다")
+        && line.tokens.iter().any(|token| {
+            matches!(&token.kind, TokenKind::Word(word)
+                if matches!(word.as_str(), "실행될" | "발생할" | "이면" | "라면")
+                    || word.ends_with("이면") || word.ends_with("라면"))
+        })
+}
+
+fn is_template_producer_sentence(line: &Line) -> bool {
+    last_sentence_word(line, 0) == Some("조합한다")
+        && line
+            .tokens
+            .iter()
+            .any(|token| matches!(token.kind, TokenKind::StringLiteral(_)))
+        && line
+            .tokens
+            .iter()
+            .any(|token| matches!(&token.kind, TokenKind::Word(word) if matches!(word.as_str(), "실행될" | "발생할")))
+}
+
+fn is_relation_producer_sentence(line: &Line) -> bool {
+    last_sentence_word(line, 0) == Some("연결한다")
+        && line
+            .tokens
+            .iter()
+            .any(|token| matches!(&token.kind, TokenKind::Word(word) if matches!(word.as_str(), "실행될" | "발생할")))
 }
 
 fn is_relation_sentence(line: &Line) -> bool {
@@ -901,6 +991,452 @@ fn parse_action_data_mutation(
     })
 }
 
+fn parse_action_input(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<ActionInputAst, Diagnostic> {
+    parse_action_input_with_verb(line, body, diagnostics, "입력받는다", "action_input")
+}
+
+fn parse_action_input_with_verb(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+    verb: &str,
+    syntax_kind: &str,
+) -> Result<ActionInputAst, Diagnostic> {
+    reject_sentence_body(body, line.span, syntax_kind)?;
+    let tokens = sentence_tokens(line)?;
+    let mut cursor = BodyCursor::new(tokens, line.span);
+    let (action, action_marker) = cursor.marked_ref(&["은", "는"])?;
+    let is_existing_model = cursor.consume_word("기존");
+    let (input_type_name, input_type_marker) = cursor.marked_ref(&["을", "를"])?;
+    let kind = if is_existing_model {
+        ActionInputKindAst::ExistingModel {
+            model: input_type_name.clone(),
+        }
+    } else {
+        ActionInputKindAst::Value {
+            value_type: type_reference_from_name(&input_type_name, line.span)?,
+        }
+    };
+    let id_index = tokens
+        .iter()
+        .enumerate()
+        .skip(cursor.index)
+        .find_map(|(index, token)| matches!(token.kind, TokenKind::CanonicalId(_)).then_some(index))
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-064",
+                "ko.syntax.action_input_stable_id_required",
+                line.span,
+            )
+        })?;
+    let declaration = parse_name_with_id_tokens(tokens, cursor.index, id_index, line.span)?;
+    cursor.index = id_index + 1;
+    match cursor.next_word() {
+        Some("로" | "으로") => {}
+        _ => return Err(cursor.error("ko.syntax.action_input_name_marker_required")),
+    }
+    cursor.expect_word(verb)?;
+    cursor.expect_end()?;
+    lint_marker(&action, &action_marker, "은", "는", line.span, diagnostics);
+    lint_marker(
+        &input_type_name,
+        &input_type_marker,
+        "을",
+        "를",
+        line.span,
+        diagnostics,
+    );
+    Ok(ActionInputAst {
+        action,
+        declaration,
+        kind,
+        span: line.span,
+    })
+}
+
+fn parse_event_input(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<EventInputAst, Diagnostic> {
+    let input = parse_action_input_with_verb(line, body, diagnostics, "담는다", "event_input")?;
+    Ok(EventInputAst {
+        event: input.action,
+        declaration: input.declaration,
+        kind: input.kind,
+        span: input.span,
+    })
+}
+
+fn parse_creation_branch(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<CreationBranchAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "creation_branch")?;
+    let tokens = sentence_tokens(line)?;
+    let id_index = tokens
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-072",
+                "ko.syntax.creation_branch_stable_id_required",
+                line.span,
+            )
+        })?;
+    let declaration = parse_name_with_id_tokens(tokens, 0, id_index, line.span)?;
+    let mut cursor = BodyCursor::new(&tokens[id_index + 1..], line.span);
+    let topic_marker = cursor
+        .next_word()
+        .filter(|marker| matches!(*marker, "은" | "는"));
+    let Some(topic_marker) = topic_marker else {
+        return Err(creation_branch_error(
+            &cursor,
+            "RSPDL-KO-SYN-073",
+            "ko.syntax.creation_branch_topic_marker_required",
+        ));
+    };
+    let (action, _) = creation_branch_marked_ref(
+        &mut cursor,
+        &["의"],
+        "ko.syntax.creation_branch_condition_marker_invalid",
+    )?;
+    let (input, input_marker) = creation_branch_marked_ref(
+        &mut cursor,
+        &["이", "가"],
+        "ko.syntax.creation_branch_condition_marker_invalid",
+    )?;
+    let (variant, variant_marker) = creation_branch_marked_ref(
+        &mut cursor,
+        &["이면", "라면"],
+        "ko.syntax.creation_branch_condition_marker_invalid",
+    )?;
+    let (output_model, output_marker) = creation_branch_marked_ref(
+        &mut cursor,
+        &["을", "를"],
+        "ko.syntax.creation_branch_result_marker_invalid",
+    )?;
+    let decision = match (cursor.next_word(), cursor.next_word()) {
+        (Some("하나"), Some("생성한다")) => CreationDecisionAst::Create,
+        (Some("생성하지"), Some("않는다")) => CreationDecisionAst::Skip,
+        _ => {
+            return Err(creation_branch_error(
+                &cursor,
+                "RSPDL-KO-SYN-076",
+                "ko.syntax.creation_branch_result_invalid",
+            ));
+        }
+    };
+    cursor.expect_end()?;
+    lint_marker(
+        &declaration.name,
+        topic_marker,
+        "은",
+        "는",
+        line.span,
+        diagnostics,
+    );
+    lint_marker(&input, &input_marker, "이", "가", line.span, diagnostics);
+    lint_marker(
+        &variant,
+        &variant_marker,
+        "이면",
+        "라면",
+        line.span,
+        diagnostics,
+    );
+    lint_marker(
+        &output_model,
+        &output_marker,
+        "을",
+        "를",
+        line.span,
+        diagnostics,
+    );
+    Ok(CreationBranchAst {
+        declaration,
+        action,
+        input,
+        variant,
+        output_model,
+        decision,
+        span: line.span,
+    })
+}
+
+fn parse_field_producer(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<FieldProducerAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "field_producer")?;
+    let tokens = sentence_tokens(line)?;
+    let id_index = tokens
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-077",
+                "ko.syntax.field_producer_stable_id_required",
+                line.span,
+            )
+        })?;
+    let declaration = parse_name_with_id_tokens(tokens, 0, id_index, line.span)?;
+    let mut cursor = BodyCursor::new(&tokens[id_index + 1..], line.span);
+    let topic = cursor
+        .next_word()
+        .filter(|marker| matches!(*marker, "은" | "는"))
+        .ok_or_else(|| cursor.error("ko.syntax.field_producer_topic_marker_required"))?;
+    let (trigger_name, trigger_marker) = cursor.marked_ref(&["의", "이", "가"])?;
+    let (trigger_kind, condition) = if trigger_marker == "의" {
+        let (input, _input_marker) = cursor.marked_ref(&["이", "가"])?;
+        let (variant, _variant_marker) = cursor.marked_ref(&["이면", "라면"])?;
+        (
+            ProducerTriggerKindAst::Action,
+            Some(FieldProducerConditionAst { input, variant }),
+        )
+    } else {
+        let trigger_kind = if cursor.consume_word("실행될") {
+            ProducerTriggerKindAst::Action
+        } else {
+            cursor.expect_word("발생할")?;
+            ProducerTriggerKindAst::Event
+        };
+        cursor.expect_word("때")?;
+        (trigger_kind, None)
+    };
+    let source = if is_template_producer_sentence(line) {
+        let token = cursor
+            .next_token()
+            .ok_or_else(|| cursor.error("ko.syntax.template_string_required"))?;
+        let TokenKind::StringLiteral(value) = &token.kind else {
+            return Err(cursor.error("ko.syntax.template_string_required"));
+        };
+        cursor.expect_word("를")?;
+        validate_template_syntax(value, token.span)?;
+        FieldProducerSourceAst::Template {
+            value: value.clone(),
+        }
+    } else if cursor.consume_word("상수") {
+        let (literal, _marker) = cursor.field_producer_literal_marked()?;
+        FieldProducerSourceAst::Constant { literal }
+    } else {
+        let (first, marker) = cursor.marked_ref(&["의", "을", "를"])?;
+        if marker == "의" {
+            let (field, field_marker) = cursor.marked_ref(&["을", "를"])?;
+            lint_marker(&field, &field_marker, "을", "를", line.span, diagnostics);
+            FieldProducerSourceAst::InputField {
+                input: first,
+                field,
+            }
+        } else {
+            lint_marker(&first, &marker, "을", "를", line.span, diagnostics);
+            FieldProducerSourceAst::ActionInput { input: first }
+        }
+    };
+    let (output_model, _) = cursor.marked_ref(&["의"])?;
+    let (output_field, output_marker) = cursor.marked_ref(&["으로", "로"])?;
+    if matches!(source, FieldProducerSourceAst::Template { .. }) {
+        cursor.expect_word("조합한다")?;
+    } else {
+        cursor.expect_word("기록한다")?;
+    }
+    cursor.expect_end()?;
+    lint_marker(&declaration.name, topic, "은", "는", line.span, diagnostics);
+    if trigger_marker != "의" {
+        lint_marker(
+            &trigger_name,
+            &trigger_marker,
+            "이",
+            "가",
+            line.span,
+            diagnostics,
+        );
+    }
+    lint_marker(
+        &output_field,
+        &output_marker,
+        "으로",
+        "로",
+        line.span,
+        diagnostics,
+    );
+    Ok(FieldProducerAst {
+        declaration,
+        trigger: ProducerTriggerAst {
+            name: trigger_name,
+            kind: trigger_kind,
+        },
+        output_model,
+        output_field,
+        source,
+        condition,
+        span: line.span,
+    })
+}
+
+fn validate_template_syntax(value: &str, span: Span) -> Result<(), Diagnostic> {
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '{' if chars.peek() == Some(&'{') => {
+                chars.next();
+            }
+            '}' if chars.peek() == Some(&'}') => {
+                chars.next();
+            }
+            '{' => {
+                let mut placeholder = String::new();
+                let mut closed = false;
+                for next in chars.by_ref() {
+                    if next == '{' {
+                        return Err(Diagnostic::error(
+                            "RSPDL-KO-SYN-079",
+                            "ko.syntax.template_nested_placeholder",
+                            span,
+                        ));
+                    }
+                    if next == '}' {
+                        closed = true;
+                        break;
+                    }
+                    placeholder.push(next);
+                }
+                if !closed {
+                    return Err(Diagnostic::error(
+                        "RSPDL-KO-SYN-079",
+                        "ko.syntax.template_unmatched_brace",
+                        span,
+                    ));
+                }
+                if placeholder.trim().is_empty() {
+                    return Err(Diagnostic::error(
+                        "RSPDL-KO-SYN-079",
+                        "ko.syntax.template_empty_placeholder",
+                        span,
+                    ));
+                }
+                if placeholder != placeholder.trim()
+                    || placeholder.contains('.')
+                    || placeholder.contains('/')
+                    || placeholder.contains("::")
+                {
+                    return Err(Diagnostic::error(
+                        "RSPDL-KO-SYN-079",
+                        "ko.syntax.template_path_placeholder_forbidden",
+                        span,
+                    )
+                    .with_argument("placeholder", placeholder));
+                }
+            }
+            '}' => {
+                return Err(Diagnostic::error(
+                    "RSPDL-KO-SYN-079",
+                    "ko.syntax.template_unmatched_brace",
+                    span,
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn parse_relation_producer(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<RelationProducerAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "relation_producer")?;
+    let tokens = sentence_tokens(line)?;
+    let id_index = tokens
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::CanonicalId(_)))
+        .ok_or_else(|| {
+            Diagnostic::error(
+                "RSPDL-KO-SYN-078",
+                "ko.syntax.relation_producer_stable_id_required",
+                line.span,
+            )
+        })?;
+    let declaration = parse_name_with_id_tokens(tokens, 0, id_index, line.span)?;
+    let mut cursor = BodyCursor::new(&tokens[id_index + 1..], line.span);
+    let topic = cursor
+        .next_word()
+        .filter(|marker| matches!(*marker, "은" | "는"))
+        .ok_or_else(|| cursor.error("ko.syntax.relation_producer_topic_marker_required"))?;
+    let (trigger_name, trigger_marker) = cursor.marked_ref(&["이", "가"])?;
+    let trigger_kind = if cursor.consume_word("실행될") {
+        ProducerTriggerKindAst::Action
+    } else {
+        cursor.expect_word("발생할")?;
+        ProducerTriggerKindAst::Event
+    };
+    cursor.expect_word("때")?;
+    let (input, input_marker) = cursor.marked_ref(&["을", "를"])?;
+    let (output_model, _) = cursor.marked_ref(&["의"])?;
+    let (relation, relation_marker) = cursor.marked_ref(&["으로", "로"])?;
+    cursor.expect_word("연결한다")?;
+    cursor.expect_end()?;
+    lint_marker(&declaration.name, topic, "은", "는", line.span, diagnostics);
+    lint_marker(
+        &trigger_name,
+        &trigger_marker,
+        "이",
+        "가",
+        line.span,
+        diagnostics,
+    );
+    lint_marker(&input, &input_marker, "을", "를", line.span, diagnostics);
+    lint_marker(
+        &relation,
+        &relation_marker,
+        "으로",
+        "로",
+        line.span,
+        diagnostics,
+    );
+    Ok(RelationProducerAst {
+        declaration,
+        trigger: ProducerTriggerAst {
+            name: trigger_name,
+            kind: trigger_kind,
+        },
+        input,
+        output_model,
+        relation,
+        span: line.span,
+    })
+}
+
+fn creation_branch_marked_ref(
+    cursor: &mut BodyCursor<'_>,
+    markers: &[&str],
+    message_key: &'static str,
+) -> Result<(String, String), Diagnostic> {
+    cursor
+        .marked_ref(markers)
+        .map_err(|_| creation_branch_error(cursor, "RSPDL-KO-SYN-074", message_key))
+}
+
+fn creation_branch_error(
+    cursor: &BodyCursor<'_>,
+    rule_id: &'static str,
+    message_key: &'static str,
+) -> Diagnostic {
+    let span = cursor
+        .tokens
+        .get(cursor.index)
+        .map(|token| token.span)
+        .unwrap_or(cursor.span);
+    Diagnostic::error(rule_id, message_key, span)
+}
+
 fn parse_field_list(tokens: &[Token], span: Span) -> Result<Vec<String>, Diagnostic> {
     if tokens.is_empty() {
         return Err(Diagnostic::error(
@@ -1194,6 +1730,15 @@ fn parse_action(
     parse_natural_header(line, &["행동이다"], diagnostics)
 }
 
+fn parse_event(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<NamedIdAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "event")?;
+    parse_natural_header(line, &["사건이다"], diagnostics)
+}
+
 fn parse_annotated_name(line: &Line, keyword: &str) -> Result<NamedIdAst, Diagnostic> {
     if word_at(line, 0) != Some(keyword) {
         return Err(Diagnostic::error(
@@ -1403,17 +1948,20 @@ fn parse_type_reference(line: &Line, start: usize) -> Result<TypeReferenceAst, D
             }
         }
     }
-    let name = parts.join(" ");
-    match name.as_str() {
+    type_reference_from_name(&parts.join(" "), line.span)
+}
+
+fn type_reference_from_name(name: &str, span: Span) -> Result<TypeReferenceAst, Diagnostic> {
+    match name {
         "문자열" => Ok(TypeReferenceAst::String),
         "정수" => Ok(TypeReferenceAst::Integer),
         "불리언" => Ok(TypeReferenceAst::Boolean),
         "" => Err(Diagnostic::error(
             "RSPDL-KO-SYN-011",
             "ko.syntax.field_type_required",
-            line.span,
+            span,
         )),
-        _ => Ok(TypeReferenceAst::Named(name)),
+        _ => Ok(TypeReferenceAst::Named(name.to_owned())),
     }
 }
 
@@ -1430,6 +1978,12 @@ impl<'a> BodyCursor<'a> {
             index: 0,
             span,
         }
+    }
+
+    fn next_token(&mut self) -> Option<&'a Token> {
+        let token = self.tokens.get(self.index)?;
+        self.index += 1;
+        Some(token)
     }
 
     fn marked_ref(&mut self, markers: &[&str]) -> Result<(String, String), Diagnostic> {
@@ -1580,6 +2134,43 @@ impl<'a> BodyCursor<'a> {
         Ok((RelationOperatorAst::Equal, literal))
     }
 
+    fn field_producer_literal_marked(&mut self) -> Result<(LiteralAst, String), Diagnostic> {
+        let token = self
+            .tokens
+            .get(self.index)
+            .ok_or_else(|| self.error("ko.syntax.field_producer_literal_required"))?;
+        let literal = match &token.kind {
+            TokenKind::StringLiteral(value) => LiteralAst::String(value.clone()),
+            TokenKind::QuotedIdentifier(value) => LiteralAst::Named(value.clone()),
+            TokenKind::Word(value) => {
+                for marker in ["을", "를"] {
+                    if let Some(value) =
+                        value.strip_suffix(marker).filter(|value| !value.is_empty())
+                    {
+                        self.index += 1;
+                        return Ok((parse_word_literal(value), marker.into()));
+                    }
+                }
+                let literal = parse_word_literal(value);
+                self.index += 1;
+                let marker = self
+                    .next_word()
+                    .filter(|marker| matches!(*marker, "을" | "를"))
+                    .ok_or_else(|| {
+                        self.error("ko.syntax.field_producer_literal_marker_required")
+                    })?;
+                return Ok((literal, marker.into()));
+            }
+            _ => return Err(self.error("ko.syntax.field_producer_literal_required")),
+        };
+        self.index += 1;
+        let marker = self
+            .next_word()
+            .filter(|marker| matches!(*marker, "을" | "를"))
+            .ok_or_else(|| self.error("ko.syntax.field_producer_literal_marker_required"))?;
+        Ok((literal, marker.into()))
+    }
+
     fn expect_word(&mut self, expected: &str) -> Result<(), Diagnostic> {
         match self.next_word() {
             Some(actual) if actual == expected => Ok(()),
@@ -1598,6 +2189,16 @@ impl<'a> BodyCursor<'a> {
             self.index += 1;
         }
         value
+    }
+
+    fn consume_word(&mut self, expected: &str) -> bool {
+        if matches!(self.tokens.get(self.index).map(|token| &token.kind), Some(TokenKind::Word(value)) if value == expected)
+        {
+            self.index += 1;
+            true
+        } else {
+            false
+        }
     }
 
     fn expect_end(&self) -> Result<(), Diagnostic> {
@@ -1873,6 +2474,154 @@ mod tests {
                         }) if action == "주문 취소" && model == "주문"
                     )
                 })
+        );
+    }
+
+    #[test]
+    fn parses_exact_conditional_creation_sentences_and_rejects_invalid_shapes() {
+        let source = r#"@모듈 알림(notifications)
+상태(status)는 다음 값 중 하나다.
+    접수됨(received)
+    보류됨(on_hold)
+점검 요청 전달 알림(notice)은 다음 필드들로 구성되어 있다.
+    내용(content): 선택 문자열
+점검 요청 전달(assign_request)은 행동이다.
+점검 요청 전달은 상태를 요청 상태(request_status)로 입력받는다.
+접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.
+보류 상태 알림 미생성(on_hold_notice_skip)은 점검 요청 전달의 요청 상태가 보류됨이면 점검 요청 전달 알림을 생성하지 않는다.
+"#;
+        let output = parse(source);
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let branches = output
+            .document
+            .unwrap()
+            .declarations
+            .into_iter()
+            .filter_map(|declaration| match declaration {
+                DeclarationAst::CreationBranch(value) => Some(value),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(branches.len(), 2);
+        assert_eq!(branches[0].declaration.id, "received_notice_create");
+        assert_eq!(branches[0].action, "점검 요청 전달");
+        assert_eq!(branches[0].input, "요청 상태");
+        assert_eq!(branches[0].variant, "접수됨");
+        assert_eq!(branches[0].output_model, "점검 요청 전달 알림");
+        assert_eq!(branches[0].decision, CreationDecisionAst::Create);
+        assert_eq!(branches[1].decision, CreationDecisionAst::Skip);
+
+        for (line, rule_id, message_key) in [
+            (
+                "접수 상태 알림 생성은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.",
+                "RSPDL-KO-SYN-072",
+                "ko.syntax.creation_branch_stable_id_required",
+            ),
+            (
+                "접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 두 개 생성한다.",
+                "RSPDL-KO-SYN-076",
+                "ko.syntax.creation_branch_result_invalid",
+            ),
+        ] {
+            let output = parse(&format!("@모듈 알림(notifications)\n{line}\n"));
+            assert!(
+                output.diagnostics.iter().any(|diagnostic| {
+                    diagnostic.rule_id == rule_id && diagnostic.message_key == message_key
+                }),
+                "{line}: {:?}",
+                output.diagnostics
+            );
+        }
+
+        let invalid_id = parse(
+            "@모듈 알림(notifications)\n접수 상태 알림 생성(bad-id)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.\n",
+        );
+        assert!(invalid_id.diagnostics.is_empty());
+        let DeclarationAst::CreationBranch(branch) = &invalid_id.document.unwrap().declarations[0]
+        else {
+            panic!("invalid stable ID shape still belongs to the common linker")
+        };
+        assert_eq!(branch.declaration.id, "bad-id");
+
+        let block = format!(
+            "@모듈 알림(notifications)\n{}\n    금지된 블록\n",
+            "접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다."
+        );
+        assert!(parse(&block).diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-KO-SYN-063"
+                && diagnostic.message_key == "ko.syntax.sentence_block_forbidden"
+                && diagnostic.argument("kind") == Some("creation_branch")
+        }));
+    }
+
+    #[test]
+    fn parses_the_three_unconditional_field_producer_sentences() {
+        let source = "@모듈 검증(check)\n알림 제목 기록(title_binding)은 점검 요청 전달이 실행될 때 알림 제목을 점검 요청 전달 알림의 제목으로 기록한다.\n요청 제목 기록(request_title_binding)은 점검 요청 전달이 실행될 때 대상 요청의 제목을 점검 요청 전달 알림의 요청 제목으로 기록한다.\n재시도 횟수 기록(retry_binding)은 점검 요청 전달이 실행될 때 상수 0을 점검 요청 전달 알림의 재시도 횟수로 기록한다.\n";
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let producers = parsed
+            .document
+            .unwrap()
+            .declarations
+            .into_iter()
+            .filter_map(|declaration| match declaration {
+                DeclarationAst::FieldProducer(value) => Some(value),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(producers.len(), 3);
+        assert!(matches!(
+            producers[0].source,
+            FieldProducerSourceAst::ActionInput { .. }
+        ));
+        assert!(matches!(
+            producers[1].source,
+            FieldProducerSourceAst::InputField { .. }
+        ));
+        assert!(
+            matches!(producers[2].source, FieldProducerSourceAst::Constant { literal: LiteralAst::Integer(ref value) } if value == "0")
+        );
+        assert!(
+            producers
+                .iter()
+                .all(|producer| producer.condition.is_none())
+        );
+    }
+
+    #[test]
+    fn parses_event_payload_producer_sentences() {
+        let source = "@모듈 검증(check)\n제목 기록(title_binding)은 요청 접수됨이 발생할 때 알림 제목을 알림의 제목으로 기록한다.\n수신자 연결(recipient_binding)은 요청 접수됨이 발생할 때 수신 기술자를 알림의 수신자로 연결한다.\n";
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let declarations = parsed.document.unwrap().declarations;
+        let DeclarationAst::FieldProducer(field) = &declarations[0] else {
+            panic!()
+        };
+        assert_eq!(field.trigger.kind, ProducerTriggerKindAst::Event);
+        assert_eq!(field.trigger.name, "요청 접수됨");
+        let DeclarationAst::RelationProducer(relation) = &declarations[1] else {
+            panic!()
+        };
+        assert_eq!(relation.trigger.kind, ProducerTriggerKindAst::Event);
+        assert_eq!(relation.trigger.name, "요청 접수됨");
+    }
+
+    #[test]
+    fn parses_a_conditional_field_producer_sentence() {
+        let source = "@모듈 검증(check)\n접수 제목 기록(received_title)은 전달의 요청 상태가 접수됨이면 상수 \"요청이 접수되었습니다\"를 알림의 제목으로 기록한다.\n";
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let DeclarationAst::FieldProducer(producer) = &parsed.document.unwrap().declarations[0]
+        else {
+            panic!()
+        };
+        assert_eq!(producer.trigger.name, "전달");
+        assert_eq!(
+            producer
+                .condition
+                .as_ref()
+                .map(|condition| (&condition.input, &condition.variant)),
+            Some((&"요청 상태".into(), &"접수됨".into()))
         );
     }
 

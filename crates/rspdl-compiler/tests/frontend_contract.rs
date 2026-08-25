@@ -64,8 +64,13 @@ impl Frontend for TestFrontend {
                 roles: Vec::new(),
                 actions: vec![UnlinkedAction {
                     declaration: declaration("Create item", "create_item", span(70, 81)),
+                    inputs: Vec::new(),
                     span: span(70, 81),
                 }],
+                events: Vec::new(),
+                creation_branches: Vec::new(),
+                field_producers: Vec::new(),
+                relation_producers: Vec::new(),
                 policies: Vec::new(),
             }),
             diagnostics: Vec::<Diagnostic>::new(),

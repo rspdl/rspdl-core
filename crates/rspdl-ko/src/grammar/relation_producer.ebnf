@@ -1,0 +1,6 @@
+pub relation_producer_statement =
+    producer_name: @surface_name() producer_id: @canonical_id() ("은" | "는")
+    action: @marked_ref("이", "가") trigger_verb: ("실행될" | "발생할") "때"
+    input: @marked_ref("을", "를")
+    output_model: @marked_ref("의") relation: @marked_ref("으로", "로")
+    "연결한다" "." ;

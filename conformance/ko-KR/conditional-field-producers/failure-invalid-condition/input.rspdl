@@ -1,0 +1,13 @@
+@모듈 조건 생산(conditional)
+상태(status)는 다음 값 중 하나다.
+    접수됨(received)
+    보류됨(held)
+알림(notice)은 다음 필드들로 구성되어 있다.
+    제목(title): 선택 문자열
+전달(assign)은 행동이다.
+전달은 상태를 요청 상태(request_status)로 입력받는다.
+전달은 문자열을 제목 입력(title_input)으로 입력받는다.
+전달은 문자열을 잘못된 조건(bad_condition)으로 입력받는다.
+접수 미생성(received_skip)은 전달의 요청 상태가 접수됨이면 알림을 생성하지 않는다.
+보류 미생성(held_skip)은 전달의 요청 상태가 보류됨이면 알림을 생성하지 않는다.
+잘못된 제목 기록(invalid_condition)은 전달의 잘못된 조건이 접수됨이면 제목 입력을 알림의 제목으로 기록한다.

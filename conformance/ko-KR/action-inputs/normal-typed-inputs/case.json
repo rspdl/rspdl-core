@@ -1,0 +1,33 @@
+{
+  "spec_version": "0.3.0",
+  "locale": "ko-KR",
+  "category": "normal",
+  "expected_module": true,
+  "expected_diagnostics": [],
+  "expected_inputs": [
+    {
+      "action_id": "ordering.receive_order",
+      "id": "ordering.receive_order.order",
+      "local_id": "order",
+      "name": "대상 주문",
+      "kind": "existing_model",
+      "target": "ordering.order"
+    },
+    {
+      "action_id": "ordering.receive_order",
+      "id": "ordering.receive_order.reason",
+      "local_id": "reason",
+      "name": "접수 사유",
+      "kind": "value",
+      "target": "string"
+    },
+    {
+      "action_id": "ordering.receive_order",
+      "id": "ordering.receive_order.status",
+      "local_id": "status",
+      "name": "요청 상태",
+      "kind": "value",
+      "target": "enum(ordering.order_status)"
+    }
+  ]
+}

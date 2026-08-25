@@ -1,13 +1,16 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rspdl_domain::{
-    DataMutationKind, Diagnostic, FieldIntentKind, Frontend, FrontendOutput, PolicyEffect,
-    RelationOperator, ScreenOperationKind, SurfaceRef, UnlinkedAction, UnlinkedActionDataMutation,
-    UnlinkedConstraint, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant,
-    UnlinkedField, UnlinkedFieldIntent, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand,
-    UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationalConstraint,
-    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedSumDerivation,
-    UnlinkedTypeReference,
+    CreationDecision, DataMutationKind, Diagnostic, FieldIntentKind, Frontend, FrontendOutput,
+    PolicyEffect, ProductionTriggerKind, RelationOperator, ScreenOperationKind, SurfaceRef,
+    UnlinkedAction, UnlinkedActionDataMutation, UnlinkedActionInput, UnlinkedActionInputKind,
+    UnlinkedConstraint, UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration,
+    UnlinkedEnum, UnlinkedEnumVariant, UnlinkedEvent, UnlinkedEventInput, UnlinkedEventInputKind,
+    UnlinkedField, UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerCondition,
+    UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
+    UnlinkedProductionTrigger, UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationProducer,
+    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
+    UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference,
 };
 
 use crate::ast::*;
@@ -48,6 +51,14 @@ struct ModelSymbols {
     fields: Vec<FieldSymbol>,
 }
 
+#[derive(Clone, Debug)]
+struct ActionInputSymbol {
+    action_id: String,
+    symbol: Symbol,
+    enum_type_name: Option<String>,
+    existing_model_name: Option<String>,
+}
+
 #[derive(Clone, Debug, Default)]
 struct StableIdIndex {
     enums: Vec<EnumSymbols>,
@@ -55,6 +66,9 @@ struct StableIdIndex {
     relations: Vec<Symbol>,
     roles: Vec<Symbol>,
     actions: Vec<Symbol>,
+    events: Vec<Symbol>,
+    action_inputs: Vec<ActionInputSymbol>,
+    event_inputs: Vec<ActionInputSymbol>,
 }
 
 impl StableIdIndex {
@@ -90,8 +104,59 @@ impl StableIdIndex {
                 DeclarationAst::Action(value) => {
                     index.actions.push(Symbol::from(&value.declaration));
                 }
+                DeclarationAst::Event(value) => {
+                    index.events.push(Symbol::from(&value.declaration));
+                }
                 _ => {}
             }
+        }
+        for declaration in &document.declarations {
+            let DeclarationAst::EventInput(value) = declaration else {
+                continue;
+            };
+            let Some(event_id) = unique_symbol_id(index.events.iter(), &value.event) else {
+                continue;
+            };
+            let enum_type_name = match &value.kind {
+                ActionInputKindAst::Value {
+                    value_type: TypeReferenceAst::Named(name),
+                } => Some(name.clone()),
+                _ => None,
+            };
+            let existing_model_name = match &value.kind {
+                ActionInputKindAst::ExistingModel { model } => Some(model.clone()),
+                _ => None,
+            };
+            index.event_inputs.push(ActionInputSymbol {
+                action_id: event_id.to_owned(),
+                symbol: Symbol::from(&value.declaration),
+                enum_type_name,
+                existing_model_name,
+            });
+        }
+        for declaration in &document.declarations {
+            let DeclarationAst::ActionInput(value) = declaration else {
+                continue;
+            };
+            let Some(action_id) = unique_symbol_id(index.actions.iter(), &value.action) else {
+                continue;
+            };
+            let enum_type_name = match &value.kind {
+                ActionInputKindAst::Value {
+                    value_type: TypeReferenceAst::Named(name),
+                } => Some(name.clone()),
+                ActionInputKindAst::ExistingModel { .. } | ActionInputKindAst::Value { .. } => None,
+            };
+            let existing_model_name = match &value.kind {
+                ActionInputKindAst::ExistingModel { model } => Some(model.clone()),
+                ActionInputKindAst::Value { .. } => None,
+            };
+            index.action_inputs.push(ActionInputSymbol {
+                action_id: action_id.to_owned(),
+                symbol: Symbol::from(&value.declaration),
+                enum_type_name,
+                existing_model_name,
+            });
         }
         index
     }
@@ -151,6 +216,179 @@ impl StableIdIndex {
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Option<SurfaceRef> {
         resolve_symbols(self.actions.iter(), value, "action", span, diagnostics)
+    }
+
+    fn event_reference(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        resolve_symbols(self.events.iter(), value, "event", span, diagnostics)
+    }
+
+    fn trigger_reference(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<(ProductionTriggerKind, SurfaceRef)> {
+        let action = matching_symbol_ids(self.actions.iter(), value);
+        let event = matching_symbol_ids(self.events.iter(), value);
+        match (action.as_slice(), event.as_slice()) {
+            ([id], []) => Some((
+                ProductionTriggerKind::Action,
+                SurfaceRef::stable_id(*id, span),
+            )),
+            ([], [id]) => Some((
+                ProductionTriggerKind::Event,
+                SurfaceRef::stable_id(*id, span),
+            )),
+            ([], []) => {
+                diagnostics.push(
+                    Diagnostic::error("RSPDL-KO-REF-001", "ko.reference.not_found", span)
+                        .with_argument("kind", "trigger")
+                        .with_argument("reference", value),
+                );
+                None
+            }
+            _ => {
+                diagnostics.push(
+                    Diagnostic::error("RSPDL-KO-REF-002", "ko.reference.ambiguous", span)
+                        .with_argument("kind", "trigger")
+                        .with_argument("reference", value),
+                );
+                None
+            }
+        }
+    }
+
+    fn action_input_reference(
+        &self,
+        action: Option<&SurfaceRef>,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let action_id = action?.id();
+        resolve_symbols(
+            self.action_inputs
+                .iter()
+                .filter(|input| input.action_id == action_id)
+                .map(|input| &input.symbol),
+            value,
+            "action_input",
+            span,
+            diagnostics,
+        )
+    }
+
+    fn event_input_reference(
+        &self,
+        event: Option<&SurfaceRef>,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let event_id = event?.id();
+        resolve_symbols(
+            self.event_inputs
+                .iter()
+                .filter(|input| input.action_id == event_id)
+                .map(|input| &input.symbol),
+            value,
+            "event_input",
+            span,
+            diagnostics,
+        )
+    }
+
+    fn event_input_enum_reference(
+        &self,
+        event: Option<&SurfaceRef>,
+        input: Option<&SurfaceRef>,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let event_id = event?.id();
+        let input_id = input?.id();
+        let name = self
+            .event_inputs
+            .iter()
+            .find(|candidate| candidate.action_id == event_id && candidate.symbol.id == input_id)?
+            .enum_type_name
+            .as_deref()?;
+        self.enum_reference(name, span, diagnostics)
+    }
+
+    /// A scalar or existing-model input intentionally has no enum here. Its
+    /// variant remains a raw surface reference so the common analyzer owns the
+    /// required `RSPDL-PROD-002` decision-input diagnostic.
+    fn action_input_enum_reference(
+        &self,
+        action: Option<&SurfaceRef>,
+        input: Option<&SurfaceRef>,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let action_id = action?.id();
+        let input_id = input?.id();
+        let enum_type_name = self
+            .action_inputs
+            .iter()
+            .find(|candidate| candidate.action_id == action_id && candidate.symbol.id == input_id)?
+            .enum_type_name
+            .as_deref()?;
+        self.enum_reference(enum_type_name, span, diagnostics)
+    }
+
+    /// Conditional producer diagnostics belong to the common analyzer. When
+    /// the input is not an enum (or the variant belongs to another enum), keep
+    /// a stable-ID candidate rather than turning a Korean display token into a
+    /// frontend-only canonical-ID failure.
+    fn enum_variant_reference_any(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        resolve_symbols(
+            self.enums
+                .iter()
+                .flat_map(|enum_symbols| enum_symbols.variants.iter()),
+            value,
+            "enum_variant",
+            span,
+            diagnostics,
+        )
+    }
+
+    fn action_input_model_reference(
+        &self,
+        action: Option<&SurfaceRef>,
+        input: Option<&SurfaceRef>,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let candidate = self.action_inputs.iter().find(|candidate| {
+            Some(candidate.action_id.as_str()) == action.map(SurfaceRef::id)
+                && Some(candidate.symbol.id.as_str()) == input.map(SurfaceRef::id)
+        })?;
+        self.model_reference(candidate.existing_model_name.as_deref()?, span, diagnostics)
+    }
+
+    fn event_input_model_reference(
+        &self,
+        event: Option<&SurfaceRef>,
+        input: Option<&SurfaceRef>,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        let candidate = self.event_inputs.iter().find(|candidate| {
+            Some(candidate.action_id.as_str()) == event.map(SurfaceRef::id)
+                && Some(candidate.symbol.id.as_str()) == input.map(SurfaceRef::id)
+        })?;
+        self.model_reference(candidate.existing_model_name.as_deref()?, span, diagnostics)
     }
 
     fn field_reference(
@@ -311,6 +549,8 @@ impl Frontend for KoreanFrontend {
 pub fn lower(document: &DocumentAst) -> LowerOutput {
     let index = StableIdIndex::new(document);
     let mut diagnostics = Vec::new();
+    let mut action_inputs = lower_action_inputs(document, &index, &mut diagnostics);
+    let mut event_inputs = lower_event_inputs(document, &index, &mut diagnostics);
     let mut module = UnlinkedModule {
         declaration: declaration(&document.module.declaration, true),
         span: document.module.span,
@@ -326,6 +566,10 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         constraints: Vec::new(),
         roles: Vec::new(),
         actions: Vec::new(),
+        events: Vec::new(),
+        creation_branches: Vec::new(),
+        field_producers: Vec::new(),
+        relation_producers: Vec::new(),
         policies: Vec::new(),
     };
 
@@ -620,8 +864,380 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
             }),
             DeclarationAst::Action(value) => module.actions.push(UnlinkedAction {
                 declaration: declaration(&value.declaration, true),
+                inputs: action_inputs
+                    .remove(&value.declaration.id)
+                    .unwrap_or_default(),
                 span: value.span,
             }),
+            DeclarationAst::Event(value) => module.events.push(UnlinkedEvent {
+                declaration: declaration(&value.declaration, true),
+                inputs: event_inputs
+                    .remove(&value.declaration.id)
+                    .unwrap_or_default(),
+                span: value.span,
+            }),
+            DeclarationAst::ActionInput(_) => {}
+            DeclarationAst::EventInput(_) => {}
+            DeclarationAst::CreationBranch(value) => {
+                let Some((trigger_kind, trigger_ref)) =
+                    index.trigger_reference(&value.action, value.span, &mut diagnostics)
+                else {
+                    continue;
+                };
+                let action =
+                    (trigger_kind == ProductionTriggerKind::Action).then_some(trigger_ref.clone());
+                let input = if trigger_kind == ProductionTriggerKind::Action {
+                    index.action_input_reference(
+                        action.as_ref(),
+                        &value.input,
+                        value.span,
+                        &mut diagnostics,
+                    )
+                } else {
+                    index.event_input_reference(
+                        Some(&trigger_ref),
+                        &value.input,
+                        value.span,
+                        &mut diagnostics,
+                    )
+                };
+                let enum_type = if trigger_kind == ProductionTriggerKind::Action {
+                    index.action_input_enum_reference(
+                        action.as_ref(),
+                        input.as_ref(),
+                        value.span,
+                        &mut diagnostics,
+                    )
+                } else {
+                    index.event_input_enum_reference(
+                        Some(&trigger_ref),
+                        input.as_ref(),
+                        value.span,
+                        &mut diagnostics,
+                    )
+                };
+                let Some(input) = input else {
+                    continue;
+                };
+                let variant = if let Some(enum_type) = enum_type.as_ref() {
+                    let Some(variant) = index.enum_variant_reference(
+                        Some(enum_type.id()),
+                        &value.variant,
+                        value.span,
+                        &mut diagnostics,
+                    ) else {
+                        continue;
+                    };
+                    variant
+                } else {
+                    SurfaceRef::stable_id(&value.variant, value.span)
+                };
+                let Some(output_model) =
+                    index.model_reference(&value.output_model, value.span, &mut diagnostics)
+                else {
+                    continue;
+                };
+                module.creation_branches.push(UnlinkedCreationBranch {
+                    declaration: declaration(&value.declaration, true),
+                    action: action.clone(),
+                    trigger: UnlinkedProductionTrigger {
+                        kind: trigger_kind,
+                        reference: trigger_ref,
+                    },
+                    input,
+                    variant,
+                    output_model,
+                    decision: match value.decision {
+                        CreationDecisionAst::Create => CreationDecision::Create,
+                        CreationDecisionAst::Skip => CreationDecision::Skip,
+                    },
+                    span: value.span,
+                });
+            }
+            DeclarationAst::FieldProducer(value) => {
+                let trigger_kind = match value.trigger.kind {
+                    ProducerTriggerKindAst::Action => ProductionTriggerKind::Action,
+                    ProducerTriggerKindAst::Event => ProductionTriggerKind::Event,
+                };
+                let trigger = match trigger_kind {
+                    ProductionTriggerKind::Action => {
+                        index.action_reference(&value.trigger.name, value.span, &mut diagnostics)
+                    }
+                    ProductionTriggerKind::Event => {
+                        index.event_reference(&value.trigger.name, value.span, &mut diagnostics)
+                    }
+                };
+                let action = (trigger_kind == ProductionTriggerKind::Action)
+                    .then(|| trigger.clone())
+                    .flatten();
+                let output_model =
+                    index.model_reference(&value.output_model, value.span, &mut diagnostics);
+                let output_field = index.field_reference(
+                    output_model.as_ref(),
+                    &value.output_field,
+                    value.span,
+                    &mut diagnostics,
+                );
+                let source = match &value.source {
+                    FieldProducerSourceAst::ActionInput { input } => {
+                        let input = if trigger_kind == ProductionTriggerKind::Action {
+                            index.action_input_reference(
+                                action.as_ref(),
+                                input,
+                                value.span,
+                                &mut diagnostics,
+                            )
+                        } else {
+                            index.event_input_reference(
+                                trigger.as_ref(),
+                                input,
+                                value.span,
+                                &mut diagnostics,
+                            )
+                        };
+                        match trigger_kind {
+                            ProductionTriggerKind::Action => {
+                                UnlinkedFieldProducerSource::ActionInput {
+                                    input: required_reference(input, value.span),
+                                }
+                            }
+                            ProductionTriggerKind::Event => {
+                                UnlinkedFieldProducerSource::EventInput {
+                                    input: required_reference(input, value.span),
+                                }
+                            }
+                        }
+                    }
+                    FieldProducerSourceAst::InputField { input, field } => {
+                        let input = if trigger_kind == ProductionTriggerKind::Action {
+                            index.action_input_reference(
+                                action.as_ref(),
+                                input,
+                                value.span,
+                                &mut diagnostics,
+                            )
+                        } else {
+                            index.event_input_reference(
+                                trigger.as_ref(),
+                                input,
+                                value.span,
+                                &mut diagnostics,
+                            )
+                        };
+                        let source_model = if trigger_kind == ProductionTriggerKind::Action {
+                            index.action_input_model_reference(
+                                action.as_ref(),
+                                input.as_ref(),
+                                value.span,
+                                &mut diagnostics,
+                            )
+                        } else {
+                            index.event_input_model_reference(
+                                trigger.as_ref(),
+                                input.as_ref(),
+                                value.span,
+                                &mut diagnostics,
+                            )
+                        };
+                        let field = required_reference(
+                            index.field_reference(
+                                source_model.as_ref(),
+                                field,
+                                value.span,
+                                &mut diagnostics,
+                            ),
+                            value.span,
+                        );
+                        match trigger_kind {
+                            ProductionTriggerKind::Action => {
+                                UnlinkedFieldProducerSource::InputField {
+                                    input: required_reference(input, value.span),
+                                    field,
+                                }
+                            }
+                            ProductionTriggerKind::Event => {
+                                UnlinkedFieldProducerSource::EventInputField {
+                                    input: required_reference(input, value.span),
+                                    field,
+                                }
+                            }
+                        }
+                    }
+                    FieldProducerSourceAst::Constant { literal } => {
+                        let enum_id =
+                            index.field_enum_id(output_model.as_ref(), output_field.as_ref());
+                        let literal = match literal {
+                            LiteralAst::String(literal_value) => UnlinkedLiteral::String {
+                                value: literal_value.clone(),
+                                span: value.span,
+                            },
+                            LiteralAst::Integer(literal_value) => UnlinkedLiteral::Integer {
+                                value: literal_value.clone(),
+                                span: value.span,
+                            },
+                            LiteralAst::Boolean(literal_value) => UnlinkedLiteral::Boolean {
+                                value: *literal_value,
+                                span: value.span,
+                            },
+                            LiteralAst::Named(literal_value) => {
+                                UnlinkedLiteral::Named(required_reference(
+                                    index.enum_variant_reference(
+                                        enum_id,
+                                        literal_value,
+                                        value.span,
+                                        &mut diagnostics,
+                                    ),
+                                    value.span,
+                                ))
+                            }
+                        };
+                        UnlinkedFieldProducerSource::Constant { literal }
+                    }
+                    FieldProducerSourceAst::Template { value: template } => {
+                        let mut parts = Vec::new();
+                        let mut chars = template.chars().peekable();
+                        let mut text = String::new();
+                        while let Some(ch) = chars.next() {
+                            match ch {
+                                '{' if chars.peek() == Some(&'{') => {
+                                    chars.next();
+                                    text.push('{');
+                                }
+                                '}' if chars.peek() == Some(&'}') => {
+                                    chars.next();
+                                    text.push('}');
+                                }
+                                '{' => {
+                                    if !text.is_empty() {
+                                        parts.push(UnlinkedTemplatePart::Text {
+                                            value: std::mem::take(&mut text),
+                                        });
+                                    }
+                                    let mut name = String::new();
+                                    for next in chars.by_ref() {
+                                        if next == '}' {
+                                            break;
+                                        }
+                                        name.push(next);
+                                    }
+                                    parts.push(UnlinkedTemplatePart::OutputField {
+                                        field: required_reference(
+                                            index.field_reference(
+                                                output_model.as_ref(),
+                                                &name,
+                                                value.span,
+                                                &mut diagnostics,
+                                            ),
+                                            value.span,
+                                        ),
+                                    });
+                                }
+                                other => text.push(other),
+                            }
+                        }
+                        if !text.is_empty() {
+                            parts.push(UnlinkedTemplatePart::Text { value: text });
+                        }
+                        UnlinkedFieldProducerSource::Template { parts }
+                    }
+                };
+                module.field_producers.push(UnlinkedFieldProducer {
+                    declaration: declaration(&value.declaration, true),
+                    action: action.clone(),
+                    trigger: UnlinkedProductionTrigger {
+                        kind: trigger_kind,
+                        reference: required_reference(trigger.clone(), value.span),
+                    },
+                    output_model: required_reference(output_model, value.span),
+                    output_field: required_reference(output_field, value.span),
+                    source,
+                    condition: value.condition.as_ref().map(|condition| {
+                        let action = action.as_ref();
+                        let input = index.action_input_reference(
+                            action,
+                            &condition.input,
+                            value.span,
+                            &mut diagnostics,
+                        );
+                        let enum_type = index.action_input_enum_reference(
+                            action,
+                            input.as_ref(),
+                            value.span,
+                            &mut diagnostics,
+                        );
+                        let variant = enum_type
+                            .as_ref()
+                            .and_then(|enum_type| {
+                                index.enum_variant_reference(
+                                    Some(enum_type.id()),
+                                    &condition.variant,
+                                    value.span,
+                                    &mut diagnostics,
+                                )
+                            })
+                            .or_else(|| {
+                                index.enum_variant_reference_any(
+                                    &condition.variant,
+                                    value.span,
+                                    &mut diagnostics,
+                                )
+                            });
+                        UnlinkedFieldProducerCondition::EnumVariant {
+                            input: required_reference(input, value.span),
+                            variant: required_reference(variant, value.span),
+                        }
+                    }),
+                    span: value.span,
+                });
+            }
+            DeclarationAst::RelationProducer(value) => {
+                let trigger_kind = match value.trigger.kind {
+                    ProducerTriggerKindAst::Action => ProductionTriggerKind::Action,
+                    ProducerTriggerKindAst::Event => ProductionTriggerKind::Event,
+                };
+                let trigger = match trigger_kind {
+                    ProductionTriggerKind::Action => {
+                        index.action_reference(&value.trigger.name, value.span, &mut diagnostics)
+                    }
+                    ProductionTriggerKind::Event => {
+                        index.event_reference(&value.trigger.name, value.span, &mut diagnostics)
+                    }
+                };
+                let action = (trigger_kind == ProductionTriggerKind::Action)
+                    .then(|| trigger.clone())
+                    .flatten();
+                let input = if trigger_kind == ProductionTriggerKind::Action {
+                    index.action_input_reference(
+                        action.as_ref(),
+                        &value.input,
+                        value.span,
+                        &mut diagnostics,
+                    )
+                } else {
+                    index.event_input_reference(
+                        trigger.as_ref(),
+                        &value.input,
+                        value.span,
+                        &mut diagnostics,
+                    )
+                };
+                let output_model =
+                    index.model_reference(&value.output_model, value.span, &mut diagnostics);
+                let relation =
+                    index.relation_reference(&value.relation, value.span, &mut diagnostics);
+                module.relation_producers.push(UnlinkedRelationProducer {
+                    declaration: declaration(&value.declaration, true),
+                    action,
+                    trigger: UnlinkedProductionTrigger {
+                        kind: trigger_kind,
+                        reference: required_reference(trigger, value.span),
+                    },
+                    input: required_reference(input, value.span),
+                    output_model: required_reference(output_model, value.span),
+                    relation: required_reference(relation, value.span),
+                    span: value.span,
+                });
+            }
             DeclarationAst::Policy(value) => {
                 let role = index.role_reference(&value.role, value.span, &mut diagnostics);
                 let model = index.model_reference(&value.model, value.span, &mut diagnostics);
@@ -655,6 +1271,80 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         module,
         diagnostics,
     }
+}
+
+fn lower_action_inputs(
+    document: &DocumentAst,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> BTreeMap<String, Vec<UnlinkedActionInput>> {
+    let mut inputs = BTreeMap::<String, Vec<UnlinkedActionInput>>::new();
+    for item in &document.declarations {
+        let DeclarationAst::ActionInput(value) = item else {
+            continue;
+        };
+        let action = required_reference(
+            index.action_reference(&value.action, value.span, diagnostics),
+            value.span,
+        );
+        let kind = match &value.kind {
+            ActionInputKindAst::ExistingModel { model } => UnlinkedActionInputKind::ExistingModel {
+                model: required_reference(
+                    index.model_reference(model, value.span, diagnostics),
+                    value.span,
+                ),
+            },
+            ActionInputKindAst::Value { value_type } => UnlinkedActionInputKind::Value {
+                value_type: type_reference(value_type, value.span, index, diagnostics),
+            },
+        };
+        inputs
+            .entry(action.id().to_owned())
+            .or_default()
+            .push(UnlinkedActionInput {
+                declaration: declaration(&value.declaration, true),
+                kind,
+                span: value.span,
+            });
+    }
+    inputs
+}
+
+fn lower_event_inputs(
+    document: &DocumentAst,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> BTreeMap<String, Vec<UnlinkedEventInput>> {
+    let mut inputs = BTreeMap::<String, Vec<UnlinkedEventInput>>::new();
+    for item in &document.declarations {
+        let DeclarationAst::EventInput(value) = item else {
+            continue;
+        };
+        let event = required_reference(
+            index.event_reference(&value.event, value.span, diagnostics),
+            value.span,
+        );
+        let kind = match &value.kind {
+            ActionInputKindAst::ExistingModel { model } => UnlinkedEventInputKind::ExistingModel {
+                model: required_reference(
+                    index.model_reference(model, value.span, diagnostics),
+                    value.span,
+                ),
+            },
+            ActionInputKindAst::Value { value_type } => UnlinkedEventInputKind::Value {
+                value_type: type_reference(value_type, value.span, index, diagnostics),
+            },
+        };
+        inputs
+            .entry(event.id().to_owned())
+            .or_default()
+            .push(UnlinkedEventInput {
+                declaration: declaration(&value.declaration, true),
+                kind,
+                span: value.span,
+            });
+    }
+    inputs
 }
 
 fn relation_references(
@@ -839,6 +1529,94 @@ request의 금액은 0보다 커야 한다.
                 && diagnostic.message_key == "ko.reference.ambiguous"
                 && diagnostic.argument("kind") == Some("model")
                 && diagnostic.argument("reference") == Some("request")
+        }));
+    }
+
+    #[test]
+    fn creation_trigger_reference_distinguishes_not_found_from_cross_kind_ambiguity() {
+        let ambiguous = r#"@모듈 알림(notifications)
+상태(status)는 다음 값 중 하나다.
+    접수됨(received)
+점검 전달 알림(notice)은 다음 필드들로 구성되어 있다.
+    내용(content): 선택 문자열
+같은 이름(same_action)은 행동이다.
+같은 이름은 상태를 요청 상태(request_status)로 입력받는다.
+같은 이름(same_event)은 사건이다.
+같은 이름은 상태를 요청 상태(request_status)로 담는다.
+알림 생성(create_notice)은 같은 이름의 요청 상태가 접수됨이면 점검 전달 알림을 하나 생성한다.
+"#;
+        let output = KoreanFrontend.lower_source(ambiguous);
+        assert!(output.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-KO-REF-002"
+                && diagnostic.argument("kind") == Some("trigger")
+                && diagnostic.argument("reference") == Some("같은 이름")
+        }));
+
+        let missing = ambiguous.replace("같은 이름의 요청 상태", "없는 사건의 요청 상태");
+        let output = KoreanFrontend.lower_source(&missing);
+        assert!(output.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-KO-REF-001"
+                && diagnostic.argument("kind") == Some("trigger")
+                && diagnostic.argument("reference") == Some("없는 사건")
+        }));
+        assert!(
+            !output
+                .module
+                .as_ref()
+                .is_some_and(|module| serde_json::to_string(module).unwrap().contains("_invalid"))
+        );
+    }
+
+    #[test]
+    fn lowers_conditional_creation_with_action_scoped_enum_references() {
+        let source = r#"@모듈 알림(notifications)
+상태(status)는 다음 값 중 하나다.
+    접수됨(received)
+    보류됨(on_hold)
+점검 요청 전달 알림(notice)은 다음 필드들로 구성되어 있다.
+    내용(content): 선택 문자열
+점검 요청 전달(assign_request)은 행동이다.
+점검 요청 전달은 상태를 요청 상태(request_status)로 입력받는다.
+접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.
+보류 상태 알림 미생성(on_hold_notice_skip)은 점검 요청 전달의 요청 상태가 보류됨이면 점검 요청 전달 알림을 생성하지 않는다.
+"#;
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let output = lower(&parsed.document.unwrap());
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let module = output.module.unwrap();
+        assert_eq!(module.creation_branches.len(), 2);
+        let create = &module.creation_branches[0];
+        assert_eq!(
+            create.declaration.id.as_deref(),
+            Some("received_notice_create")
+        );
+        assert_eq!(create.action.as_ref().unwrap().id(), "assign_request");
+        assert_eq!(create.input.id(), "request_status");
+        assert_eq!(create.variant.id(), "received");
+        assert_eq!(create.output_model.id(), "notice");
+        assert_eq!(create.decision, CreationDecision::Create);
+        assert_eq!(module.creation_branches[1].decision, CreationDecision::Skip);
+    }
+
+    #[test]
+    fn scalar_creation_decision_passes_a_raw_variant_to_the_common_analyzer() {
+        let source = r#"@모듈 알림(notifications)
+점검 요청 전달 알림(notice)은 다음 필드들로 구성되어 있다.
+    내용(content): 선택 문자열
+점검 요청 전달(assign_request)은 행동이다.
+점검 요청 전달은 문자열을 요청 상태(request_status)로 입력받는다.
+접수 상태 알림 생성(received_notice_create)은 점검 요청 전달의 요청 상태가 접수됨이면 점검 요청 전달 알림을 하나 생성한다.
+"#;
+        let output = KoreanFrontend.lower_source(source);
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        let module = output.module.unwrap();
+        assert_eq!(module.creation_branches[0].variant.id(), "접수됨");
+        let analyzed = rspdl_domain::analyze(module);
+        assert!(analyzed.module.is_none());
+        assert!(analyzed.diagnostics.iter().any(|diagnostic| {
+            diagnostic.rule_id == "RSPDL-PROD-002"
+                && diagnostic.message_key == "semantic.creation_branch.decision_input_requires_enum"
         }));
     }
 }

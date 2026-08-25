@@ -200,6 +200,109 @@ pub struct ActionAst {
     pub span: Span,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EventAst {
+    pub declaration: NamedIdAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ActionInputKindAst {
+    ExistingModel { model: String },
+    Value { value_type: TypeReferenceAst },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ActionInputAst {
+    pub action: String,
+    pub declaration: NamedIdAst,
+    pub kind: ActionInputKindAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EventInputAst {
+    pub event: String,
+    pub declaration: NamedIdAst,
+    pub kind: ActionInputKindAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CreationDecisionAst {
+    Create,
+    Skip,
+}
+
+/// A single explicit enum branch that conditionally creates one output model.
+/// The condition is intentionally limited to one direct action input and one
+/// enum variant; broader predicates have no Korean surface in this slice.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CreationBranchAst {
+    pub declaration: NamedIdAst,
+    pub action: String,
+    pub input: String,
+    pub variant: String,
+    pub output_model: String,
+    pub decision: CreationDecisionAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum FieldProducerSourceAst {
+    ActionInput { input: String },
+    InputField { input: String, field: String },
+    Constant { literal: LiteralAst },
+    Template { value: String },
+}
+
+/// The only payload condition in this slice: one direct enum action input
+/// equal to one of that enum's declared variants.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FieldProducerConditionAst {
+    pub input: String,
+    pub variant: String,
+}
+
+/// The Korean verb phrase makes the owner explicit: `실행될 때` is an Action
+/// invocation and `발생할 때` is an immutable Event payload.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProducerTriggerKindAst {
+    Action,
+    Event,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ProducerTriggerAst {
+    pub name: String,
+    pub kind: ProducerTriggerKindAst,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FieldProducerAst {
+    pub declaration: NamedIdAst,
+    pub trigger: ProducerTriggerAst,
+    pub output_model: String,
+    pub output_field: String,
+    pub source: FieldProducerSourceAst,
+    pub condition: Option<FieldProducerConditionAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RelationProducerAst {
+    pub declaration: NamedIdAst,
+    pub trigger: ProducerTriggerAst,
+    pub input: String,
+    pub output_model: String,
+    pub relation: String,
+    pub span: Span,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyEffectAst {
@@ -233,6 +336,12 @@ pub enum DeclarationAst {
     Constraint(ConstraintAst),
     Role(RoleAst),
     Action(ActionAst),
+    Event(EventAst),
+    ActionInput(ActionInputAst),
+    EventInput(EventInputAst),
+    CreationBranch(CreationBranchAst),
+    FieldProducer(FieldProducerAst),
+    RelationProducer(RelationProducerAst),
     Policy(PolicyAst),
 }
 

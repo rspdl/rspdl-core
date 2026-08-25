@@ -1,0 +1,15 @@
+{
+  "spec_version": "0.3.0",
+  "locale": "ko-KR",
+  "category": "failure",
+  "expected_module": false,
+  "expected_diagnostics": [
+    {
+      "rule_id": "RSPDL-KO-REF-001",
+      "severity": "error",
+      "message_key": "ko.reference.not_found",
+      "arguments": { "kind": "model", "reference": "사라진 주문" }
+    }
+  ],
+  "expected_inputs": []
+}

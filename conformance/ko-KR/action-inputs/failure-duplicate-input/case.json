@@ -1,0 +1,15 @@
+{
+  "spec_version": "0.3.0",
+  "locale": "ko-KR",
+  "category": "failure",
+  "expected_module": false,
+  "expected_diagnostics": [
+    {
+      "rule_id": "RSPDL-LINK-003",
+      "severity": "error",
+      "message_key": "semantic.action_input.duplicate_id",
+      "arguments": { "id": "target" }
+    }
+  ],
+  "expected_inputs": []
+}
