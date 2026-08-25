@@ -103,6 +103,8 @@ pub enum ModelError {
     InvalidPercentage { value: String },
     #[error("`{value}` is not a supported built-in unit quantity")]
     InvalidQuantity { value: String },
+    #[error("`{unit}` is not a supported built-in unit")]
+    InvalidUnit { unit: String },
     #[error("`{value}` is not a valid latitude,longitude coordinate pair")]
     InvalidCoordinate { value: String },
     #[error("`{value}` is not a valid `{value_type}` value")]
@@ -119,8 +121,10 @@ pub enum ModelError {
     InvalidZonedDateTime { value: String },
     #[error("`{value}` is not an ISO 8601 calendar Y/M/D duration")]
     InvalidCalendarDuration { value: String },
-    #[error("calendar duration application overflows the target month or date")]
-    CalendarDateOverflow,
+    #[error(
+        "applying calendar duration `{duration}` to date `{date}` overflows the target month or date"
+    )]
+    CalendarDateOverflow { date: String, duration: String },
 
     #[error("set values cannot contain duplicate elements")]
     DuplicateSetElement,

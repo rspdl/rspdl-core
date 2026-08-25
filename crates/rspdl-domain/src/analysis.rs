@@ -14,7 +14,7 @@ use crate::{
     EnumVariantDefinition, EventDefinition, EventInputDefinition, EventInputKind, FieldDefinition,
     FieldIntentDefinition, FieldProducerCondition, FieldProducerDefinition, FieldProducerSource,
     ModelError, OutputRelationSlotDefinition, PolicyDefinition, PolicyEffect, ProducerPhase,
-    ProductionCardinality, ProductionTriggerDefinition, RecalculationDefinition,
+    ProductionCardinality, ProductionTriggerDefinition, QuantityDimension, RecalculationDefinition,
     RelationDefinition, RelationOperator, RelationProducerDefinition, RelationSlotCardinality,
     RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
     ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SourceId, SurfaceRef,
@@ -823,15 +823,13 @@ fn link_field_type(
             }
         },
         UnlinkedTypeReference::Percentage => CanonicalType::Percentage,
-        UnlinkedTypeReference::Quantity(unit) => {
-            match CanonicalValue::quantity_from_str(format!("1 {unit}")) {
-                Ok(value) => value.value_type().clone(),
-                Err(error) => {
-                    diagnostics.push(model_error("RSPDL-TYPE-001", error, span));
-                    return None;
-                }
+        UnlinkedTypeReference::Quantity(unit) => match QuantityDimension::from_unit(&unit) {
+            Ok(dimension) => CanonicalType::Quantity(dimension),
+            Err(error) => {
+                diagnostics.push(model_error("RSPDL-TYPE-001", error, span));
+                return None;
             }
-        }
+        },
         UnlinkedTypeReference::Coordinate => CanonicalType::Coordinate,
         UnlinkedTypeReference::LocalDateTime => CanonicalType::LocalDateTime,
         UnlinkedTypeReference::ZonedDateTime => CanonicalType::ZonedDateTime,
@@ -4212,6 +4210,9 @@ fn model_error(rule_id: &str, error: ModelError, span: TextRange) -> Diagnostic 
             Diagnostic::error(rule_id, "model.invalid_extended_scalar", span)
                 .with_argument("value", value)
         }
+        ModelError::InvalidUnit { unit } => {
+            Diagnostic::error(rule_id, "model.invalid_unit", span).with_argument("unit", unit)
+        }
         ModelError::InvalidRefinementText { value_type, value } => {
             Diagnostic::error(rule_id, "model.invalid_refinement_text", span)
                 .with_argument("value_type", value_type)
@@ -4223,8 +4224,10 @@ fn model_error(rule_id: &str, error: ModelError, span: TextRange) -> Diagnostic 
             Diagnostic::error(rule_id, "model.invalid_temporal_value", span)
                 .with_argument("value", value)
         }
-        ModelError::CalendarDateOverflow => {
+        ModelError::CalendarDateOverflow { date, duration } => {
             Diagnostic::error(rule_id, "model.calendar_date_overflow", span)
+                .with_argument("date", date)
+                .with_argument("duration", duration)
         }
         ModelError::DuplicateSetElement => {
             Diagnostic::error(rule_id, "model.duplicate_set_element", span)

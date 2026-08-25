@@ -19,7 +19,7 @@
     웹훅(webhook): 필수 URL
     허용 대역(allowed_network): 필수 CIDR
     태그(tags): 필수 집합(문자열)
-    별칭(aliases): 필수 목록 문자열
+    별칭(aliases): 필수 목록(문자열)
     설정(settings): 필수 맵(문자열, 문자열)
     기본 결제(default_payment): 필수 참조(payment)
 

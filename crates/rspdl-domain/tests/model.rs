@@ -99,7 +99,7 @@ fn temporal_spatial_and_collection_contracts_are_deterministic() {
         CanonicalValue::date_from_iso("2026-01-01")
             .unwrap()
             .apply_calendar_duration_to_date(&extreme),
-        Err(ModelError::CalendarDateOverflow)
+        Err(ModelError::CalendarDateOverflow { .. })
     ));
 
     let seoul = CanonicalValue::coordinate_from_str("37.5665,126.9780").unwrap();

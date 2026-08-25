@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
 
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, Offset, Timelike, Utc};
+use chrono::{
+    DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Offset, Timelike, Utc,
+};
 use chrono_tz::Tz;
 use num_bigint::BigInt;
 use num_prime::nt_funcs::is_prime64;
@@ -307,13 +309,17 @@ impl Serialize for CanonicalDateTime {
     }
 }
 
-fn write_fraction(formatter: &mut fmt::Formatter<'_>, nanosecond: u32) -> fmt::Result {
+/// 정규 텍스트의 소수점 이하 초. 시각 계열이 하나의 정규형을 공유해야 한다 —
+/// 갈라지면 `compare_ordered` 가 기대는 문자열 순서가 타입마다 달라진다.
+fn fraction_text(nanosecond: u32) -> String {
     if nanosecond == 0 {
-        return Ok(());
+        return String::new();
     }
-    let fraction = format!("{nanosecond:09}");
-    formatter.write_str(".")?;
-    formatter.write_str(fraction.trim_end_matches('0'))
+    format!(".{}", format!("{nanosecond:09}").trim_end_matches('0'))
+}
+
+fn write_fraction(formatter: &mut fmt::Formatter<'_>, nanosecond: u32) -> fmt::Result {
+    formatter.write_str(&fraction_text(nanosecond))
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -383,7 +389,11 @@ pub struct CanonicalLatitude(CanonicalDecimal);
 impl CanonicalLatitude {
     pub fn parse(value: impl Into<String>) -> Result<Self, ModelError> {
         let value = value.into();
-        let decimal = CanonicalDecimal::parse(&value)?;
+        // 소수로 읽히지 않는 입력도 "위도가 아니다" 라는 같은 사실이다. 진단 정체성이
+        // 입력 모양에 따라 갈리면 같은 필드가 두 규칙으로 보고된다.
+        let decimal = CanonicalDecimal::parse(&value).map_err(|_| ModelError::InvalidLatitude {
+            value: value.clone(),
+        })?;
         let minimum = CanonicalDecimal::parse("-90").expect("constant is valid");
         let maximum = CanonicalDecimal::parse("90").expect("constant is valid");
         if decimal < minimum || decimal > maximum {
@@ -406,7 +416,10 @@ pub struct CanonicalLongitude(CanonicalDecimal);
 impl CanonicalLongitude {
     pub fn parse(value: impl Into<String>) -> Result<Self, ModelError> {
         let value = value.into();
-        let decimal = CanonicalDecimal::parse(&value)?;
+        let decimal =
+            CanonicalDecimal::parse(&value).map_err(|_| ModelError::InvalidLongitude {
+                value: value.clone(),
+            })?;
         let minimum = CanonicalDecimal::parse("-180").expect("constant is valid");
         let maximum = CanonicalDecimal::parse("180").expect("constant is valid");
         if decimal < minimum || decimal > maximum {
@@ -455,6 +468,22 @@ enum ValueRepresentation {
 pub struct CanonicalValue {
     value_type: CanonicalType,
     representation: ValueRepresentation,
+}
+
+/// 내장 단위 어휘. 차원과 기본 단위 환산을 한 곳에서만 정한다 — 타입 해석과 값 해석이
+/// 서로 다른 표를 보면 선언된 단위와 실행된 단위가 갈라진다.
+pub(crate) fn unit_conversion(
+    unit: &str,
+) -> Option<(QuantityDimension, &'static str, &'static str)> {
+    Some(match unit {
+        "kg" => (QuantityDimension::Mass, "1", "kg"),
+        "g" => (QuantityDimension::Mass, "0.001", "kg"),
+        "m" => (QuantityDimension::Length, "1", "m"),
+        "km" => (QuantityDimension::Length, "1000", "m"),
+        "s" => (QuantityDimension::Duration, "1", "s"),
+        "ms" => (QuantityDimension::Duration, "0.001", "s"),
+        _ => return None,
+    })
 }
 
 impl CanonicalValue {
@@ -580,7 +609,10 @@ impl CanonicalValue {
     }
 
     pub fn percentage_from_ratio_str(value: impl Into<String>) -> Result<Self, ModelError> {
-        let ratio = CanonicalDecimal::parse(value.into())?;
+        let value = value.into();
+        let ratio = CanonicalDecimal::parse(&value).map_err(|_| ModelError::InvalidPercentage {
+            value: value.clone(),
+        })?;
         let hundred = CanonicalDecimal::parse("100").expect("constant");
         let percentage = multiply_decimal(&ratio, &hundred);
         Self::percentage_from_str(format!("{percentage}%"))
@@ -614,14 +646,8 @@ impl CanonicalValue {
         let number = CanonicalDecimal::parse(number).map_err(|_| ModelError::InvalidQuantity {
             value: value.clone(),
         })?;
-        let (dimension, factor, canonical_unit) = match unit {
-            "kg" => (QuantityDimension::Mass, "1", "kg"),
-            "g" => (QuantityDimension::Mass, "0.001", "kg"),
-            "m" => (QuantityDimension::Length, "1", "m"),
-            "km" => (QuantityDimension::Length, "1000", "m"),
-            "s" => (QuantityDimension::Duration, "1", "s"),
-            "ms" => (QuantityDimension::Duration, "0.001", "s"),
-            _ => return Err(ModelError::InvalidQuantity { value }),
+        let Some((dimension, factor, canonical_unit)) = unit_conversion(unit) else {
+            return Err(ModelError::InvalidQuantity { value });
         };
         let factor = CanonicalDecimal::parse(factor).expect("built-in conversion is valid");
         let base = multiply_decimal(&number, &factor);
@@ -733,9 +759,13 @@ impl CanonicalValue {
             parse_calendar_duration(&value).ok_or_else(|| ModelError::InvalidCalendarDuration {
                 value: value.clone(),
             })?;
-        let years = years
-            .checked_add(months / 12)
-            .ok_or(ModelError::CalendarDateOverflow)?;
+        // 여기는 날짜에 더하다 넘친 것이 아니라 기간 자체를 정규화할 수 없는 경우다.
+        let years =
+            years
+                .checked_add(months / 12)
+                .ok_or_else(|| ModelError::InvalidCalendarDuration {
+                    value: value.clone(),
+                })?;
         let months = months % 12;
         Ok(Self {
             value_type: CanonicalType::CalendarDuration,
@@ -1261,14 +1291,14 @@ impl CanonicalValue {
                     canonical: right, ..
                 },
             ) if self.value_type == CanonicalType::ZonedDateTime => {
-                let left = left
-                    .split_once(' ')
-                    .and_then(|(instant, _)| DateTime::parse_from_rfc3339(instant).ok())
-                    .expect("canonical zoned date time");
-                let right = right
-                    .split_once(' ')
-                    .and_then(|(instant, _)| DateTime::parse_from_rfc3339(instant).ok())
-                    .expect("canonical zoned date time");
+                // 이 표현이 항상 파싱된다는 것은 지금의 생성자들이 지키는 불변식이다.
+                // 불변식이 깨지면 컴파일러와 CLI 가 죽는 대신 진단으로 나와야 한다.
+                let (Some(left), Some(right)) = (instant_of(left), instant_of(right)) else {
+                    return Err(ModelError::UnsupportedOperation {
+                        operation: "ordered comparison",
+                        value_type: self.value_type.clone(),
+                    });
+                };
                 left.cmp(&right)
             }
             (
@@ -1281,10 +1311,22 @@ impl CanonicalValue {
                     ..
                 },
             ) => left.cmp(right),
-            _ => unreachable!("canonical value type and representation stay aligned"),
+            _ => {
+                return Err(ModelError::UnsupportedOperation {
+                    operation: "ordered comparison",
+                    value_type: self.value_type.clone(),
+                });
+            }
         };
         Ok(ordering)
     }
+}
+
+/// 정규 `시간대 날짜시간` 텍스트의 앞부분(RFC 3339 순간)을 꺼낸다.
+fn instant_of(canonical: &str) -> Option<DateTime<FixedOffset>> {
+    canonical
+        .split_once(' ')
+        .and_then(|(instant, _)| DateTime::parse_from_rfc3339(instant).ok())
 }
 
 fn ensure_value_type(
@@ -1313,12 +1355,11 @@ fn multiply_decimal(left: &CanonicalDecimal, right: &CanonicalDecimal) -> Canoni
 }
 
 fn format_local_date_time(value: NaiveDateTime) -> String {
-    let mut output = value.format("%Y-%m-%dT%H:%M:%S").to_string();
-    if value.nanosecond() != 0 {
-        output.push('.');
-        output.push_str(format!("{:09}", value.nanosecond()).trim_end_matches('0'));
-    }
-    output
+    format!(
+        "{}{}",
+        value.format("%Y-%m-%dT%H:%M:%S"),
+        fraction_text(value.nanosecond())
+    )
 }
 
 fn parse_calendar_duration(value: &str) -> Option<(i32, i32, i32)> {
@@ -1370,24 +1411,25 @@ fn apply_calendar_date(
     months: i32,
     days: i32,
 ) -> Result<NaiveDate, ModelError> {
+    // 다섯 갈래가 같은 오류를 내므로, 어느 날짜에 어느 기간을 더하다 넘쳤는지를 값으로
+    // 실어 보낸다. 그것이 없으면 진단이 어떤 문장을 가리키는지 말해 줄 수 없다.
+    let overflow = || ModelError::CalendarDateOverflow {
+        date: date.to_string(),
+        duration: format_calendar_duration(years, months, days),
+    };
     let month_index = (date.month0() as i32)
-        .checked_add(
-            years
-                .checked_mul(12)
-                .ok_or(ModelError::CalendarDateOverflow)?,
-        )
+        .checked_add(years.checked_mul(12).ok_or_else(overflow)?)
         .and_then(|value| value.checked_add(months))
-        .ok_or(ModelError::CalendarDateOverflow)?;
+        .ok_or_else(overflow)?;
     let year = date
         .year()
         .checked_add(month_index.div_euclid(12))
-        .ok_or(ModelError::CalendarDateOverflow)?;
+        .ok_or_else(overflow)?;
     let month = month_index.rem_euclid(12) as u32 + 1;
-    let shifted =
-        NaiveDate::from_ymd_opt(year, month, date.day()).ok_or(ModelError::CalendarDateOverflow)?;
+    let shifted = NaiveDate::from_ymd_opt(year, month, date.day()).ok_or_else(overflow)?;
     shifted
         .checked_add_signed(chrono::Duration::days(days as i64))
-        .ok_or(ModelError::CalendarDateOverflow)
+        .ok_or_else(overflow)
 }
 
 fn coordinate_parts(value: &CanonicalValue) -> Result<(f64, f64), ModelError> {

@@ -149,6 +149,18 @@ pub enum QuantityDimension {
     Duration,
 }
 
+impl QuantityDimension {
+    /// 선언된 단위 이름에서 차원을 얻는다. 값을 하나 지어내 파싱해 보는 대신 이 표를
+    /// 직접 본다 — 그래야 진단이 소스에 없는 `1 없는단위` 대신 선언된 단위를 가리킨다.
+    pub fn from_unit(unit: &str) -> Result<Self, ModelError> {
+        crate::value::unit_conversion(unit)
+            .map(|(dimension, _, _)| dimension)
+            .ok_or_else(|| ModelError::InvalidUnit {
+                unit: unit.to_owned(),
+            })
+    }
+}
+
 impl fmt::Display for QuantityDimension {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {

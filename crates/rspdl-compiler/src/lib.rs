@@ -399,6 +399,10 @@ pub fn compile_files_with_frontend(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CheckOptions {
+    /// **`check` 의 제약 실행에는 쓰이지 않는다.** 제약은 canonical value 를 정확히
+    /// 비교해 판정하므로 solver 가 개입하지 않고, 따라서 시간 제한도 없다. 이 필드는
+    /// SDK 의 `timeout_ms` 계약을 깨지 않으려고 남아 있다. solver 시간 제한이 실제로
+    /// 필요한 곳은 model finding 이며 그쪽은 [`ModelFindingOptions`] 를 쓴다.
     pub solver_timeout: Duration,
 }
 
@@ -527,7 +531,7 @@ impl WorkspaceCheckReport {
     }
 }
 
-pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> CheckReport {
+pub fn check_ko(source: &str, runtime_json: &str, _options: CheckOptions) -> CheckReport {
     let compilation = compile_ko(source);
     let mut report = CheckReport {
         compilation,
@@ -568,7 +572,6 @@ pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> Chec
     execute_constraints(
         &[module],
         &runtime,
-        options,
         &mut report.constraint_violations,
         &mut report.runtime_diagnostics,
     );
@@ -589,7 +592,7 @@ pub fn check_ko(source: &str, runtime_json: &str, options: CheckOptions) -> Chec
 pub fn check_ko_files(
     sources: Vec<KoSource>,
     runtime_json: &str,
-    options: CheckOptions,
+    _options: CheckOptions,
 ) -> WorkspaceCheckReport {
     let compilation = compile_ko_files(sources);
     let mut report = WorkspaceCheckReport {
@@ -624,7 +627,6 @@ pub fn check_ko_files(
     execute_constraints(
         &modules,
         &runtime,
-        options,
         &mut report.constraint_violations,
         &mut report.runtime_diagnostics,
     );
@@ -993,7 +995,7 @@ fn bind_value(
         CanonicalType::Map {
             key,
             value: value_type,
-        } => bind_map(value, key, value_type, &field.value_type).ok_or_else(invalid),
+        } => bind_map(value, key, value_type).ok_or_else(invalid),
         CanonicalType::Reference(target) => value
             .as_str()
             .and_then(|value| CanonicalValue::reference(target.clone(), value).ok())
@@ -1046,25 +1048,9 @@ fn bind_map(
     input: &Value,
     key: &CanonicalType,
     value_type: &CanonicalType,
-    map_type: &CanonicalType,
 ) -> Option<CanonicalValue> {
-    // JSON maps use strings as keys; only string/refinement key types retain
-    // their canonical representation without an implicit coercion.
-    if !matches!(
-        key,
-        CanonicalType::String
-            | CanonicalType::Uuid
-            | CanonicalType::Email
-            | CanonicalType::Url
-            | CanonicalType::PhoneNumber
-            | CanonicalType::IpAddress
-            | CanonicalType::Cidr
-            | CanonicalType::CountryCode
-            | CanonicalType::LanguageCode
-            | CanonicalType::CurrencyCode
-    ) {
-        return None;
-    }
+    // 어떤 key 타입이 결정적인지는 `CanonicalType::map` 이 정한다. 여기서 그 목록을
+    // 베껴 두면 새 key 타입이 허용될 때 두 곳이 갈라진다.
     let object = input.as_object()?;
     let mut canonical = Vec::new();
     for (raw_key, raw_value) in object {
@@ -1073,10 +1059,7 @@ fn bind_map(
             bind_runtime_type(raw_value, value_type)?,
         ));
     }
-    let CanonicalType::Map { key, value } = map_type else {
-        return None;
-    };
-    CanonicalValue::map((**key).clone(), (**value).clone(), canonical).ok()
+    CanonicalValue::map(key.clone(), value_type.clone(), canonical).ok()
 }
 
 fn bind_runtime_type(value: &Value, value_type: &CanonicalType) -> Option<CanonicalValue> {
@@ -1102,7 +1085,6 @@ fn bind_decimal_text(value: &Value) -> Option<String> {
 fn execute_constraints(
     modules: &[&SemanticModule],
     runtime: &BoundRuntime,
-    _options: CheckOptions,
     violations: &mut Vec<ConstraintViolation>,
     diagnostics: &mut Vec<RuntimeDiagnostic>,
 ) {
