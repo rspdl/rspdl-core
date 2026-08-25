@@ -63,6 +63,10 @@ pub(crate) fn parse_action_header(tokens: &[Token]) -> Result<GeneratedNamedId, 
     parse_named_id("action_header", tokens)
 }
 
+pub(crate) fn parse_event_header(tokens: &[Token]) -> Result<GeneratedNamedId, ParseError> {
+    parse_named_id("event_header", tokens)
+}
+
 pub(crate) fn parse_field_item(tokens: &[Token]) -> Result<GeneratedField, ParseError> {
     let parsed = parse_rule("field_item", tokens)?;
     let required = required_capture(&parsed, "required").value == "필수";
@@ -247,7 +251,7 @@ mod tests {
 
     #[test]
     fn generated_declarations_match_handwritten_ast_shapes_and_spans() {
-        let source = "@모듈 비용 승인(expense)\n비용 상태(status)는 다음 값 중 하나다.\n    작성 중(draft)\n    `승인 완료`(approved)\n비용 신청(request)은 다음 필드들로 구성되어 있다.\n    식별자(id): 필수 문자열\n    승인 상태(status): 선택 비용 상태\n회계 관리자(accounting_manager)는 역할이다.\n상태 변경(change_state)은 행동이다.\n";
+        let source = "@모듈 비용 승인(expense)\n비용 상태(status)는 다음 값 중 하나다.\n    작성 중(draft)\n    `승인 완료`(approved)\n비용 신청(request)은 다음 필드들로 구성되어 있다.\n    식별자(id): 필수 문자열\n    승인 상태(status): 선택 비용 상태\n회계 관리자(accounting_manager)는 역할이다.\n상태 변경(change_state)은 행동이다.\n승인 요청 접수됨(request_received)은 사건이다.\n";
         let document = parse(source).document.expect("valid source has document");
         assert!(parse(source).diagnostics.is_empty());
 
@@ -331,6 +335,19 @@ mod tests {
             ),
             action.declaration
         );
+        let DeclarationAst::Event(event) = &document.declarations[4] else {
+            panic!("event")
+        };
+        assert_eq!(
+            named(
+                parse_event_header(&tokens_at(
+                    source,
+                    "승인 요청 접수됨(request_received)은 사건이다."
+                ))
+                .unwrap()
+            ),
+            event.declaration
+        );
     }
 
     #[test]
@@ -347,6 +364,7 @@ mod tests {
                 parse_role_header,
             ),
             ("변경(change)은 행동이다 뒤에.", parse_action_header),
+            ("접수됨(received)은 사건이다 뒤에.", parse_event_header),
             ("@역할 관리자(manager)", parse_module_header),
         ];
         for (source, generated) in cases {
@@ -373,6 +391,7 @@ mod tests {
         assert!(parse_enum_header(&tokens("상태(state)는 다음 값 중 하나다.")).is_ok());
         assert!(parse_enum_value(&tokens("시작(start)")).is_ok());
         assert!(parse_role_header(&tokens("관리자(manager)는 역할이다.")).is_ok());
+        assert!(parse_event_header(&tokens("접수됨(received)은 사건이다.")).is_ok());
     }
 
     #[test]

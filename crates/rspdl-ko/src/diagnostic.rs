@@ -250,11 +250,23 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
                 object_marker(reference)
             )
         }
-        "semantic.creation_branch.decision_input_not_found" => format!(
-            "행동 {}에서 조건 입력 {}을 찾을 수 없습니다.",
-            argument(diagnostic, "action_id"),
-            argument(diagnostic, "reference")
-        ),
+        "semantic.creation_branch.decision_input_not_found" => {
+            let trigger_id = diagnostic
+                .argument("trigger_id")
+                .or_else(|| diagnostic.argument("action_id"))
+                .unwrap_or("<?>");
+            if diagnostic.argument("trigger_kind") == Some("event") {
+                format!(
+                    "사건 {trigger_id}에서 조건 입력 {}을 찾을 수 없습니다.",
+                    argument(diagnostic, "reference")
+                )
+            } else {
+                format!(
+                    "행동 {trigger_id}에서 조건 입력 {}을 찾을 수 없습니다.",
+                    argument(diagnostic, "reference")
+                )
+            }
+        }
         "semantic.creation_branch.decision_input_requires_enum" => format!(
             "조건부 생성 입력 {}은 닫힌 열거형 값이어야 합니다.",
             argument(diagnostic, "input_id")
@@ -265,6 +277,23 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "input_id"),
             argument(diagnostic, "enum_id")
         ),
+        "semantic.creation_branch.legacy_action_incompatible" => {
+            if diagnostic.argument("trigger_kind") == Some("event") {
+                format!(
+                    "사건 {}을 조건부 생성 branch의 행동 호환 참조로 함께 지정할 수 없습니다.",
+                    argument(diagnostic, "trigger_id")
+                )
+            } else {
+                format!(
+                    "조건부 생성 branch의 행동 호환 참조 {}은 트리거 {}와 같아야 합니다.",
+                    diagnostic
+                        .argument("legacy_action_id")
+                        .or_else(|| diagnostic.argument("legacy_action_reference"))
+                        .unwrap_or("<?>"),
+                    argument(diagnostic, "trigger_id")
+                )
+            }
+        }
         "semantic.creation_production.mixed_decision_inputs" => format!(
             "생산 {}은 하나의 조건 입력만 사용해야 하지만 {}을 함께 사용합니다.",
             argument(diagnostic, "production_id"),

@@ -112,8 +112,19 @@ pub fn parse(source: &str) -> ParseOutput {
                     })
                 })
             }
+            Some(DeclarationKind::Event) => {
+                parse_event(line, body, &mut diagnostics).map(|declaration| {
+                    DeclarationAst::Event(EventAst {
+                        declaration,
+                        span: line.span,
+                    })
+                })
+            }
             Some(DeclarationKind::ActionInput) => {
                 parse_action_input(line, body, &mut diagnostics).map(DeclarationAst::ActionInput)
+            }
+            Some(DeclarationKind::EventInput) => {
+                parse_event_input(line, body, &mut diagnostics).map(DeclarationAst::EventInput)
             }
             Some(DeclarationKind::CreationBranch) => {
                 parse_creation_branch(line, body, &mut diagnostics)
@@ -206,7 +217,9 @@ enum DeclarationKind {
     Constraint,
     Role,
     Action,
+    Event,
     ActionInput,
+    EventInput,
     CreationBranch,
     FieldProducer,
     RelationProducer,
@@ -229,7 +242,9 @@ fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
         _ if is_data_model_header(line) => Some(DeclarationKind::DataModel),
         _ if is_role_sentence(line) => Some(DeclarationKind::Role),
         _ if is_action_sentence(line) => Some(DeclarationKind::Action),
+        _ if is_event_sentence(line) => Some(DeclarationKind::Event),
         _ if is_action_input_sentence(line) => Some(DeclarationKind::ActionInput),
+        _ if is_event_input_sentence(line) => Some(DeclarationKind::EventInput),
         _ if is_creation_branch_sentence(line) => Some(DeclarationKind::CreationBranch),
         _ if is_template_producer_sentence(line) => Some(DeclarationKind::FieldProducer),
         _ if is_field_producer_sentence(line) => Some(DeclarationKind::FieldProducer),
@@ -578,8 +593,16 @@ fn is_action_sentence(line: &Line) -> bool {
     sentence_words_end_with(line, &["행동이다"])
 }
 
+fn is_event_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["사건이다"])
+}
+
 fn is_action_input_sentence(line: &Line) -> bool {
     sentence_words_end_with(line, &["입력받는다"])
+}
+
+fn is_event_input_sentence(line: &Line) -> bool {
+    sentence_words_end_with(line, &["담는다"])
 }
 
 fn is_creation_branch_sentence(line: &Line) -> bool {
@@ -973,7 +996,17 @@ fn parse_action_input(
     body: &[Line],
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<ActionInputAst, Diagnostic> {
-    reject_sentence_body(body, line.span, "action_input")?;
+    parse_action_input_with_verb(line, body, diagnostics, "입력받는다", "action_input")
+}
+
+fn parse_action_input_with_verb(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+    verb: &str,
+    syntax_kind: &str,
+) -> Result<ActionInputAst, Diagnostic> {
+    reject_sentence_body(body, line.span, syntax_kind)?;
     let tokens = sentence_tokens(line)?;
     let mut cursor = BodyCursor::new(tokens, line.span);
     let (action, action_marker) = cursor.marked_ref(&["은", "는"])?;
@@ -1006,7 +1039,7 @@ fn parse_action_input(
         Some("로" | "으로") => {}
         _ => return Err(cursor.error("ko.syntax.action_input_name_marker_required")),
     }
-    cursor.expect_word("입력받는다")?;
+    cursor.expect_word(verb)?;
     cursor.expect_end()?;
     lint_marker(&action, &action_marker, "은", "는", line.span, diagnostics);
     lint_marker(
@@ -1022,6 +1055,20 @@ fn parse_action_input(
         declaration,
         kind,
         span: line.span,
+    })
+}
+
+fn parse_event_input(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<EventInputAst, Diagnostic> {
+    let input = parse_action_input_with_verb(line, body, diagnostics, "담는다", "event_input")?;
+    Ok(EventInputAst {
+        event: input.action,
+        declaration: input.declaration,
+        kind: input.kind,
+        span: input.span,
     })
 }
 
@@ -1648,6 +1695,15 @@ fn parse_action(
 ) -> Result<NamedIdAst, Diagnostic> {
     reject_sentence_body(body, line.span, "action")?;
     parse_natural_header(line, &["행동이다"], diagnostics)
+}
+
+fn parse_event(
+    line: &Line,
+    body: &[Line],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<NamedIdAst, Diagnostic> {
+    reject_sentence_body(body, line.span, "event")?;
+    parse_natural_header(line, &["사건이다"], diagnostics)
 }
 
 fn parse_annotated_name(line: &Line, keyword: &str) -> Result<NamedIdAst, Diagnostic> {

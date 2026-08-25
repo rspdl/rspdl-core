@@ -348,6 +348,7 @@ pub fn compile_files_with_frontend(
             .chain(module.constraints.iter().map(|value| &value.id))
             .chain(module.roles.iter().map(|value| &value.id))
             .chain(module.actions.iter().map(|value| &value.id))
+            .chain(module.events.iter().map(|value| &value.id))
             .chain(
                 module
                     .conditional_productions
@@ -1441,6 +1442,28 @@ mod tests {
             file.diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.rule_id == "RSPDL-LINK-002")
+        }));
+    }
+
+    #[test]
+    fn duplicate_qualified_event_ids_across_modules_are_link_errors() {
+        let compilation = compile_ko_files(vec![
+            KoSource::new(
+                "one.rspdl",
+                "@모듈 하나(one)\n요청 접수됨(shared.request_received)은 사건이다.\n",
+            ),
+            KoSource::new(
+                "two.rspdl",
+                "@모듈 둘(two)\n접수됨(shared.request_received)은 사건이다.\n",
+            ),
+        ]);
+
+        assert!(compilation.has_errors());
+        assert!(compilation.files.iter().all(|file| {
+            file.diagnostics.iter().any(|diagnostic| {
+                diagnostic.rule_id == "RSPDL-LINK-002"
+                    && diagnostic.argument("symbol_id") == Some("shared.request_received")
+            })
         }));
     }
 

@@ -218,6 +218,13 @@ pub enum UnlinkedActionInputKind {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "reference", rename_all = "snake_case")]
+pub enum UnlinkedEventInputKind {
+    ExistingModel { model: SurfaceRef },
+    Value { value_type: UnlinkedTypeReference },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedActionInput {
     pub declaration: UnlinkedDeclaration,
     pub kind: UnlinkedActionInputKind,
@@ -233,9 +240,39 @@ pub struct UnlinkedAction {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedEventInput {
+    pub declaration: UnlinkedDeclaration,
+    pub kind: UnlinkedEventInputKind,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedEvent {
+    pub declaration: UnlinkedDeclaration,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<UnlinkedEventInput>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductionTriggerKind {
+    Action,
+    Event,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedProductionTrigger {
+    pub kind: ProductionTriggerKind,
+    pub reference: SurfaceRef,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedCreationBranch {
     pub declaration: UnlinkedDeclaration,
-    pub action: SurfaceRef,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<SurfaceRef>,
+    pub trigger: UnlinkedProductionTrigger,
     pub input: SurfaceRef,
     pub variant: SurfaceRef,
     pub output_model: SurfaceRef,
@@ -336,6 +373,8 @@ pub struct UnlinkedModule {
     pub constraints: Vec<UnlinkedConstraint>,
     pub roles: Vec<UnlinkedRole>,
     pub actions: Vec<UnlinkedAction>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<UnlinkedEvent>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub creation_branches: Vec<UnlinkedCreationBranch>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

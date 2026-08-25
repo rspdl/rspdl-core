@@ -52,7 +52,7 @@ target_spec: "0.4.0"
 
 ## 가장 작은 vertical slice
 
-첫 slice는 한 action invocation의 pre-state에서 하나의 output record를 생성한다. field producer는 typed action input, input record의 field, constant와 같은 output의 String field만 참조하는 template을 지원한다. snapshot은 아직 지원하지 않는다. 목표 의미의 trigger는 `Action`과 명시적으로 선언된 `Event`를 구분하지만 첫 slice는 `Action`만 lower한다.
+첫 slice는 한 Action invocation 또는 명시적 immutable Event payload에서 하나의 output record를 생성한다. Event는 typed value 또는 existing-model payload를 선언할 수 있고 creation decision은 direct enum value payload만 쓴다. field/relation producer와 delivery/retry/idempotency는 Action에만 남으며 Event에는 아직 연결하지 않는다.
 
 2026-08-25 현재 구현된 범위는 stable-ID typed action input, direct enum conditional creation decision과 field/relation producer, 그리고 output-field-only message template이다. Korean frontend와 common analyzer는 action+output production을 만들고 ExactlyOne `Create`/`Skip`, enum coverage, same-variant conflict 및 Create variant별 required output field/relation producer gap/conflict를 검사한다. direct Value input, ExistingModel input field와 explicit scalar constant producer는 action mutation 전(`PreMutation`)에 무조건 적용하거나 production의 decision input과 같은 enum variant에만 적용한다. 현재 Korean template producer는 무조건 `PreMutation`이며 같은 output model의 String field만 `{표시 이름}`으로 참조하고 `{{`, `}}`로 literal brace를 쓴다. template dependency는 source order가 아닌 canonical graph로 검사하고 cycle을 거부한다. conditional template과 snapshot은 아직 구현하지 않았다.
 
@@ -259,7 +259,7 @@ RelationProducer {
 }
 ```
 
-`InputPath`의 root는 trigger의 declared input stable ID여야 한다. 첫 slice에는 action input record field 접근과 single relation-slot input binding만 허용하며 `EventId` lowering은 후속 slice다. `OutputRelationSlot`은 relation endpoint type과 required/unique cardinality를 갖고, `RelationProducer`도 `FieldProducer`와 같은 provenance·type·availability 검사를 받는다. future `RelationPath`는 edge 방향, cardinality, availability phase와 output instance multiplicity를 IR에 보존해야 한다. template은 `OutputFieldId`만 가지며 원본 path를 갖지 않는다. `ExpressionId`가 같은 output의 다른 field를 참조할 때 analyzer는 stable ID dependency graph를 만들고 cycle을 source 순서와 무관하게 거부한다.
+`InputPath`의 root는 trigger의 declared input stable ID여야 한다. 현재 payload producer slice에는 action input record field 접근과 single relation-slot input binding만 허용한다. Event는 immutable payload와 enum `Create|Skip` decision trigger만 구현하며 Event-based field/relation producers는 명시적으로 후속 slice다. 따라서 Event `Create` output의 required field나 ExactlyOne relation은 기존 payload gap 규칙으로 진단된다. `OutputRelationSlot`은 relation endpoint type과 required/unique cardinality를 갖고, `RelationProducer`도 `FieldProducer`와 같은 provenance·type·availability 검사를 받는다. future `RelationPath`는 edge 방향, cardinality, availability phase와 output instance multiplicity를 IR에 보존해야 한다. template은 `OutputFieldId`만 가지며 원본 path를 갖지 않는다. `ExpressionId`가 같은 output의 다른 field를 참조할 때 analyzer는 stable ID dependency graph를 만들고 cycle을 source 순서와 무관하게 거부한다.
 
 구현된 template producer는 `FieldProducerSource::Template { parts: Text | OutputField(CanonicalId) }`로 canonical IR에 남는다. target, result와 placeholder field는 모두 `String`이며 별도 formatting contract가 필요한 정수·금액·enum의 암시적 문자열 변환은 하지 않는다. placeholder가 가리키는 output field는 각 effective `Create` variant에 정확히 하나의 producer를 가져야 한다. optional field도 template dependency라면 누락될 수 없다. `field_evaluation_order`는 stable ID로 tie-break한 canonical topological projection이며 소비자는 원문 선언 순서를 execution order로 해석하지 않는다. `Skip`만 effective한 production은 payload gap/conflict/cycle을 내지 않지만 template syntax, link, type 오류는 그대로 보고한다.
 

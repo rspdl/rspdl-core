@@ -218,6 +218,16 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     "는"
                 }
             )),
+            DeclarationAst::Event(value) => output.push_str(&format!(
+                "{}({}){} 사건이다.\n",
+                surface(&value.declaration.name),
+                value.declaration.id,
+                if has_final_consonant(&value.declaration.name) {
+                    "은"
+                } else {
+                    "는"
+                }
+            )),
             DeclarationAst::ActionInput(value) => {
                 let input_type = match &value.kind {
                     ActionInputKindAst::ExistingModel { model } => {
@@ -234,6 +244,24 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     surface(&value.declaration.name),
                     value.declaration.id,
                     directional_marker(&value.declaration.name),
+                ));
+            }
+            DeclarationAst::EventInput(value) => {
+                let input_type = match &value.kind {
+                    ActionInputKindAst::ExistingModel { model } => {
+                        format!("기존 {}", marked(model, "을", "를"))
+                    }
+                    ActionInputKindAst::Value { value_type } => {
+                        marked(&type_reference(value_type), "을", "를")
+                    }
+                };
+                output.push_str(&format!(
+                    "{} {} {}({}){} 담는다.\n",
+                    marked(&value.event, "은", "는"),
+                    input_type,
+                    surface(&value.declaration.name),
+                    value.declaration.id,
+                    directional_marker(&value.declaration.name)
                 ));
             }
             DeclarationAst::CreationBranch(value) => {
@@ -541,6 +569,27 @@ mod tests {
         let second = format_document(&formatted).unwrap();
         assert_eq!(first, second);
         assert_eq!(original_module, semantic_module(&formatted));
+    }
+
+    #[test]
+    fn event_header_input_and_creation_branches_round_trip() {
+        let source = "@모듈 사건(event)\n상태(status)는 다음 값 중 하나다.\n    접수됨(received)\n    보류됨(held)\n알림(notice)은 다음 필드들로 구성되어 있다.\n    내용(content): 선택 문자열\n요청 접수됨(request_received)은 사건이다.\n요청 접수됨은 상태를 요청 상태(request_status)로 담는다.\n접수 알림 생성(received_create)은 요청 접수됨의 요청 상태가 접수됨이면 알림을 하나 생성한다.\n보류 알림 미생성(held_skip)은 요청 접수됨의 요청 상태가 보류됨이면 알림을 생성하지 않는다.\n";
+        let original = parse(source);
+        assert!(
+            original.diagnostics.is_empty(),
+            "{:?}",
+            original.diagnostics
+        );
+        let first = format_document(&original.document.unwrap()).unwrap();
+        assert!(first.contains("요청 접수됨(request_received)은 사건이다."));
+        assert!(first.contains("요청 접수됨은 상태를 요청 상태(request_status)로 담는다."));
+        let reparsed = parse(&first);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}\n{first}",
+            reparsed.diagnostics
+        );
+        assert_eq!(first, format_document(&reparsed.document.unwrap()).unwrap());
     }
 
     #[test]

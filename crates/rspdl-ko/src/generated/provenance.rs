@@ -39,6 +39,15 @@ pub(crate) struct GeneratedActionInput {
     pub input_id: Capture,
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct GeneratedEventInput {
+    pub event: Capture,
+    pub input_type: Capture,
+    pub input_name: Capture,
+    pub input_id: Capture,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct GeneratedSumDerivation {
     pub target_model: Capture,
@@ -96,6 +105,17 @@ pub(crate) fn parse_action_input(tokens: &[Token]) -> Result<GeneratedActionInpu
             }),
             _ => None,
         }),
+        input_type: required_capture(&parsed, "input_type"),
+        input_name: required_capture(&parsed, "input_name"),
+        input_id: required_capture(&parsed, "input_id"),
+    })
+}
+
+#[allow(dead_code)]
+pub(crate) fn parse_event_input(tokens: &[Token]) -> Result<GeneratedEventInput, ParseError> {
+    let parsed = parse("event_input_statement", tokens)?;
+    Ok(GeneratedEventInput {
+        event: required_capture(&parsed, "event"),
         input_type: required_capture(&parsed, "input_type"),
         input_name: required_capture(&parsed, "input_name"),
         input_id: required_capture(&parsed, "input_id"),

@@ -67,6 +67,7 @@ impl Frontend for TestFrontend {
                     inputs: Vec::new(),
                     span: span(70, 81),
                 }],
+                events: Vec::new(),
                 creation_branches: Vec::new(),
                 field_producers: Vec::new(),
                 relation_producers: Vec::new(),

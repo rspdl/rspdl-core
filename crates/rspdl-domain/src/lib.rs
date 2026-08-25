@@ -29,12 +29,13 @@ pub use domain::{
 };
 pub use error::ModelError;
 pub use frontend::{
-    Frontend, FrontendOutput, SurfaceRef, UnlinkedAction, UnlinkedActionDataMutation,
-    UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint, UnlinkedCreationBranch,
-    UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum, UnlinkedEnumVariant, UnlinkedField,
+    Frontend, FrontendOutput, ProductionTriggerKind, SurfaceRef, UnlinkedAction,
+    UnlinkedActionDataMutation, UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint,
+    UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum,
+    UnlinkedEnumVariant, UnlinkedEvent, UnlinkedEventInput, UnlinkedEventInputKind, UnlinkedField,
     UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerCondition,
     UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationProducer,
+    UnlinkedProductionTrigger, UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationProducer,
     UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
     UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference,
 };
@@ -57,13 +58,13 @@ pub use semantic::{
     ActionInputDefinition, ActionInputKind, ConditionalProductionDefinition, ConstraintDefinition,
     ConstraintOperand, CreationBranchDefinition, CreationDecision, DataModelDefinition,
     DataMutationKind, DerivationDefinition, DerivationExpression, EnumDefinition,
-    EnumVariantDefinition, FieldDefinition, FieldIntentDefinition, FieldIntentKind,
-    FieldProducerCondition, FieldProducerDefinition, FieldProducerSource,
-    OutputRelationSlotDefinition, PolicyDefinition, PolicyEffect, ProducerPhase,
-    ProductionCardinality, RecalculationDefinition, RelationDefinition, RelationOperator,
-    RelationProducerDefinition, RelationSlotCardinality, RelationalConstraintDefinition,
-    RelationalConstraintKind, RoleDefinition, ScreenDefinition, ScreenOperationDefinition,
-    ScreenOperationKind, SemanticModule, TemplatePart,
+    EnumVariantDefinition, EventDefinition, EventInputDefinition, EventInputKind, FieldDefinition,
+    FieldIntentDefinition, FieldIntentKind, FieldProducerCondition, FieldProducerDefinition,
+    FieldProducerSource, OutputRelationSlotDefinition, PolicyDefinition, PolicyEffect,
+    ProducerPhase, ProductionCardinality, ProductionTriggerDefinition, RecalculationDefinition,
+    RelationDefinition, RelationOperator, RelationProducerDefinition, RelationSlotCardinality,
+    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
+    ScreenOperationDefinition, ScreenOperationKind, SemanticModule, TemplatePart,
 };
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;

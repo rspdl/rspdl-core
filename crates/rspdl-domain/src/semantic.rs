@@ -215,6 +215,37 @@ pub struct ActionDefinition {
     pub span: TextRange,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EventDefinition {
+    pub id: CanonicalId,
+    pub name: String,
+    pub inputs: Vec<EventInputDefinition>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EventInputDefinition {
+    pub id: CanonicalId,
+    pub local_id: CanonicalId,
+    pub name: String,
+    pub kind: EventInputKind,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
+pub enum EventInputKind {
+    ExistingModel { model_id: CanonicalId },
+    Value { value_type: CanonicalType },
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum ProductionTriggerDefinition {
+    Action(CanonicalId),
+    Event(CanonicalId),
+}
+
 /// One typed, explicitly named input declared by an action.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ActionInputDefinition {
@@ -333,7 +364,9 @@ pub struct RelationProducerDefinition {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ConditionalProductionDefinition {
     pub id: CanonicalId,
-    pub action_id: CanonicalId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<CanonicalId>,
+    pub trigger: ProductionTriggerDefinition,
     pub output_model_id: CanonicalId,
     pub instance_cardinality: ProductionCardinality,
     pub decision_input_id: CanonicalId,
@@ -395,6 +428,8 @@ pub struct SemanticModule {
     pub constraints: Vec<ConstraintDefinition>,
     pub roles: Vec<RoleDefinition>,
     pub actions: Vec<ActionDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<EventDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub conditional_productions: Vec<ConditionalProductionDefinition>,
     pub policies: Vec<PolicyDefinition>,

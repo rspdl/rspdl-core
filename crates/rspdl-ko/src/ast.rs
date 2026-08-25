@@ -201,6 +201,12 @@ pub struct ActionAst {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EventAst {
+    pub declaration: NamedIdAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ActionInputKindAst {
     ExistingModel { model: String },
@@ -210,6 +216,14 @@ pub enum ActionInputKindAst {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ActionInputAst {
     pub action: String,
+    pub declaration: NamedIdAst,
+    pub kind: ActionInputKindAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EventInputAst {
+    pub event: String,
     pub declaration: NamedIdAst,
     pub kind: ActionInputKindAst,
     pub span: Span,
@@ -307,7 +321,9 @@ pub enum DeclarationAst {
     Constraint(ConstraintAst),
     Role(RoleAst),
     Action(ActionAst),
+    Event(EventAst),
     ActionInput(ActionInputAst),
+    EventInput(EventInputAst),
     CreationBranch(CreationBranchAst),
     FieldProducer(FieldProducerAst),
     RelationProducer(RelationProducerAst),

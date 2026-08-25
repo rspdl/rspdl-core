@@ -49,3 +49,10 @@ pub action_header =
     ("은" | "는")
     "행동이다" "."
     ;
+
+pub event_header =
+    name: @surface_name()
+    id: @canonical_id()
+    ("은" | "는")
+    "사건이다" "."
+    ;
