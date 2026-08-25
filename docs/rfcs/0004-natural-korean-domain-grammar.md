@@ -374,7 +374,7 @@ policy-statement =
 
 ### 6.2 공통 타입 검사
 
-- ordered comparison은 `정수`, `소수`, `날짜`, `시간`, `날짜시간`, `기간`, `위도`, `경도`의 같은 타입 operand 사이에만 적용한다.
+- ordered comparison은 `정수`, `소수`, `날짜`, `시간`, `날짜시간`, `기간`, `위도`, `경도`, `지역 날짜시간`, `시간대 날짜시간`, `통화`, `백분율`, `수량`의 같은 타입 operand 사이에만 적용한다. `통화`는 같은 통화 코드끼리만, `수량`은 같은 차원끼리만 비교한다 — 다르면 `RSPDL-TYPE-001` 오류다.
 - equality literal의 타입은 field 타입과 같아야 한다.
 - enum literal은 field가 참조하는 enum에 선언된 표시 이름이어야 한다.
 - field-to-field equality는 양쪽 field 타입이 같아야 한다.

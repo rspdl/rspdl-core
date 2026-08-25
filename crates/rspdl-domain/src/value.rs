@@ -1427,9 +1427,15 @@ fn apply_calendar_date(
         .ok_or_else(overflow)?;
     let month = month_index.rem_euclid(12) as u32 + 1;
     let shifted = NaiveDate::from_ymd_opt(year, month, date.day()).ok_or_else(overflow)?;
-    shifted
+    let applied = shifted
         .checked_add_signed(chrono::Duration::days(days as i64))
-        .ok_or_else(overflow)
+        .ok_or_else(overflow)?;
+    // `NaiveDate` 는 1..=9999 밖의 해도 담는다. 그대로 두면 우리가 만든 날짜를 우리가
+    // 다시 못 읽고 "유효한 ISO 날짜가 아니다" 라는 엉뚱한 진단이 나간다.
+    if !(1..=9999).contains(&applied.year()) {
+        return Err(overflow());
+    }
+    Ok(applied)
 }
 
 fn coordinate_parts(value: &CanonicalValue) -> Result<(f64, f64), ModelError> {

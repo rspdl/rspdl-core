@@ -113,7 +113,7 @@ target_spec: "0.4.0"
   - 단일 정수 필드 합계, 원본 변경 시 재계산과 내부/비표시 의도
   - parser, formatter, Canonical domain model, concrete constraint check, Z3 bounded analysis와 결정적 직접 runtime policy match
   - 날짜, 시간, UTC 날짜시간, 고정 기간, 임의 정밀도 소수, 위도와 경도 field 및 concrete equality·ordered constraint 실행
-  - 통화/백분율/닫힌 단위 수량의 parameterized type identity와 exact comparison, coordinate/refinement value validation, typed collection/reference Canonical IR 및 deterministic runtime JSON binding
+  - 통화/백분율/닫힌 단위 수량의 parameterized type identity와 same-currency·same-dimension exact comparison, coordinate/refinement value validation, typed collection/reference Canonical IR 및 deterministic runtime JSON binding (환율 환산, 가격 산술, 반올림 정책과 가격표 구성은 비범위)
   - 지역/시간대 날짜시간(DST offset 검증), 달력 기간의 RejectOverflow 적용, coordinate distance/radius와 CIDR containment
   - 단일 닫힌 enum decision point의 backend-neutral 정적 gap, compatible overlap 및 allow/deny conflict 분석 API와 Z3 witness
   - 하나 이상의 field를 가진 record model, 문장형 unary/binary typed relation과 `nonempty`, `required`, `unique`, `exclusive`, `exhaustive`, compatible `coexistent` 규칙

@@ -211,12 +211,23 @@ fn scan_content(
                 let closing = ')';
                 cursor += 1;
                 let value_start = cursor;
-                while cursor < content.len() && !content[cursor..].starts_with(closing) {
-                    cursor += content[cursor..]
+                // 깊이를 센다. 안정 ID 자체는 중첩되지 않지만 `맵(문자열, 목록(문자열))`
+                // 처럼 매개변수 안에 매개변수가 오면 첫 `)` 에서 멈추면 안 된다.
+                let mut depth = 1usize;
+                while cursor < content.len() {
+                    let next = content[cursor..]
                         .chars()
                         .next()
-                        .expect("canonical identifier character")
-                        .len_utf8();
+                        .expect("canonical identifier character");
+                    if next == '(' {
+                        depth += 1;
+                    } else if next == closing {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    cursor += next.len_utf8();
                 }
                 if cursor == content.len() {
                     diagnostics.push(

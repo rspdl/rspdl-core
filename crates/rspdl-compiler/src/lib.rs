@@ -1076,10 +1076,17 @@ fn bind_runtime_type(value: &Value, value_type: &CanonicalType) -> Option<Canoni
 }
 
 fn bind_decimal_text(value: &Value) -> Option<String> {
-    value
-        .as_str()
-        .map(str::to_owned)
-        .or_else(|| value.as_number().map(ToString::to_string))
+    if let Some(text) = value.as_str() {
+        return Some(text.to_owned());
+    }
+    let number = value.as_number()?;
+    // `serde_json` 은 `arbitrary_precision` 없이 쓰므로 소수 JSON 숫자는 이미 `f64` 로
+    // 반올림된 뒤다. 그 자릿수를 정확한 소수 생성자에 넘기면 "정확하다" 는 약속이
+    // 거짓이 된다. 정수는 그대로 보존되므로 그대로 받고, 소수는 문자열로 받는다.
+    if number.is_f64() {
+        return None;
+    }
+    Some(number.to_string())
 }
 
 fn execute_constraints(
@@ -1473,12 +1480,12 @@ mod tests {
             "extended_runtime.event": [
               {
                 "$id": "valid",
-                "amount": 10.5,
+                "amount": "10.5",
                 "start_date": "2026-08-13",
                 "start_time": "09:00:00.000000001",
                 "occurred_at": "2026-08-13T14:30:00+09:00",
                 "wait_duration": "PT1.5S",
-                "latitude": 37.5,
+                "latitude": "37.5",
                 "longitude": "127.0"
               },
               {
@@ -1489,7 +1496,7 @@ mod tests {
                 "occurred_at": "2026-08-13T05:29:59Z",
                 "wait_duration": "PT2.000000001S",
                 "latitude": "37.6",
-                "longitude": 126.9
+                "longitude": "126.9"
               }
             ]
           }
@@ -1511,12 +1518,12 @@ mod tests {
           "records": {
             "extended_runtime.event": [{
               "$id": "invalid-coordinate",
-              "amount": 10.5,
+              "amount": "10.5",
               "start_date": "2026-08-13",
               "start_time": "09:00:01",
               "occurred_at": "2026-08-13T05:30:00Z",
               "wait_duration": "PT1S",
-              "latitude": 90.0001,
+              "latitude": "90.0001",
               "longitude": 127
             }]
           }
@@ -1530,6 +1537,34 @@ mod tests {
             Some("latitude")
         );
         assert!(report.constraint_violations.is_empty());
+    }
+
+    #[test]
+    fn fractional_json_numbers_are_rejected_for_exact_decimals() {
+        // `serde_json` 은 소수 JSON 숫자를 `f64` 로 담는다. 그 자릿수를 정확한 소수로
+        // 받아들이면 "정확하다" 는 약속이 입력 모양에 따라 조용히 깨진다.
+        let data = r#"{
+          "records": {
+            "extended_runtime.event": [
+              {
+                "$id": "rounded",
+                "amount": 10.5,
+                "start_date": "2026-08-13",
+                "start_time": "09:00:01",
+                "occurred_at": "2026-08-13T05:30:00Z",
+                "wait_duration": "PT1S",
+                "latitude": "37.5",
+                "longitude": 127
+              }
+            ]
+          }
+        }"#;
+        let report = check_ko(EXTENDED_SCALAR_SOURCE, data, CheckOptions::default());
+        assert!(report.has_errors(), "{report:?}");
+        assert_eq!(
+            report.runtime_diagnostics[0].argument("expected_type"),
+            Some("decimal")
+        );
     }
 
     #[test]

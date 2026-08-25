@@ -120,6 +120,8 @@ cargo run -p rspdl-cli -- compile examples/rejected/conflicting-action-results.r
 
 통화, 단위와 외부 ID는 문자열로 우회하지 않습니다. [제품 값 예시](examples/typed-product-values.rspdl)는 `통화(KRW)`, `백분율`, `수량(kg)`, `좌표`, refinement 및 `집합(문자열)`을 실제 compile/runtime validation으로 확인합니다.
 
+여기서 `통화`가 뜻하는 것은 **타입 검증과 같은 통화끼리의 exact 비교·덧셈·뺄셈**입니다. 가격 산술, 환율 환산, 반올림 정책과 가격표 구성은 지원하지 않습니다 — 그것들은 제품이 정할 규칙이지 언어가 정할 규칙이 아닙니다.
+
 ```console
 cargo run -p rspdl-cli -- check examples/typed-product-values.rspdl \
   --data examples/typed-product-values-data.json --json
