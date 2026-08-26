@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "rspdl-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rspdl-compiler",
  "rspdl-domain",
@@ -575,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "rspdl-compiler"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rspdl-domain",
  "rspdl-ko",
@@ -587,7 +587,7 @@ dependencies = [
 
 [[package]]
 name = "rspdl-domain"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -602,11 +602,11 @@ dependencies = [
 
 [[package]]
 name = "rspdl-grammar-compiler"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "rspdl-ko"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rspdl-domain",
  "rspdl-grammar-compiler",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "rspdl-node"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "napi",
  "napi-build",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "rspdl-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "pyo3",
  "rspdl-sdk",
@@ -634,7 +634,7 @@ dependencies = [
 
 [[package]]
 name = "rspdl-sdk"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rspdl-compiler",
  "serde",
@@ -644,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "rspdl-solver-z3"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "num-bigint",
  "rspdl-domain",
