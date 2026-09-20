@@ -8,23 +8,26 @@ use crate::frontend::ProductionTriggerKind;
 use crate::{
     ActionDataMutationDefinition, ActionDataMutationProvenance, ActionDefinition,
     ActionInputDefinition, ActionInputKind, CanonicalId, CanonicalType, CanonicalValue,
-    ConditionalProductionDefinition, ConstraintDefinition, ConstraintOperand,
+    CategoryDefinition, ConditionalProductionDefinition, ConstraintDefinition, ConstraintOperand,
     CreationBranchDefinition, CreationDecision, DataModelDefinition, DataMutationKind,
     DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition, EnumType,
     EnumVariantDefinition, EventDefinition, EventInputDefinition, EventInputKind, FieldDefinition,
     FieldIntentDefinition, FieldProducerCondition, FieldProducerDefinition, FieldProducerSource,
-    ModelError, OutputRelationSlotDefinition, PolicyDefinition, PolicyEffect, ProducerPhase,
-    ProductionCardinality, ProductionTriggerDefinition, QuantityDimension, RecalculationDefinition,
-    RelationDefinition, RelationOperator, RelationProducerDefinition, RelationSlotCardinality,
-    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
-    ScreenOperationDefinition, ScreenOperationKind, SemanticModule, Severity, SourceId, SurfaceRef,
-    TemplatePart, TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind,
-    UnlinkedConstraint, UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration,
-    UnlinkedEventInputKind, UnlinkedFieldIntent, UnlinkedFieldProducer,
-    UnlinkedFieldProducerCondition, UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule,
-    UnlinkedOperand, UnlinkedPolicy, UnlinkedRecalculation, UnlinkedRelation,
-    UnlinkedRelationProducer, UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind,
-    UnlinkedScreen, UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference,
+    LayoutElement, ModelError, OutputRelationSlotDefinition, PolicyDefinition, PolicyEffect,
+    ProducerPhase, ProductionCardinality, ProductionTriggerDefinition, QuantityDimension,
+    RecalculationDefinition, RelationDefinition, RelationOperator, RelationProducerDefinition,
+    RelationSlotCardinality, RelationalConstraintDefinition, RelationalConstraintKind,
+    RoleDefinition, ScreenCategoryAssignment, ScreenDefinition, ScreenLayoutDefinition,
+    ScreenOperationDefinition, ScreenOperationKind, ScreenPathDefinition, SemanticModule, Severity,
+    SourceId, SurfaceRef, TemplatePart, TextRange, UnlinkedActionDataMutation,
+    UnlinkedActionInputKind, UnlinkedCategory, UnlinkedConstraint, UnlinkedCreationBranch,
+    UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEventInputKind, UnlinkedFieldIntent,
+    UnlinkedFieldProducer, UnlinkedFieldProducerCondition, UnlinkedFieldProducerSource,
+    UnlinkedLayoutElement, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
+    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationProducer,
+    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedScreen,
+    UnlinkedScreenLayout, UnlinkedScreenPath, UnlinkedSumDerivation, UnlinkedTemplatePart,
+    UnlinkedTypeReference,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -414,6 +417,24 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         &mut diagnostics,
     );
 
+    let FrontmatterAnalysis {
+        categories: information_architecture,
+        screen_categories,
+        layouts: screen_layouts,
+        paths: screen_paths,
+    } = analyze_frontmatter_structure(
+        module.information_architecture,
+        module.screen_layouts,
+        module.screen_paths,
+        &module_id,
+        &models,
+        &screens,
+        &action_names,
+        &field_intents,
+        &mut top_level_ids,
+        &mut diagnostics,
+    );
+
     let mut constraints = Vec::new();
     for value in module.constraints {
         if let Some(definition) = link_constraint(
@@ -462,6 +483,10 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
             relations,
             relational_constraints,
             screens,
+            information_architecture,
+            screen_categories,
+            screen_layouts,
+            screen_paths,
             action_data_mutations,
             derivations,
             recalculations,
@@ -3463,6 +3488,708 @@ fn analyze_data_usage(
         recalculations: recalculation_definitions,
         field_intents: intents,
     }
+}
+
+/// Everything the document frontmatter contributes to the semantic module.
+#[derive(Debug, Default)]
+struct FrontmatterAnalysis {
+    categories: Vec<CategoryDefinition>,
+    screen_categories: Vec<ScreenCategoryAssignment>,
+    layouts: Vec<ScreenLayoutDefinition>,
+    paths: Vec<ScreenPathDefinition>,
+}
+
+/// Checks the declared structure against the declared meaning.
+///
+/// Name resolution already happened in the locale frontend, exactly as it does
+/// for sentences, so everything arriving here is a stable ID. What is left is the
+/// part only this layer can do: comparing what a screen is made of against what
+/// the sentences say that screen does.
+///
+/// Every mismatch diagnostic carries both spans — the structure side and the
+/// sentence side — because pointing at one half leaves the reader hunting for the
+/// other.
+#[allow(clippy::too_many_arguments)]
+fn analyze_frontmatter_structure(
+    categories: Vec<UnlinkedCategory>,
+    layouts: Vec<UnlinkedScreenLayout>,
+    paths: Vec<UnlinkedScreenPath>,
+    module_id: &CanonicalId,
+    models: &[DataModelDefinition],
+    screens: &[ScreenDefinition],
+    actions: &BTreeMap<String, CanonicalId>,
+    field_intents: &[FieldIntentDefinition],
+    top_level_ids: &mut BTreeSet<CanonicalId>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> FrontmatterAnalysis {
+    if categories.is_empty() && layouts.is_empty() && paths.is_empty() {
+        return FrontmatterAnalysis::default();
+    }
+
+    let errors_before = diagnostics
+        .iter()
+        .filter(|entry| entry.severity == Severity::Error)
+        .count();
+
+    let screen_by_id = screens
+        .iter()
+        .map(|screen| (screen.id.clone(), screen))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut analysis = FrontmatterAnalysis::default();
+    let mut category_spans = BTreeMap::<CanonicalId, TextRange>::new();
+    let mut assigned = BTreeMap::<CanonicalId, TextRange>::new();
+
+    for category in categories {
+        let Some(category_id) = canonical_member(&category.declaration, module_id, diagnostics)
+        else {
+            continue;
+        };
+        // Categories live in the one top-level namespace with models, screens,
+        // roles and actions. They reach the IR as a `CanonicalId` like every
+        // other declaration, and two declarations sharing one ID would be
+        // indistinguishable to anything addressing them by ID. So the collision
+        // is reported by the same helper every other kind uses, once, on the
+        // second declaration — not by a category-specific rule that would only
+        // ever see half the collisions.
+        let collides = top_level_ids.contains(&category_id);
+        duplicate_id(&category_id, category.span, top_level_ids, diagnostics);
+        if collides {
+            continue;
+        }
+        category_spans.insert(category_id.clone(), category.span);
+
+        let parent_id = category.parent.as_ref().and_then(|parent| {
+            category_spans
+                .keys()
+                .find(|id| top_level_reference_matches(id, parent))
+                .cloned()
+        });
+
+        for screen in &category.screens {
+            let Some(screen_id) = screen_by_id
+                .keys()
+                .find(|id| top_level_reference_matches(id, screen))
+                .cloned()
+            else {
+                continue;
+            };
+            if let Some(existing) = assigned.get(&screen_id) {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-IA-003",
+                        Severity::Error,
+                        "semantic.information_architecture.screen_multiple_categories",
+                        screen.span(),
+                    )
+                    .with_argument("screen_id", &screen_id)
+                    .with_argument("category_id", &category_id)
+                    .with_argument("declared_at", existing.start.to_string()),
+                );
+                continue;
+            }
+            assigned.insert(screen_id.clone(), screen.span());
+            analysis.screen_categories.push(ScreenCategoryAssignment {
+                screen_id,
+                category_id: category_id.clone(),
+                span: screen.span(),
+            });
+        }
+
+        analysis.categories.push(CategoryDefinition {
+            id: category_id,
+            name: category.declaration.name.clone(),
+            parent_id,
+            span: category.span,
+        });
+    }
+
+    check_category_depth(&analysis.categories, diagnostics);
+
+    let hidden_fields = field_intents
+        .iter()
+        .map(|intent| intent.field_id.clone())
+        .collect::<BTreeSet<_>>();
+
+    let mut layout_spans = BTreeMap::<CanonicalId, TextRange>::new();
+    // Keyed by screen as well as field: a field ID is model-qualified, so two
+    // screens taking the same field share one ID. Keyed by field alone, one
+    // screen placing it would answer for every other screen that did not.
+    let mut placed_inputs = BTreeSet::<(CanonicalId, CanonicalId)>::new();
+
+    for layout in layouts {
+        let Some((screen_id, screen)) = screen_by_id
+            .iter()
+            .find(|(id, _)| top_level_reference_matches(id, &layout.screen))
+            .map(|(id, screen)| (id.clone(), *screen))
+        else {
+            continue;
+        };
+        if let Some(existing) = layout_spans.get(&screen_id) {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-LAYOUT-002",
+                    Severity::Error,
+                    "semantic.layout.duplicate_screen",
+                    layout.span,
+                )
+                .with_argument("screen_id", &screen_id)
+                .with_argument("declared_at", existing.start.to_string()),
+            );
+            continue;
+        }
+        layout_spans.insert(screen_id.clone(), layout.span);
+
+        let mut element_ids = BTreeMap::<String, TextRange>::new();
+        let elements = link_layout_elements(
+            &layout.elements,
+            screen,
+            models,
+            actions,
+            &hidden_fields,
+            &mut element_ids,
+            &mut placed_inputs,
+            diagnostics,
+        );
+
+        analysis.layouts.push(ScreenLayoutDefinition {
+            screen_id,
+            kind: layout.kind,
+            elements,
+            span: layout.span,
+        });
+    }
+
+    let mut seen_paths = BTreeSet::<(CanonicalId, String, CanonicalId, Option<String>)>::new();
+    for path in paths {
+        let Some(source_id) = screen_by_id
+            .keys()
+            .find(|id| top_level_reference_matches(id, &path.source_screen))
+            .cloned()
+        else {
+            continue;
+        };
+        let Some(target_id) = screen_by_id
+            .keys()
+            .find(|id| top_level_reference_matches(id, &path.target_screen))
+            .cloned()
+        else {
+            continue;
+        };
+        let element_id = path.source_element.id().to_owned();
+
+        let known = analysis
+            .layouts
+            .iter()
+            .find(|entry| entry.screen_id == source_id)
+            .is_some_and(|entry| pressable_ids(&entry.elements).contains(&element_id));
+        if !known {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-FLOW-001",
+                    Severity::Error,
+                    "semantic.screen_flow.source_element_not_found",
+                    path.source_element.span(),
+                )
+                .with_argument("screen_id", &source_id)
+                .with_argument("element_id", &element_id),
+            );
+            continue;
+        }
+
+        let key = (
+            source_id.clone(),
+            element_id.clone(),
+            target_id.clone(),
+            path.label.clone(),
+        );
+        if !seen_paths.insert(key) {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-FLOW-004",
+                    Severity::Error,
+                    "semantic.screen_flow.duplicate_path",
+                    path.span,
+                )
+                .with_argument("screen_id", &source_id)
+                .with_argument("element_id", &element_id)
+                .with_argument("target_screen_id", &target_id),
+            );
+            continue;
+        }
+
+        analysis.paths.push(ScreenPathDefinition {
+            source_screen_id: source_id,
+            source_element_id: element_id,
+            target_screen_id: target_id,
+            label: path.label.clone(),
+            span: path.span,
+        });
+    }
+
+    // Document-wide judgements are only meaningful about a document that holds
+    // together. If anything above failed, the shape being judged is not the shape
+    // the author wrote, and every warning drawn from it would be invented.
+    let clean = diagnostics
+        .iter()
+        .filter(|entry| entry.severity == Severity::Error)
+        .count()
+        == errors_before;
+    if clean {
+        report_unplaced_required_inputs(&analysis, screens, models, &placed_inputs, diagnostics);
+        report_unreachable_screens(&analysis, diagnostics);
+        report_uncategorized_screens(&analysis, screens, &assigned, diagnostics);
+    }
+
+    // Nothing is sorted on the way out. Sibling order in an information
+    // architecture is menu order and the author decided it by writing it; the
+    // same holds for the order of layouts and paths. Source order is already
+    // deterministic, so sorting would buy nothing and discard a declared intent.
+    // Reference *lists* inside these definitions stay sorted, because a set of
+    // references has no authored order.
+    analysis
+}
+
+/// Depth is a design decision informed by user research, not a semantic rule, so
+/// exceeding the common convention is said out loud and then allowed.
+fn check_category_depth(categories: &[CategoryDefinition], diagnostics: &mut Vec<Diagnostic>) {
+    const CONVENTIONAL_DEPTH: usize = 3;
+    let parents = categories
+        .iter()
+        .map(|category| (category.id.clone(), category.parent_id.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    for category in categories {
+        let mut depth = 1usize;
+        let mut cursor = category.parent_id.clone();
+        while let Some(parent) = cursor {
+            depth += 1;
+            if depth > CONVENTIONAL_DEPTH {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-IA-W001",
+                        Severity::Warning,
+                        "semantic.information_architecture.depth_exceeds_convention",
+                        category.span,
+                    )
+                    .with_argument("category_id", &category.id)
+                    .with_argument("depth", depth.to_string()),
+                );
+                break;
+            }
+            cursor = parents.get(&parent).cloned().flatten();
+        }
+    }
+}
+
+/// Button IDs, which are the only thing a path can leave from today.
+fn pressable_ids(elements: &[LayoutElement]) -> BTreeSet<String> {
+    let mut output = BTreeSet::new();
+    collect_pressable_ids(elements, &mut output);
+    output
+}
+
+fn collect_pressable_ids(elements: &[LayoutElement], output: &mut BTreeSet<String>) {
+    for element in elements {
+        match element {
+            LayoutElement::Button { id, .. } => {
+                output.insert(id.clone());
+            }
+            LayoutElement::Header { children, .. }
+            | LayoutElement::Section { children, .. }
+            | LayoutElement::Form {
+                inputs: children, ..
+            } => {
+                collect_pressable_ids(children, output);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// A required field the sentences say a screen takes, with nowhere to type it.
+fn report_unplaced_required_inputs(
+    analysis: &FrontmatterAnalysis,
+    screens: &[ScreenDefinition],
+    models: &[DataModelDefinition],
+    placed: &BTreeSet<(CanonicalId, CanonicalId)>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if analysis.layouts.is_empty() {
+        return;
+    }
+    let mut reported = BTreeSet::new();
+    for screen in screens {
+        for operation in &screen.operations {
+            if !matches!(
+                operation.kind,
+                ScreenOperationKind::Input | ScreenOperationKind::Update
+            ) {
+                continue;
+            }
+            let Some(model) = models.iter().find(|model| model.id == operation.model_id) else {
+                continue;
+            };
+            for field_id in &operation.field_ids {
+                let key = (screen.id.clone(), field_id.clone());
+                if placed.contains(&key) || reported.contains(&key) {
+                    continue;
+                }
+                let required = model
+                    .fields
+                    .iter()
+                    .any(|field| &field.id == field_id && field.required);
+                if !required {
+                    continue;
+                }
+                reported.insert(key);
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-LAYOUT-W001",
+                        Severity::Warning,
+                        "semantic.layout.required_input_without_slot",
+                        operation.span,
+                    )
+                    .with_argument("screen_id", &screen.id)
+                    .with_argument("field_id", field_id),
+                );
+            }
+        }
+    }
+}
+
+/// Screens no declared path arrives at, and the case where nothing is an entry.
+fn report_unreachable_screens(analysis: &FrontmatterAnalysis, diagnostics: &mut Vec<Diagnostic>) {
+    if analysis.paths.is_empty() || analysis.layouts.is_empty() {
+        return;
+    }
+    let reached = analysis
+        .paths
+        .iter()
+        .map(|path| path.target_screen_id.clone())
+        .collect::<BTreeSet<_>>();
+    let sources = analysis
+        .paths
+        .iter()
+        .map(|path| path.source_screen_id.clone())
+        .collect::<BTreeSet<_>>();
+
+    let entries = sources.difference(&reached).count();
+    if entries == 0 {
+        let span = analysis.paths.first().expect("a path exists").span;
+        diagnostics.push(data_diagnostic(
+            "RSPDL-FLOW-W002",
+            Severity::Warning,
+            "semantic.screen_flow.no_entry_point",
+            span,
+        ));
+    }
+
+    for layout in &analysis.layouts {
+        if reached.contains(&layout.screen_id) || sources.contains(&layout.screen_id) {
+            continue;
+        }
+        diagnostics.push(
+            data_diagnostic(
+                "RSPDL-FLOW-W001",
+                Severity::Warning,
+                "semantic.screen_flow.unreachable_screen",
+                layout.span,
+            )
+            .with_argument("screen_id", &layout.screen_id),
+        );
+    }
+}
+
+/// Being outside the information architecture is not a mistake, only a fact the
+/// author may not have noticed, so it is reported at `info` and nothing more.
+fn report_uncategorized_screens(
+    analysis: &FrontmatterAnalysis,
+    screens: &[ScreenDefinition],
+    assigned: &BTreeMap<CanonicalId, TextRange>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if analysis.categories.is_empty() {
+        return;
+    }
+    for screen in screens {
+        if assigned.contains_key(&screen.id) {
+            continue;
+        }
+        diagnostics.push(
+            data_diagnostic(
+                "RSPDL-IA-I001",
+                Severity::Info,
+                "semantic.information_architecture.screen_uncategorized",
+                screen.span,
+            )
+            .with_argument("screen_id", &screen.id),
+        );
+    }
+}
+
+/// Links one element and compares it with what the sentences say this screen does.
+///
+/// An element whose subject the screen never declared is dropped after being
+/// reported. Keeping it would let a later check speak about a thing that is
+/// already known to be wrong.
+#[allow(clippy::too_many_arguments)]
+fn link_layout_element(
+    element: &UnlinkedLayoutElement,
+    screen: &ScreenDefinition,
+    models: &[DataModelDefinition],
+    actions: &BTreeMap<String, CanonicalId>,
+    hidden: &BTreeSet<CanonicalId>,
+    element_ids: &mut BTreeMap<String, TextRange>,
+    placed: &mut BTreeSet<(CanonicalId, CanonicalId)>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<LayoutElement> {
+    let linked = match element {
+        UnlinkedLayoutElement::Header { children, span } => LayoutElement::Header {
+            children: link_layout_elements(
+                children,
+                screen,
+                models,
+                actions,
+                hidden,
+                element_ids,
+                placed,
+                diagnostics,
+            ),
+            span: *span,
+        },
+        UnlinkedLayoutElement::Section { children, span } => LayoutElement::Section {
+            children: link_layout_elements(
+                children,
+                screen,
+                models,
+                actions,
+                hidden,
+                element_ids,
+                placed,
+                diagnostics,
+            ),
+            span: *span,
+        },
+        UnlinkedLayoutElement::Form { inputs, span } => LayoutElement::Form {
+            inputs: link_layout_elements(
+                inputs,
+                screen,
+                models,
+                actions,
+                hidden,
+                element_ids,
+                placed,
+                diagnostics,
+            ),
+            span: *span,
+        },
+        UnlinkedLayoutElement::Heading { text, span } => LayoutElement::Heading {
+            text: text.clone(),
+            span: *span,
+        },
+        UnlinkedLayoutElement::Placeholder { text, span } => LayoutElement::Placeholder {
+            text: text.clone(),
+            span: *span,
+        },
+        UnlinkedLayoutElement::Input { field, span } => {
+            let found = screen
+                .operations
+                .iter()
+                .filter(|operation| {
+                    matches!(
+                        operation.kind,
+                        ScreenOperationKind::Input | ScreenOperationKind::Update
+                    )
+                })
+                .find_map(|operation| {
+                    let model = models.iter().find(|model| model.id == operation.model_id)?;
+                    model.fields.iter().find(|candidate| {
+                        member_reference_matches(&candidate.id, &candidate.local_id, field)
+                            && operation.field_ids.contains(&candidate.id)
+                    })
+                });
+            let Some(definition) = found else {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-LAYOUT-004",
+                        Severity::Error,
+                        "semantic.layout.field_not_in_screen_operation",
+                        field.span(),
+                    )
+                    .with_argument("screen_id", &screen.id)
+                    .with_argument("reference", field.id())
+                    .with_argument("declared_at", screen.span.start.to_string()),
+                );
+                return None;
+            };
+            if hidden.contains(&definition.id) {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-LAYOUT-007",
+                        Severity::Error,
+                        "semantic.layout.hidden_field_exposed",
+                        field.span(),
+                    )
+                    .with_argument("screen_id", &screen.id)
+                    .with_argument("field_id", &definition.id),
+                );
+                return None;
+            }
+            placed.insert((screen.id.clone(), definition.id.clone()));
+            LayoutElement::Input {
+                field_id: definition.id.clone(),
+                span: *span,
+            }
+        }
+        UnlinkedLayoutElement::List {
+            model,
+            fields,
+            span,
+        } => {
+            let read = screen.operations.iter().find(|operation| {
+                operation.kind == ScreenOperationKind::Read
+                    && top_level_reference_matches(&operation.model_id, model)
+            });
+            let Some(operation) = read else {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-LAYOUT-005",
+                        Severity::Error,
+                        "semantic.layout.model_not_read_by_screen",
+                        model.span(),
+                    )
+                    .with_argument("screen_id", &screen.id)
+                    .with_argument("reference", model.id())
+                    .with_argument("declared_at", screen.span.start.to_string()),
+                );
+                return None;
+            };
+            let definition = models
+                .iter()
+                .find(|candidate| candidate.id == operation.model_id)?;
+            let mut field_ids = Vec::new();
+            for field in fields {
+                let found = definition.fields.iter().find(|candidate| {
+                    member_reference_matches(&candidate.id, &candidate.local_id, field)
+                        && operation.field_ids.contains(&candidate.id)
+                });
+                let Some(candidate) = found else {
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-LAYOUT-004",
+                            Severity::Error,
+                            "semantic.layout.field_not_in_screen_operation",
+                            field.span(),
+                        )
+                        .with_argument("screen_id", &screen.id)
+                        .with_argument("reference", field.id())
+                        .with_argument("declared_at", screen.span.start.to_string()),
+                    );
+                    continue;
+                };
+                if hidden.contains(&candidate.id) {
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-LAYOUT-007",
+                            Severity::Error,
+                            "semantic.layout.hidden_field_exposed",
+                            field.span(),
+                        )
+                        .with_argument("screen_id", &screen.id)
+                        .with_argument("field_id", &candidate.id),
+                    );
+                    continue;
+                }
+                field_ids.push(candidate.id.clone());
+            }
+            LayoutElement::List {
+                model_id: operation.model_id.clone(),
+                field_ids,
+                span: *span,
+            }
+        }
+        UnlinkedLayoutElement::Button {
+            id,
+            name,
+            action,
+            span,
+        } => {
+            if let Some(existing) = element_ids.get(id) {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-LAYOUT-003",
+                        Severity::Error,
+                        "semantic.layout.duplicate_element_id",
+                        *span,
+                    )
+                    .with_argument("screen_id", &screen.id)
+                    .with_argument("element_id", id)
+                    .with_argument("declared_at", existing.start.to_string()),
+                );
+                return None;
+            }
+            element_ids.insert(id.clone(), *span);
+
+            let action_id = match action {
+                None => None,
+                Some(reference) => {
+                    let found = actions
+                        .values()
+                        .find(|candidate| top_level_reference_matches(candidate, reference))
+                        .cloned();
+                    if found.is_none() {
+                        diagnostics.push(
+                            data_diagnostic(
+                                "RSPDL-LAYOUT-006",
+                                Severity::Error,
+                                "semantic.layout.action_not_found",
+                                reference.span(),
+                            )
+                            .with_argument("screen_id", &screen.id)
+                            .with_argument("reference", reference.id()),
+                        );
+                    }
+                    found
+                }
+            };
+            LayoutElement::Button {
+                id: id.clone(),
+                name: name.clone(),
+                action_id,
+                span: *span,
+            }
+        }
+    };
+    Some(linked)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn link_layout_elements(
+    elements: &[UnlinkedLayoutElement],
+    screen: &ScreenDefinition,
+    models: &[DataModelDefinition],
+    actions: &BTreeMap<String, CanonicalId>,
+    hidden: &BTreeSet<CanonicalId>,
+    element_ids: &mut BTreeMap<String, TextRange>,
+    placed: &mut BTreeSet<(CanonicalId, CanonicalId)>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<LayoutElement> {
+    elements
+        .iter()
+        .filter_map(|element| {
+            link_layout_element(
+                element,
+                screen,
+                models,
+                actions,
+                hidden,
+                element_ids,
+                placed,
+                diagnostics,
+            )
+        })
+        .collect()
 }
 
 const fn data_mutation_name(mutation: DataMutationKind) -> &'static str {

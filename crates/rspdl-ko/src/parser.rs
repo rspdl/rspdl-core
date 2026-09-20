@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 use crate::ast::*;
+use crate::frontmatter;
 use crate::scanner::{Token, TokenKind, scan};
 use crate::{Diagnostic, Span};
 
@@ -18,33 +19,66 @@ struct Line {
 }
 
 pub fn parse(source: &str) -> ParseOutput {
-    let scanned = scan(source);
-    let mut diagnostics = scanned.diagnostics;
+    // 머리말을 먼저 떼어 낸다. 남은 원문은 머리말 구간이 공백으로 덮인 같은 길이의 문자열이라
+    // 이후 scanner 가 만드는 span 이 파일 기준으로 그대로 맞는다.
+    let head = frontmatter::read(source);
+    let frontmatter = head.frontmatter;
+    let mut diagnostics = head.diagnostics;
+
+    let scanned = scan(head.source.as_ref());
+    diagnostics.extend(scanned.diagnostics);
     let lines = logical_lines(&scanned.tokens);
     let mut cursor = 0usize;
 
-    let Some(module_line) = lines.first() else {
-        diagnostics.push(Diagnostic::error(
-            "RSPDL-KO-SYN-001",
-            "ko.syntax.module_required",
-            Span::default(),
-        ));
-        return ParseOutput {
-            document: None,
-            diagnostics,
-        };
-    };
-    let module = match parse_module(module_line, &mut diagnostics) {
-        Ok(module) => module,
-        Err(diagnostic) => {
-            diagnostics.push(diagnostic);
-            return ParseOutput {
-                document: None,
-                diagnostics,
+    // 모듈은 머리말의 `모듈` 키에서 오거나 `@모듈` 줄에서 온다. 둘은 같은 사실이므로 함께
+    // 있을 수 없다.
+    let declared_in_frontmatter = frontmatter
+        .as_ref()
+        .and_then(|frontmatter| frontmatter.module.clone());
+
+    let module = match declared_in_frontmatter {
+        Some(declaration) => {
+            if let Some(line) = lines.first()
+                && word_at(line, 0) == Some("@모듈")
+            {
+                diagnostics.push(Diagnostic::error(
+                    "RSPDL-KO-FM-010",
+                    "ko.frontmatter.module_declared_twice",
+                    line.span,
+                ));
+                // 같은 사실을 두 번 읽지 않는다. 남겨 두면 알 수 없는 최상위 선언으로 또 한 번
+                // 진단이 난다.
+                cursor += 1;
+            }
+            let span = declaration.span;
+            ModuleAst { declaration, span }
+        }
+        None => {
+            let Some(module_line) = lines.first() else {
+                diagnostics.push(Diagnostic::error(
+                    "RSPDL-KO-SYN-001",
+                    "ko.syntax.module_required",
+                    Span::default(),
+                ));
+                return ParseOutput {
+                    document: None,
+                    diagnostics,
+                };
             };
+            let module = match parse_module(module_line, &mut diagnostics) {
+                Ok(module) => module,
+                Err(diagnostic) => {
+                    diagnostics.push(diagnostic);
+                    return ParseOutput {
+                        document: None,
+                        diagnostics,
+                    };
+                }
+            };
+            cursor += 1;
+            module
         }
     };
-    cursor += 1;
 
     let mut declarations = Vec::new();
     while cursor < lines.len() {
@@ -173,6 +207,7 @@ pub fn parse(source: &str) -> ParseOutput {
 
     ParseOutput {
         document: Some(DocumentAst {
+            frontmatter,
             module,
             declarations,
         }),
@@ -3110,6 +3145,67 @@ mod tests {
                 TypeReferenceAst::List(Box::new(TypeReferenceAst::String)),
                 TypeReferenceAst::String,
             ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod frontmatter_integration_tests {
+    use super::*;
+
+    fn message_keys(diagnostics: &[Diagnostic]) -> Vec<&str> {
+        diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message_key.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn frontmatter_module_replaces_the_module_line() {
+        let source = "---\n모듈: 재고(inventory)\n---\n\n보관함(box)은 다음 필드들로 구성되어 있다.\n    이름(name): 필수 문자열\n";
+        let output = parse(source);
+        assert_eq!(message_keys(&output.diagnostics), Vec::<&str>::new());
+        let document = output.document.expect("document");
+        assert_eq!(document.module.declaration.id, "inventory");
+        assert!(document.frontmatter.is_some());
+        assert_eq!(document.declarations.len(), 1);
+    }
+
+    #[test]
+    fn declaring_the_module_twice_is_rejected() {
+        let source = "---\n모듈: 재고(inventory)\n---\n@모듈 재고(inventory)\n";
+        let output = parse(source);
+        assert_eq!(
+            message_keys(&output.diagnostics),
+            vec!["ko.frontmatter.module_declared_twice"]
+        );
+    }
+
+    #[test]
+    fn sentence_spans_survive_the_frontmatter() {
+        // 머리말을 공백으로 덮으므로 뒤따르는 문장의 span 은 파일 기준으로 맞아야 한다.
+        let source = "---\n모듈: 재고(inventory)\n---\n알 수 없는 줄\n";
+        let output = parse(source);
+        let diagnostic = output
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.message_key == "ko.syntax.unknown_top_level_declaration")
+            .expect("unknown declaration diagnostic");
+        assert_eq!(
+            diagnostic.span.start,
+            source.find("알 수 없는 줄").expect("sentence offset")
+        );
+    }
+
+    #[test]
+    fn documents_without_frontmatter_still_require_the_module_line() {
+        let output = parse("보관함(box)은 다음 필드들로 구성되어 있다.\n");
+        assert!(
+            message_keys(&output.diagnostics)
+                .iter()
+                .any(|key| key.starts_with("ko.syntax.")),
+            "{:?}",
+            message_keys(&output.diagnostics)
         );
     }
 }

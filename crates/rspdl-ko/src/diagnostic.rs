@@ -11,6 +11,46 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "closing")
         ),
         "ko.lex.invalid_string_literal" => "문자열 literal 형식이 올바르지 않습니다.".into(),
+        "ko.frontmatter.unterminated_block" => {
+            "머리말 블록이 --- 로 닫히지 않았습니다.".into()
+        }
+        "ko.frontmatter.tab_indentation" => {
+            "머리말 들여쓰기에 tab을 사용할 수 없습니다.".into()
+        }
+        "ko.frontmatter.inconsistent_indent" => {
+            "머리말의 들여쓰기가 같은 블록의 다른 항목과 맞지 않습니다.".into()
+        }
+        "ko.frontmatter.unsupported_yaml_feature" => format!(
+            "머리말이 지원하지 않는 YAML 표기입니다: {}",
+            argument(diagnostic, "feature")
+        ),
+        "ko.frontmatter.unknown_key" => format!(
+            "머리말에서 알 수 없는 키입니다: {}",
+            argument(diagnostic, "key")
+        ),
+        "ko.frontmatter.duplicate_key" => format!(
+            "머리말의 같은 블록에서 중복된 키입니다: {}",
+            argument(diagnostic, "key")
+        ),
+        "ko.frontmatter.invalid_scalar_type" => format!(
+            "머리말의 값이 이 자리에서 기대하는 형식이 아닙니다: {}",
+            argument(diagnostic, "expected")
+        ),
+        "ko.frontmatter.invalid_structure" => format!(
+            "머리말의 구조가 이 자리에서 기대하는 모양이 아닙니다: {}",
+            argument(diagnostic, "expected")
+        ),
+        "ko.frontmatter.key_indented_too_deep" => format!(
+            "머리말의 {} 키가 한 단 더 들어가 있어 앞 줄의 값에 딸려 버렸습니다. 같은 단으로 맞춰 주세요.",
+            argument(diagnostic, "key")
+        ),
+        "ko.frontmatter.unknown_layout_element" => format!(
+            "레이아웃 어휘가 아닙니다: {}",
+            argument(diagnostic, "element")
+        ),
+        "ko.frontmatter.module_declared_twice" => {
+            "모듈이 머리말과 @모듈 줄에 모두 선언되어 있습니다. 하나만 남겨 주세요.".into()
+        }
         "ko.syntax.module_required" => "문서는 모듈 선언으로 시작해야 합니다.".into(),
         "ko.syntax.module_header_required" => {
             "문서는 @모듈 표시 이름(stable_id) 선언으로 시작해야 합니다.".into()
@@ -482,6 +522,72 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "existing_name"),
             argument(diagnostic, "new_name")
         ),
+        "semantic.information_architecture.screen_multiple_categories" => format!(
+            "화면 {}이(가) 분류 {} 외의 분류에도 이미 속해 있습니다. 한 화면은 한 분류에만 속합니다.",
+            argument(diagnostic, "screen_id"),
+            argument(diagnostic, "category_id")
+        ),
+        "semantic.information_architecture.depth_exceeds_convention" => format!(
+            "분류 {}의 깊이가 {}입니다. 통상 3단계까지를 권합니다.",
+            argument(diagnostic, "category_id"),
+            argument(diagnostic, "depth")
+        ),
+        "semantic.information_architecture.screen_uncategorized" => format!(
+            "화면 {}이(가) 어떤 분류에도 속해 있지 않습니다.",
+            argument(diagnostic, "screen_id")
+        ),
+        "semantic.layout.duplicate_screen" => format!(
+            "화면 {}의 레이아웃이 두 번 선언되었습니다.",
+            argument(diagnostic, "screen_id")
+        ),
+        "semantic.layout.duplicate_element_id" => format!(
+            "화면 {}에 요소 ID {}가 중복 선언되었습니다.",
+            argument(diagnostic, "screen_id"),
+            argument(diagnostic, "element_id")
+        ),
+        "semantic.layout.field_not_in_screen_operation" => format!(
+            "화면 {}은(는) 필드 {}을(를) 다룬다고 선언하지 않았습니다.",
+            argument(diagnostic, "screen_id"),
+            argument(diagnostic, "reference")
+        ),
+        "semantic.layout.model_not_read_by_screen" => format!(
+            "화면 {}은(는) 데이터 모델 {}을(를) 조회한다고 선언하지 않았습니다.",
+            argument(diagnostic, "screen_id"),
+            argument(diagnostic, "reference")
+        ),
+        "semantic.layout.action_not_found" => format!(
+            "화면 {}의 버튼에 걸린 행동 {}을(를) 찾을 수 없습니다.",
+            argument(diagnostic, "screen_id"),
+            argument(diagnostic, "reference")
+        ),
+        "semantic.layout.hidden_field_exposed" => format!(
+            "화면 {}에 내부용·비표시 필드 {}이(가) 놓였습니다.",
+            argument(diagnostic, "screen_id"),
+            argument(diagnostic, "field_id")
+        ),
+        "semantic.layout.required_input_without_slot" => format!(
+            "화면 {}이(가) 입력한다고 선언한 필수 필드 {}을(를) 채울 자리가 어떤 화면에도 없습니다.",
+            argument(diagnostic, "screen_id"),
+            argument(diagnostic, "field_id")
+        ),
+        "semantic.screen_flow.source_element_not_found" => format!(
+            "화면 {}에 요소 {}이(가) 없습니다.",
+            argument(diagnostic, "screen_id"),
+            argument(diagnostic, "element_id")
+        ),
+        "semantic.screen_flow.duplicate_path" => format!(
+            "화면 {}의 요소 {}에서 {}(으)로 가는 같은 경로가 중복 선언되었습니다.",
+            argument(diagnostic, "screen_id"),
+            argument(diagnostic, "element_id"),
+            argument(diagnostic, "target_screen_id")
+        ),
+        "semantic.screen_flow.unreachable_screen" => format!(
+            "화면 {}에 도달하는 경로가 없습니다.",
+            argument(diagnostic, "screen_id")
+        ),
+        "semantic.screen_flow.no_entry_point" => {
+            "선언된 흐름에 진입점이 없습니다. 모든 화면이 다른 화면에서만 도달합니다.".to_owned()
+        }
         "semantic.screen.duplicate_operation" => format!(
             "화면 {}의 데이터 동작이 중복 선언되었습니다.",
             argument(diagnostic, "screen_id")

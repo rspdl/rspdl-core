@@ -23,11 +23,27 @@ impl std::error::Error for FormatError {}
 
 pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
     let mut output = String::new();
-    output.push_str(&format!(
-        "@모듈 {}({})\n",
-        surface(&document.module.declaration.name),
-        document.module.declaration.id
-    ));
+
+    if let Some(frontmatter) = &document.frontmatter {
+        write_frontmatter(&mut output, frontmatter)?;
+    }
+
+    // 모듈은 머리말의 `모듈` 키에서 왔거나 `@모듈` 줄에서 왔다. 둘은 같은 사실이라 함께 적으면
+    // reader 가 `ko.frontmatter.module_declared_twice` 로 거절한다.
+    if document
+        .frontmatter
+        .as_ref()
+        .is_none_or(|frontmatter| frontmatter.module.is_none())
+    {
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        output.push_str(&format!(
+            "@모듈 {}({})\n",
+            surface(&document.module.declaration.name),
+            document.module.declaration.id
+        ));
+    }
     for declaration in &document.declarations {
         output.push('\n');
         match declaration {
@@ -509,6 +525,245 @@ fn literal_text(value: &LiteralAst) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 머리말 내보내기
+//
+// `frontmatter.rs` 의 reader 를 정확히 뒤집는다. 여기서 한 자리라도 빠뜨리면 `rspdl fmt` 가
+// 사용자의 정보구조·레이아웃·흐름을 조용히 지운다.
+// ---------------------------------------------------------------------------
+
+/// 한 단 들여쓰기.
+const STEP: usize = 2;
+
+fn pad(indent: usize) -> String {
+    " ".repeat(indent)
+}
+
+fn write_frontmatter(output: &mut String, frontmatter: &FrontmatterAst) -> Result<(), FormatError> {
+    output.push_str("---\n");
+    let mut written = false;
+
+    if let Some(module) = &frontmatter.module {
+        output.push_str(&format!("모듈: {}\n", named_id(module, false)?));
+        written = true;
+    }
+
+    if !frontmatter.information_architecture.is_empty() {
+        separate(output, &mut written);
+        output.push_str("정보구조:\n");
+        write_categories(output, &frontmatter.information_architecture, STEP)?;
+    }
+
+    if !frontmatter.screens.is_empty() {
+        separate(output, &mut written);
+        output.push_str("화면:\n");
+        for layout in &frontmatter.screens {
+            write_screen_layout(output, layout, STEP);
+        }
+    }
+
+    if !frontmatter.paths.is_empty() {
+        separate(output, &mut written);
+        output.push_str("흐름:\n");
+        for path in &frontmatter.paths {
+            write_path(output, path, STEP);
+        }
+    }
+
+    output.push_str("---\n");
+    Ok(())
+}
+
+/// 절 사이에만 빈 줄을 둔다. 첫 절 앞에는 두지 않는다.
+fn separate(output: &mut String, written: &mut bool) {
+    if *written {
+        output.push('\n');
+    }
+    *written = true;
+}
+
+/// `이름(id)`. reader 의 `read_named_id` 가 이 자리의 따옴표를 거절하므로 반드시 맨몸으로 적는다.
+///
+/// 따옴표로 도망칠 수 없는 유일한 자리라, 맨몸으로 적었을 때 다시 읽히지 않을 이름은 조용히
+/// 내보내지 않고 여기서 한 번 실패한다.
+fn named_id(declaration: &NamedIdAst, is_key: bool) -> Result<String, FormatError> {
+    let name = &declaration.name;
+    let unwritable = name.is_empty()
+        || name.trim() != name.as_str()
+        || name.chars().any(char::is_control)
+        || name.starts_with(['&', '*', '!', '|', '>', '\'', '[', '{', '"', '#', '-', '?'])
+        || name.contains('#')
+        // key 자리는 첫 `:` 에서 잘리므로 이름이 `:` 를 품을 수 없다. value 자리는 이미 잘린
+        // 뒤라 품어도 된다.
+        || (is_key && name.contains(':'));
+    if unwritable {
+        return Err(FormatError::unsupported_constraint(format!(
+            "머리말에 그대로 적을 수 없는 이름입니다: {name}"
+        )));
+    }
+    Ok(format!("{name}({})", declaration.id))
+}
+
+/// 맨몸으로 적으면 다시 읽을 때 다른 글자가 되는 자리만 따옴표로 감싼다.
+///
+/// reader 가 따옴표 안을 JSON 문자열로 읽으므로(`read_scalar`), 내보낼 때 JSON 문자열로 적는 것이
+/// 정확한 역연산이다. 제어문자와 따옴표는 그 덕에 따로 다룰 필요가 없다.
+fn scalar(text: &str) -> String {
+    if needs_quotes(text) {
+        serde_json::to_string(text).expect("문자열 직렬화는 실패하지 않는다")
+    } else {
+        text.to_owned()
+    }
+}
+
+/// 자리마다 다르게 판단하지 않는다. 규칙이 사람 머릿속에만 남으면 언젠가 어긋난다.
+///
+/// `:` 는 key 와 value 를 가르고, `,` 는 flow collection 의 항목을 가르고, `#` 는 주석을 연다.
+/// 셋 중 하나라도 품었으면 어느 자리에 놓이든 감싼다.
+fn needs_quotes(text: &str) -> bool {
+    text.is_empty()
+        || text.trim() != text
+        || text.chars().any(char::is_control)
+        // 맨 앞에서만 뜻이 달라지는 것들. anchor·alias·tag·block scalar·작은따옴표는 reader 가
+        // 거절하고, `-` 는 block sequence 항목을, `?` 는 complex key 를 연다.
+        || text.starts_with(['&', '*', '!', '|', '>', '\'', '-', '?'])
+        // 어느 자리에 놓이든 파싱을 바꾸는 것들.
+        //
+        // `:` 는 key 와 value 를 가르고(`split_key`), `,` 는 flow collection 의 항목을
+        // 가르고(`split_flow`), `#` 는 주석을 연다(`strip_comment`). 나머지 넷은 그 두 함수가
+        // 깊이와 따옴표를 세는 글자다 — `[`·`{` 는 깊이를 올려 **뒤따르는 항목을 통째로
+        // 삼키고**, `]`·`}` 는 깊이를 내리거나 collection 을 닫고, `"` 는 따옴표 안으로
+        // 들어가 그 뒤의 구분자를 없앤다.
+        || text.contains([':', ',', '#', '[', ']', '{', '}', '"'])
+}
+
+fn write_categories(
+    output: &mut String,
+    categories: &[CategoryAst],
+    indent: usize,
+) -> Result<(), FormatError> {
+    for category in categories {
+        let head = format!("{}{}:", pad(indent), named_id(&category.declaration, true)?);
+        if !category.children.is_empty() {
+            output.push_str(&head);
+            output.push('\n');
+            write_categories(output, &category.children, indent + STEP)?;
+        } else if !category.screens.is_empty() {
+            output.push_str(&format!("{head} [{}]\n", references(&category.screens)));
+        } else {
+            // 잎도 가지도 아닌 분류. 빈 목록을 지어내지 않고 비어 있는 그대로 둔다.
+            output.push_str(&head);
+            output.push('\n');
+        }
+    }
+    Ok(())
+}
+
+fn references(values: &[FrontmatterRefAst]) -> String {
+    values
+        .iter()
+        .map(|value| scalar(&value.text))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn write_screen_layout(output: &mut String, layout: &ScreenLayoutAst, indent: usize) {
+    output.push_str(&format!(
+        "{}{}:\n",
+        pad(indent),
+        scalar(&layout.screen.text)
+    ));
+    let body = indent + STEP;
+    // 적히지 않은 `유형` 은 적히지 않은 채로 둔다. 여기서 `page` 를 채우면 저자가 하지 않은
+    // 결정을 문서가 한 것이 된다.
+    if let Some(kind) = layout.kind {
+        output.push_str(&format!("{}유형: {}\n", pad(body), screen_kind(kind)));
+    }
+    if !layout.elements.is_empty() {
+        output.push_str(&format!("{}레이아웃:\n", pad(body)));
+        write_elements(output, &layout.elements, body + STEP);
+    }
+}
+
+fn screen_kind(kind: ScreenLayoutKindAst) -> &'static str {
+    match kind {
+        ScreenLayoutKindAst::Page => "page",
+        ScreenLayoutKindAst::Popup => "popup",
+        ScreenLayoutKindAst::Tab => "tab",
+        ScreenLayoutKindAst::Link => "link",
+    }
+}
+
+fn write_elements(output: &mut String, elements: &[LayoutElementAst], indent: usize) {
+    for element in elements {
+        let bullet = format!("{}- ", pad(indent));
+        // `- ` 뒤 본문의 열이 그 항목의 들여쓰기가 된다(reader 의 항목 읽기). 그래서 자식은
+        // 하이픈 기준으로 두 단 더 들어간다.
+        let nested = indent + STEP + STEP;
+        match element {
+            LayoutElementAst::Header { children, .. } => {
+                output.push_str(&format!("{bullet}머리말:\n"));
+                write_elements(output, children, nested);
+            }
+            LayoutElementAst::Section { children, .. } => {
+                output.push_str(&format!("{bullet}구역:\n"));
+                write_elements(output, children, nested);
+            }
+            LayoutElementAst::Form { inputs, .. } => {
+                output.push_str(&format!("{bullet}폼:\n"));
+                write_elements(output, inputs, nested);
+            }
+            LayoutElementAst::Heading { text, .. } => {
+                output.push_str(&format!("{bullet}제목: {}\n", scalar(text)));
+            }
+            LayoutElementAst::Placeholder { text, .. } => {
+                output.push_str(&format!("{bullet}자리: {}\n", scalar(text)));
+            }
+            LayoutElementAst::Input { field, .. } => {
+                output.push_str(&format!("{bullet}입력: {}\n", scalar(&field.text)));
+            }
+            LayoutElementAst::List { model, fields, .. } => {
+                let mut body = format!("모델: {}", scalar(&model.text));
+                if !fields.is_empty() {
+                    body.push_str(&format!(", 필드: [{}]", references(fields)));
+                }
+                output.push_str(&format!("{bullet}목록: {{ {body} }}\n"));
+            }
+            LayoutElementAst::Button {
+                id, name, action, ..
+            } => {
+                let mut body = format!("id: {id}, 이름: {}", scalar(name));
+                if let Some(action) = action {
+                    body.push_str(&format!(", 행동: {}", scalar(&action.text)));
+                }
+                output.push_str(&format!("{bullet}버튼: {{ {body} }}\n"));
+            }
+        }
+    }
+}
+
+fn write_path(output: &mut String, path: &ScreenPathAst, indent: usize) {
+    // 하이픈 뒤 본문의 열이 이 매핑의 들여쓰기다. 뒤따르는 키들이 그 열에 맞아야 한 항목이 된다.
+    let body = indent + STEP;
+    output.push_str(&format!(
+        "{}- 출발: {}\n",
+        pad(indent),
+        scalar(&format!(
+            "{}.{}",
+            path.source_screen.text, path.source_element.text
+        ))
+    ));
+    output.push_str(&format!(
+        "{}도착: {}\n",
+        pad(body),
+        scalar(&path.target_screen.text)
+    ));
+    // 적히지 않은 설명은 빈 문자열이 아니다.
+    if let Some(label) = &path.label {
+        output.push_str(&format!("{}설명: {}\n", pad(body), scalar(label)));
+    }
+}
+
 fn surface(value: &str) -> String {
     if value.chars().all(|character| {
         !character.is_control()
@@ -600,6 +855,175 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(annotations.len(), 1, "{source}");
         assert!(annotations[0].starts_with("@모듈 "), "{source}");
+    }
+
+    /// 머리말을 span 을 뺀 모양으로 본다. 다시 써 내면 위치는 달라지지만 뜻은 같아야 한다.
+    fn frontmatter_shape(source: &str) -> Value {
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let document = parsed.document.expect("문서가 파싱되어야 한다");
+        let mut value = serde_json::to_value(&document.frontmatter).unwrap();
+        remove_source_spans(&mut value);
+        value
+    }
+
+    fn reformat(source: &str) -> String {
+        let document = parse(source).document.expect("문서가 파싱되어야 한다");
+        format_document(&document).unwrap()
+    }
+
+    const FRONTMATTER_SOURCE: &str = concat!(
+        "---\n",
+        "모듈: 장바구니(shopping)\n",
+        "\n",
+        "정보구조:\n",
+        "  주문(order):\n",
+        "    결제(payment): [장바구니 항목 입력 화면]\n",
+        "    조회(inquiry):\n",
+        "\n",
+        "화면:\n",
+        "  장바구니 항목 입력 화면:\n",
+        "    유형: page\n",
+        "    레이아웃:\n",
+        "      - 머리말:\n",
+        "          - 제목: \"항목 추가\"\n",
+        "      - 구역:\n",
+        "          - 폼:\n",
+        "              - 입력: 수량\n",
+        "              - 입력: 금액\n",
+        "          - 목록: { 모델: 장바구니 항목, 필드: [수량, 금액] }\n",
+        "          - 자리: \"지도\"\n",
+        "          - 버튼: { id: submit, 이름: \"담기\" }\n",
+        "\n",
+        "흐름:\n",
+        "  - 출발: 장바구니 항목 입력 화면.submit\n",
+        "    도착: 장바구니 상세 화면\n",
+        "    설명: \"담기 성공\"\n",
+        "---\n",
+        "\n",
+        "장바구니 항목(item)은 다음 필드들로 구성되어 있다.\n",
+        "    수량(quantity): 필수 정수\n",
+        "    금액(amount): 필수 정수\n",
+        "\n",
+        "장바구니 항목 입력 화면(create_item)에서는 장바구니 항목을 생성할 수 있다.\n",
+        "장바구니 항목 입력 화면(create_item)에서는 장바구니 항목의 수량, 금액을 입력할 수 있다.\n",
+    );
+
+    #[test]
+    fn frontmatter_round_trips_and_is_idempotent() {
+        let first = reformat(FRONTMATTER_SOURCE);
+        // 뜻이 남는가. 문자열이 아니라 읽어 낸 모양으로 본다.
+        assert_eq!(
+            frontmatter_shape(FRONTMATTER_SOURCE),
+            frontmatter_shape(&first)
+        );
+        // 두 번 돌린 결과가 한 번 돌린 결과와 바이트까지 같은가.
+        assert_eq!(first, reformat(&first));
+        // 문장 쪽도 그대로 남는가.
+        assert!(first.contains(
+            "장바구니 항목 입력 화면(create_item)에서는 장바구니 항목을 생성할 수 있다."
+        ));
+    }
+
+    #[test]
+    fn module_from_the_frontmatter_is_not_repeated_as_an_annotation() {
+        let first = reformat(FRONTMATTER_SOURCE);
+        assert!(
+            first.starts_with("---\n모듈: 장바구니(shopping)\n"),
+            "{first}"
+        );
+        // 두 자리에 같은 사실을 적으면 reader 가 거절한다.
+        assert!(!first.contains("@모듈"), "{first}");
+    }
+
+    #[test]
+    fn a_module_declared_by_annotation_survives_a_frontmatter_without_one() {
+        let source = "---\n정보구조:\n  주문(order): [장바구니 작성 화면]\n---\n\n@모듈 장바구니(shopping)\n";
+        let first = reformat(source);
+        assert_eq!(frontmatter_shape(source), frontmatter_shape(&first));
+        assert!(first.contains("@모듈 장바구니(shopping)"), "{first}");
+        assert_eq!(first, reformat(&first));
+    }
+
+    #[test]
+    fn unspecified_kind_and_label_are_not_filled_in() {
+        let source = concat!(
+            "---\n",
+            "모듈: 장바구니(shopping)\n",
+            "\n",
+            "화면:\n",
+            "  장바구니 작성 화면:\n",
+            "    레이아웃:\n",
+            "      - 버튼: { id: submit, 이름: \"담기\" }\n",
+            "\n",
+            "흐름:\n",
+            "  - 출발: 장바구니 작성 화면.submit\n",
+            "    도착: 장바구니 상세 화면\n",
+            "---\n",
+        );
+        let first = reformat(source);
+        // 적히지 않은 것을 채우면 저자가 하지 않은 결정을 문서가 한 것이 된다.
+        assert!(!first.contains("유형"), "{first}");
+        assert!(!first.contains("설명"), "{first}");
+        assert_eq!(frontmatter_shape(source), frontmatter_shape(&first));
+        assert_eq!(first, reformat(&first));
+    }
+
+    #[test]
+    fn colons_commas_and_leading_hyphens_survive_the_round_trip() {
+        let source = concat!(
+            "---\n",
+            "모듈: 장바구니(shopping)\n",
+            "\n",
+            "화면:\n",
+            "  장바구니 작성 화면:\n",
+            "    레이아웃:\n",
+            "      - 제목: \"가격: 표\"\n",
+            "      - 자리: \"-지도\"\n",
+            "      - 버튼: { id: submit, 이름: \"담기, 그리고 계속\" }\n",
+            "---\n",
+        );
+        let first = reformat(source);
+        assert_eq!(frontmatter_shape(source), frontmatter_shape(&first));
+        assert_eq!(first, reformat(&first));
+        // 감싸지 않으면 `:` 는 키를 가르고 `,` 는 항목을 가른다.
+        assert!(first.contains("제목: \"가격: 표\""), "{first}");
+        assert!(first.contains("자리: \"-지도\""), "{first}");
+        assert!(first.contains("이름: \"담기, 그리고 계속\""), "{first}");
+    }
+
+    /// flow collection 안의 값은 구분자와 같은 자리에 놓인다. 감싸지 않은 `[` 나 `{` 는 깊이를
+    /// 올려 **뒤따르는 항목을 통째로 삼키고**, `"` 는 따옴표 안으로 들어가 같은 일을 한다.
+    /// 삼켜진 항목은 진단 없이 사라지므로, 각 구분자를 두 자리 모두에서 고정한다.
+    #[test]
+    fn every_flow_delimiter_survives_in_both_flow_positions() {
+        for delimiter in [':', ',', '#', '[', ']', '{', '}', '"', '\\'] {
+            let value = serde_json::to_string(&format!("앞{delimiter}뒤")).unwrap();
+            let source = format!(
+                "---\n모듈: 장바구니(shopping)\n화면:\n  장바구니 화면:\n    레이아웃:\n\
+                 \x20     - 버튼: {{ id: a, 이름: {value}, 행동: 주문 담기 }}\n\
+                 \x20     - 목록: {{ 모델: 주문, 필드: [{value}, 총액] }}\n---\n"
+            );
+            let first = reformat(&source);
+            assert_eq!(
+                frontmatter_shape(&source),
+                frontmatter_shape(&first),
+                "{delimiter} 가 왕복에서 살아남지 못했다:\n{first}"
+            );
+            assert_eq!(first, reformat(&first), "{delimiter} 가 멱등하지 않다");
+            // 삼켜지면 이 둘이 조용히 사라진다.
+            assert!(first.contains("행동: 주문 담기"), "{delimiter}:\n{first}");
+            assert!(first.contains("총액"), "{delimiter}:\n{first}");
+        }
+    }
+
+    #[test]
+    fn documents_without_a_frontmatter_are_written_exactly_as_before() {
+        let source = "@모듈 승인(approval)\n신청(request)은 다음 필드들로 구성되어 있다.\n    금액(amount): 필수 정수\n";
+        let first = reformat(source);
+        assert!(first.starts_with("@모듈 승인(approval)\n"), "{first}");
+        assert!(!first.contains("---"), "{first}");
+        assert_only_module_uses_annotation(&first);
     }
 
     #[test]

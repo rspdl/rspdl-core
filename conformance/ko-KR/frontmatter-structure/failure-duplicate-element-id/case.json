@@ -1,0 +1,1 @@
+{"spec_version": "0.5.0", "locale": "ko-KR", "category": "failure", "expected_module": false, "expected_diagnostics": [{"rule_id": "RSPDL-LAYOUT-003", "severity": "error", "message_key": "semantic.layout.duplicate_element_id", "arguments": {"declared_at": "412", "element_id": "submit", "screen_id": "shopping.create_item"}}]}

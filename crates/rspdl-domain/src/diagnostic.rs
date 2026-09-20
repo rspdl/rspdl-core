@@ -10,6 +10,10 @@ use crate::TextRange;
 pub enum Severity {
     Error,
     Warning,
+    /// A fact worth noticing that is not a fault. A screen outside the
+    /// information architecture is the motivating case: saying nothing hides it,
+    /// and calling it a warning claims a mistake the author did not make.
+    Info,
 }
 
 /// A locale-neutral diagnostic envelope shared by frontends and semantic phases.

@@ -57,6 +57,11 @@ fn rejects_invalid_lifecycle_examples_with_expected_diagnostics() {
         ),
         ("unproduced-calculation.rspdl", &["RSPDL-DATA-001"][..]),
         ("conflicting-action-results.rspdl", &["RSPDL-DATA-004"][..]),
+        (
+            "layout-field-outside-screen.rspdl",
+            &["RSPDL-LAYOUT-004"][..],
+        ),
+        ("flow-to-missing-screen.rspdl", &["RSPDL-KO-REF-001"][..]),
     ];
 
     for (file_name, expected_rule_ids) in cases {

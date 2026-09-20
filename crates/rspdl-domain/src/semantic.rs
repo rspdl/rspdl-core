@@ -107,6 +107,117 @@ pub struct ScreenDefinition {
     pub span: TextRange,
 }
 
+/// One node of the information architecture.
+///
+/// The tree is carried flat with a parent pointer rather than nested children, so
+/// the contract does not bake one locale surface's nesting in. Declaration order
+/// is preserved by emitting nodes in pre-order.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CategoryDefinition {
+    pub id: CanonicalId,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<CanonicalId>,
+    pub span: TextRange,
+}
+
+/// Which category a screen sits in. A screen belongs to at most one.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ScreenCategoryAssignment {
+    pub screen_id: CanonicalId,
+    pub category_id: CanonicalId,
+    pub span: TextRange,
+}
+
+/// How a screen is presented. Declared, never inferred — an unstated kind stays
+/// unstated rather than defaulting to a page.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScreenLayoutKind {
+    Page,
+    Popup,
+    Tab,
+    Link,
+}
+
+/// The closed layout vocabulary.
+///
+/// These are semantic units, not visual ones. Nothing here carries a coordinate,
+/// a size, a color or a spacing — that is the designer's material, and an
+/// application projection owns it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LayoutElement {
+    Header {
+        children: Vec<LayoutElement>,
+        span: TextRange,
+    },
+    Section {
+        children: Vec<LayoutElement>,
+        span: TextRange,
+    },
+    Heading {
+        text: String,
+        span: TextRange,
+    },
+    Form {
+        inputs: Vec<LayoutElement>,
+        span: TextRange,
+    },
+    Input {
+        field_id: CanonicalId,
+        span: TextRange,
+    },
+    List {
+        model_id: CanonicalId,
+        field_ids: Vec<CanonicalId>,
+        span: TextRange,
+    },
+    Button {
+        id: String,
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        action_id: Option<CanonicalId>,
+        span: TextRange,
+    },
+    /// A named hole for something that cannot be declared, such as a map or a
+    /// chart. Naming it and leaving it empty beats forcing it into a vocabulary
+    /// that does not fit.
+    Placeholder {
+        text: String,
+        span: TextRange,
+    },
+}
+
+/// What one screen is made of. Element order is the reading order of the screen,
+/// which is meaning rather than placement, so it is never sorted.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ScreenLayoutDefinition {
+    pub screen_id: CanonicalId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ScreenLayoutKind>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub elements: Vec<LayoutElement>,
+    pub span: TextRange,
+}
+
+/// One path through the product. It leaves from an element inside a screen, not
+/// from the screen as a whole.
+///
+/// There is no stable ID here on purpose. A path is not a declaration anyone
+/// names, and synthesizing one would be inventing a fact the document does not
+/// state. Consumers address a path by its endpoints.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ScreenPathDefinition {
+    pub source_screen_id: CanonicalId,
+    pub source_element_id: String,
+    pub target_screen_id: CanonicalId,
+    /// Prose describing when this path is taken. Nothing interprets it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub span: TextRange,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DataMutationKind {
@@ -426,6 +537,14 @@ pub struct SemanticModule {
     pub relational_constraints: Vec<RelationalConstraintDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub screens: Vec<ScreenDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub information_architecture: Vec<CategoryDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub screen_categories: Vec<ScreenCategoryAssignment>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub screen_layouts: Vec<ScreenLayoutDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub screen_paths: Vec<ScreenPathDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub action_data_mutations: Vec<ActionDataMutationDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
