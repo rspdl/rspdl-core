@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/rspdl/rspdl-core/compare/rspdl-v0.1.1...rspdl-v0.1.2) (2026-09-20)
+
+
+### Features
+
+* **grammar:** 문서 머리말에 정보구조·화면 레이아웃·화면 흐름을 선언한다 ([#33](https://github.com/rspdl/rspdl-core/issues/33)) ([81ba26c](https://github.com/rspdl/rspdl-core/commit/81ba26cd148ca66f78ca87776af7d8f6eb5bed78))
+
 ## [0.1.1](https://github.com/rspdl/rspdl-core/compare/rspdl-v0.1.0...rspdl-v0.1.1) (2026-08-25)
 
 
