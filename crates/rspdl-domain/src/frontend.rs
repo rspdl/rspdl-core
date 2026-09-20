@@ -3,7 +3,7 @@ use serde::Serialize;
 use crate::TextRange;
 use crate::{
     CreationDecision, DataMutationKind, Diagnostic, FieldIntentKind, PolicyEffect,
-    RelationOperator, ScreenOperationKind,
+    RelationOperator, ScreenLayoutKind, ScreenOperationKind,
 };
 
 /// Behavior contract implemented by every surface-language frontend.
@@ -400,6 +400,100 @@ pub struct UnlinkedPolicy {
     pub span: TextRange,
 }
 
+/// One node of the information architecture, flattened out of whatever nesting
+/// the surface used.
+///
+/// The tree is carried as a flat list with a parent reference rather than as
+/// nested children. A flat list can represent both a nested surface and one that
+/// names parents explicitly, so the contract does not bake one locale's shape in.
+/// Declaration order is preserved by emitting nodes in pre-order.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedCategory {
+    pub declaration: UnlinkedDeclaration,
+    /// Enclosing category. `None` at the top level. Unresolved, like every reference here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<SurfaceRef>,
+    /// Screens placed directly in this category, in declaration order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub screens: Vec<SurfaceRef>,
+    pub span: TextRange,
+}
+
+/// The closed layout vocabulary.
+///
+/// These are semantic units, not visual ones. Nothing here carries a coordinate,
+/// a size, a color or a spacing — that is the designer's material, and an
+/// application projection owns it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UnlinkedLayoutElement {
+    Header {
+        children: Vec<UnlinkedLayoutElement>,
+        span: TextRange,
+    },
+    Section {
+        children: Vec<UnlinkedLayoutElement>,
+        span: TextRange,
+    },
+    Heading {
+        text: String,
+        span: TextRange,
+    },
+    Form {
+        inputs: Vec<UnlinkedLayoutElement>,
+        span: TextRange,
+    },
+    Input {
+        field: SurfaceRef,
+        span: TextRange,
+    },
+    List {
+        model: SurfaceRef,
+        fields: Vec<SurfaceRef>,
+        span: TextRange,
+    },
+    Button {
+        id: String,
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        action: Option<SurfaceRef>,
+        span: TextRange,
+    },
+    /// A named hole for something that cannot be declared, such as a map or a
+    /// chart. Naming it and leaving it empty beats forcing it into a vocabulary
+    /// that does not fit.
+    Placeholder {
+        text: String,
+        span: TextRange,
+    },
+}
+
+/// What one screen is made of. Element order is the reading order of the screen,
+/// which is meaning rather than placement, so it is never sorted.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedScreenLayout {
+    pub screen: SurfaceRef,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ScreenLayoutKind>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub elements: Vec<UnlinkedLayoutElement>,
+    pub span: TextRange,
+}
+
+/// One path through the product. It leaves from an element inside a screen, not
+/// from the screen as a whole.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedScreenPath {
+    pub source_screen: SurfaceRef,
+    pub source_element: SurfaceRef,
+    pub target_screen: SurfaceRef,
+    /// Human-readable description of when this path is taken. It is prose, not a
+    /// condition expression, and nothing here interprets it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub span: TextRange,
+}
+
 /// Locale-neutral, unresolved semantic intent produced by a frontend.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedModule {
@@ -426,4 +520,10 @@ pub struct UnlinkedModule {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub relation_producers: Vec<UnlinkedRelationProducer>,
     pub policies: Vec<UnlinkedPolicy>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub information_architecture: Vec<UnlinkedCategory>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub screen_layouts: Vec<UnlinkedScreenLayout>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub screen_paths: Vec<UnlinkedScreenPath>,
 }

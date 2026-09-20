@@ -22,16 +22,18 @@ related:
   - downstream-analysis-integration-friction
   - frontend-grammar-implementation-drift
   - policy-consistency-blind-spots
+  - screen-structure-spec-divergence
   - semantic-source-provenance-loss
   - conditional-data-production
   - controlled-korean-surface-grammar
+  - document-frontmatter-structure
   - field-provenance-and-sum-derivation
   - finite-relational-model-finding
   - natural-korean-domain-grammar
   - total-policy-condition-space-analysis
   - typed-domains-and-logic-core
   - frontend-semantic-analysis-contract
-last_updated: "2026-08-26"
+last_updated: "2026-09-20"
 owners:
   - rspdl-maintainers
 ---
@@ -42,7 +44,7 @@ owners:
 
 | ID | Type | Status | Document | Summary | Problems | Topics |
 | --- | --- | --- | --- | --- | --- | --- |
-| `core-application-boundary` | `adr` | `active` | [Core와 Application Projection 경계](adr/0002-core-application-boundary.md) | Keeps compiler, IR, semantic analysis, and diagnostics in the RSPDL core while assigning view projections, filtering, and aggregation to applications. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `compiler-boundary`, `semantic-ir`, `application-projection`, `policy-tables` |
+| `core-application-boundary` | `adr` | `active` | [Core와 Application Projection 경계](adr/0002-core-application-boundary.md) | Keeps compiler, IR, semantic analysis, diagnostics, and semantic-unit screen structure in the RSPDL core while assigning visual presentation, filtering, and aggregation to applications. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `screen-structure-spec-divergence` | `compiler-boundary`, `semantic-ir`, `application-projection`, `policy-tables` |
 | `executable-frontend-grammar-compiler` | `adr` | `accepted` | [실행 가능한 Frontend Grammar Compiler](adr/0003-executable-frontend-grammar-compiler.md) | Selects a small RSPDL-specific EBNF compiler and production-by-production differential migration instead of duplicating normative grammar in handwritten parsers. | `frontend-grammar-implementation-drift` | `executable-grammar`, `parser-generation`, `frontend-infrastructure`, `differential-testing` |
 | `python-node-sdk-distribution` | `adr` | `accepted` | [Python and Node.js SDK Distribution](adr/0004-python-node-sdk-distribution.md) | Selects a shared JSON SDK facade with PyO3 and napi-rs native packages plus OIDC-based coordinated releases. | `downstream-analysis-integration-friction` | `python`, `nodejs`, `sdk`, `native-bindings`, `package-release` |
 | `rust-korean-first-frontend` | `adr` | `accepted` | [Rust와 한국어 우선 독립 Locale Frontend](adr/0001-rust-korean-first-frontends.md) | Selects Rust, a Korean-first rollout, and independent deterministic frontends that lower surface names to a shared stable-ID Unlinked IR. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `rust`, `korean-first`, `controlled-language`, `locale-frontends`, `deterministic-parsing` |
@@ -55,9 +57,11 @@ owners:
 | `downstream-analysis-integration-friction` | `problem` | `active` | [Downstream Analysis Integration Friction](problems/0004-downstream-analysis-integration-friction.md) | Applications outside Rust must rebuild process, serialization, and release glue before they can consume the same RSPDL analysis contract. | - | `downstream-integration`, `language-sdk`, `package-distribution`, `analysis-contract` |
 | `frontend-grammar-implementation-drift` | `problem` | `active` | [Frontend Grammar Implementation Drift](problems/0003-frontend-grammar-implementation-drift.md) | Normative grammar and executable parsers are maintained separately, causing repeated implementation work and undetected drift as surface languages grow. | - | `frontend-development`, `executable-grammar`, `parser-maintenance`, `specification-drift`, `regression-safety` |
 | `policy-consistency-blind-spots` | `problem` | `active` | [Policy Consistency Blind Spots](problems/0002-policy-consistency-blind-spots.md) | Prose planning hides contradictory, uncovered, overlapping, and unreachable policy branches that become visible only during implementation. | - | `policy-conflict`, `policy-gap`, `condition-coverage`, `counterexample` |
+| `screen-structure-spec-divergence` | `problem` | `active` | [Screen Structure and Flow Spec Divergence](problems/0006-screen-structure-spec-divergence.md) | Screen hierarchy, on-screen elements, and paths between screens live outside the spec, so they are never checked against the declared data meaning and drift from it. | - | `information-architecture`, `screen-structure`, `wireframe`, `screen-flow`, `artifact-drift` |
 | `semantic-source-provenance-loss` | `problem` | `active` | [Semantic Source Provenance Loss](problems/0005-semantic-source-provenance-loss.md) | Semantic records lose their source locations during analysis, preventing reordered downstream views from returning users to the declarations that produced them. | - | `semantic-ir`, `source-provenance`, `downstream-navigation`, `explainability` |
 | `conditional-data-production` | `rfc` | `proposed` | [Conditional Data Production for Notifications and Prices](rfcs/0008-conditional-data-production.md) | Defines Korean sentence-shaped conditional outputs with typed provenance, lifecycle availability, and condition-space analysis. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `semantic-source-provenance-loss` | `conditional-production`, `notification`, `pricing`, `field-provenance`, `lifecycle`, `policy-analysis`, `canonical-ir` |
 | `controlled-korean-surface-grammar` | `rfc` | `proposed` | [Controlled Korean Surface Grammar](rfcs/0001-controlled-korean-surface-grammar.md) | Proposes a deterministic Korean surface grammar that treats particles and endings as structural markers rather than morphology. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `frontend-grammar-implementation-drift` | `ko-KR`, `controlled-language`, `surface-grammar`, `cfg`, `parser`, `diagnostics` |
+| `document-frontmatter-structure` | `rfc` | `implemented` | [문서 머리말 구조 선언 - 정보구조, 화면 레이아웃과 화면 흐름](rfcs/0009-document-frontmatter-structure.md) | Defines a YAML-subset document frontmatter that declares information architecture, semantic screen layout, and element-anchored screen paths, checked against sentence-declared screen operations. | `screen-structure-spec-divergence`, `data-lifecycle-modeling-gap`, `semantic-source-provenance-loss` | `information-architecture`, `screen-layout`, `wireframe`, `screen-flow`, `frontmatter`, `canonical-ir` |
 | `field-provenance-and-sum-derivation` | `rfc` | `implemented` | [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md) | Defines sentence-shaped screen operations, action data mutations, provenance checks, sum dependencies, and recalculation triggers. | `data-lifecycle-modeling-gap`, `semantic-source-provenance-loss` | `data-lifecycle`, `field-provenance`, `screen-usage`, `action-result`, `derivation`, `aggregation`, `diagnostics` |
 | `finite-relational-model-finding` | `rfc` | `implemented` | [Finite Relational Rules and Bounded Model Finding](rfcs/0007-finite-relational-model-finding.md) | Defines unary and binary relations, explicit relational meta-rules, and bounded virtual-data model finding without runtime records. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `first-order-logic`, `relation`, `bounded-model-finding`, `cardinality`, `counterexample` |
 | `natural-korean-domain-grammar` | `rfc` | `implemented` | [Korean Domain Frontend Language Specification](rfcs/0004-natural-korean-domain-grammar.md) | Defines Korean record, relation, constraint and policy grammar and its deterministic lowering to the locale-neutral Unlinked IR contract. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `frontend-grammar-implementation-drift` | `ko-KR`, `controlled-language`, `data-model`, `constraints`, `policies`, `relations`, `bounded-model-finding`, `cfg` |

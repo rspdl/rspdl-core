@@ -30,14 +30,15 @@ pub use domain::{
 pub use error::ModelError;
 pub use frontend::{
     Frontend, FrontendOutput, ProductionTriggerKind, SurfaceRef, UnlinkedAction,
-    UnlinkedActionDataMutation, UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedConstraint,
-    UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEnum,
-    UnlinkedEnumVariant, UnlinkedEvent, UnlinkedEventInput, UnlinkedEventInputKind, UnlinkedField,
-    UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerCondition,
-    UnlinkedFieldProducerSource, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedProductionTrigger, UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationProducer,
-    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
-    UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference,
+    UnlinkedActionDataMutation, UnlinkedActionInput, UnlinkedActionInputKind, UnlinkedCategory,
+    UnlinkedConstraint, UnlinkedCreationBranch, UnlinkedDataModel, UnlinkedDeclaration,
+    UnlinkedEnum, UnlinkedEnumVariant, UnlinkedEvent, UnlinkedEventInput, UnlinkedEventInputKind,
+    UnlinkedField, UnlinkedFieldIntent, UnlinkedFieldProducer, UnlinkedFieldProducerCondition,
+    UnlinkedFieldProducerSource, UnlinkedLayoutElement, UnlinkedLiteral, UnlinkedModule,
+    UnlinkedOperand, UnlinkedPolicy, UnlinkedProductionTrigger, UnlinkedRecalculation,
+    UnlinkedRelation, UnlinkedRelationProducer, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedScreenLayout,
+    UnlinkedScreenPath, UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference,
 };
 pub use logic::{
     Atom, AtomView, BooleanExpression, BooleanExpressionView, ComparisonOperator,
@@ -55,16 +56,18 @@ pub use relational_analysis::{
 };
 pub use semantic::{
     ActionDataMutationDefinition, ActionDataMutationProvenance, ActionDefinition,
-    ActionInputDefinition, ActionInputKind, ConditionalProductionDefinition, ConstraintDefinition,
-    ConstraintOperand, CreationBranchDefinition, CreationDecision, DataModelDefinition,
-    DataMutationKind, DerivationDefinition, DerivationExpression, EnumDefinition,
-    EnumVariantDefinition, EventDefinition, EventInputDefinition, EventInputKind, FieldDefinition,
-    FieldIntentDefinition, FieldIntentKind, FieldProducerCondition, FieldProducerDefinition,
-    FieldProducerSource, OutputRelationSlotDefinition, PolicyDefinition, PolicyEffect,
-    ProducerPhase, ProductionCardinality, ProductionTriggerDefinition, RecalculationDefinition,
-    RelationDefinition, RelationOperator, RelationProducerDefinition, RelationSlotCardinality,
-    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition, ScreenDefinition,
-    ScreenOperationDefinition, ScreenOperationKind, SemanticModule, TemplatePart,
+    ActionInputDefinition, ActionInputKind, CategoryDefinition, ConditionalProductionDefinition,
+    ConstraintDefinition, ConstraintOperand, CreationBranchDefinition, CreationDecision,
+    DataModelDefinition, DataMutationKind, DerivationDefinition, DerivationExpression,
+    EnumDefinition, EnumVariantDefinition, EventDefinition, EventInputDefinition, EventInputKind,
+    FieldDefinition, FieldIntentDefinition, FieldIntentKind, FieldProducerCondition,
+    FieldProducerDefinition, FieldProducerSource, LayoutElement, OutputRelationSlotDefinition,
+    PolicyDefinition, PolicyEffect, ProducerPhase, ProductionCardinality,
+    ProductionTriggerDefinition, RecalculationDefinition, RelationDefinition, RelationOperator,
+    RelationProducerDefinition, RelationSlotCardinality, RelationalConstraintDefinition,
+    RelationalConstraintKind, RoleDefinition, ScreenCategoryAssignment, ScreenDefinition,
+    ScreenLayoutDefinition, ScreenLayoutKind, ScreenOperationDefinition, ScreenOperationKind,
+    ScreenPathDefinition, SemanticModule, TemplatePart,
 };
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;

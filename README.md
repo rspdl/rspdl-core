@@ -49,6 +49,9 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 - 생산자 없는 필드 사용 오류와 미조회 입력 필드 안내
 - 화면 또는 action 생성 경로가 없는 모델의 조회·수정·삭제·계산 사용 오류
 - role, action과 조건 없는 allow 또는 deny policy
+- 문서 머리말(YAML 부분집합)의 정보구조 분류 트리와 화면 소속 선언
+- `머리말`·`구역`·`제목`·`폼`·`입력`·`목록`·`버튼`·`자리` 여덟 어휘의 의미 단위 화면 레이아웃 선언과 문장형 화면 조작과의 대조 검증
+- 화면 안의 요소에서 출발하는 화면 흐름 선언과 끝점 정합성·도달 불가 화면 검사
 - deterministic parser, formatter와 Canonical domain model
 - 공통 `Frontend` trait과 stable-ID Unlinked IR을 통한 교체 가능한 Locale frontend
 - Locale과 분리된 stable ID linking, type checking 및 data usage analyzer
@@ -61,7 +64,7 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 - JSON compilation 및 diagnostic 출력
 - 같은 versioned JSON contract를 사용하는 Python 3.11+와 Node.js 22/24 native SDK
 
-화면 간 순서와 분기, 삭제 이후 접근, 실제 relation data binding과 join 실행, 3항 이상 관계·임의 양화식, 일반 계산식, 조건부 정책의 한국어 문법·compiler 진단 연결, default·override와 unreachable 분석은 목표 범위이지만 아직 구현되지 않았습니다. 특히 relation fan-out/join·snapshot과 가격 산술·통화·환율·반올림은 아직 지원하지 않습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
+화면 간 흐름은 머리말에 선언할 수 있게 되었으나 **조건에 따른 분기의 의미**는 아직 다루지 않습니다 — 경로의 조건은 사람이 읽는 설명 문자열이며 분석 대상이 아닙니다. 삭제 이후 접근, 실제 relation data binding과 join 실행, 3항 이상 관계·임의 양화식, 일반 계산식, 조건부 정책의 한국어 문법·compiler 진단 연결, default·override와 unreachable 분석은 목표 범위이지만 아직 구현되지 않았습니다. 특히 relation fan-out/join·snapshot과 가격 산술·통화·환율·반올림은 아직 지원하지 않습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
 
 ## 짧은 예시
 

@@ -372,8 +372,117 @@ pub enum DeclarationAst {
     Policy(PolicyAst),
 }
 
+/// 머리말이 다른 선언을 가리키는 방법.
+///
+/// 문장과 같은 방식으로 적으므로 stable ID 가 아니라 한국어 표시 이름이 올 수 있다. 이름
+/// 해석은 이후 단계의 일이라 여기서는 적힌 글자를 그대로 들고 있는다.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FrontmatterRefAst {
+    pub text: String,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CategoryAst {
+    pub declaration: NamedIdAst,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<CategoryAst>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub screens: Vec<FrontmatterRefAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScreenLayoutKindAst {
+    Page,
+    Popup,
+    Tab,
+    Link,
+}
+
+/// 레이아웃 어휘. 고정 목록이며 좌표나 시각 속성은 담지 않는다 — 그것은 디자인의 영역이다.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LayoutElementAst {
+    Header {
+        children: Vec<LayoutElementAst>,
+        span: Span,
+    },
+    Section {
+        children: Vec<LayoutElementAst>,
+        span: Span,
+    },
+    Heading {
+        text: String,
+        span: Span,
+    },
+    Form {
+        inputs: Vec<LayoutElementAst>,
+        span: Span,
+    },
+    Input {
+        field: FrontmatterRefAst,
+        span: Span,
+    },
+    List {
+        model: FrontmatterRefAst,
+        fields: Vec<FrontmatterRefAst>,
+        span: Span,
+    },
+    Button {
+        id: String,
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        action: Option<FrontmatterRefAst>,
+        span: Span,
+    },
+    /// 선언할 수 없는 자리의 이름표. 지도와 차트가 여기 들어간다.
+    Placeholder {
+        text: String,
+        span: Span,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ScreenLayoutAst {
+    pub screen: FrontmatterRefAst,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ScreenLayoutKindAst>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub elements: Vec<LayoutElementAst>,
+    pub span: Span,
+}
+
+/// 흐름 하나. 출발은 화면 안의 요소이고 도착은 화면이다.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ScreenPathAst {
+    pub source_screen: FrontmatterRefAst,
+    pub source_element: FrontmatterRefAst,
+    pub target_screen: FrontmatterRefAst,
+    /// 사람이 읽는 설명. 조건식이 아니므로 해석하지 않는다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FrontmatterAst {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module: Option<NamedIdAst>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub information_architecture: Vec<CategoryAst>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub screens: Vec<ScreenLayoutAst>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<ScreenPathAst>,
+    pub span: Span,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DocumentAst {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frontmatter: Option<FrontmatterAst>,
     pub module: ModuleAst,
     pub declarations: Vec<DeclarationAst>,
 }

@@ -105,6 +105,7 @@ target_spec: "0.4.0"
 - 현재 구현 범위는 다음과 같다.
   - 한국어 module, enum, record field, field constraint, role, action과 조건 없는 allow 또는 deny policy
   - 문장형 화면 create/read/update/delete와 field input/read/update 선언
+  - 문서 머리말의 정보구조 분류 트리, 의미 단위 화면 레이아웃과 요소 기준 화면 흐름 선언 및 문장형 화면 조작과의 대조 검증
   - 문장형 action create/update/delete 결과와 동일 action·model의 mutation conflict 검증
   - stable-ID typed action input의 한국어 문형, common linking/type checking, source-backed Canonical IR과 결정적 JSON 직렬화
   - direct enum action 또는 immutable Event payload의 한국어 conditional ExactlyOne Create/Skip, enum coverage와 same-variant conflict, Action direct input·ExistingModel input field·constant의 `PreMutation` producer 및 Event direct value·ExistingModel input field의 `TriggerPayload` producer, 무조건 output-field-only message template와 variant별 required output field gap/conflict
@@ -122,14 +123,14 @@ target_spec: "0.4.0"
   - module, 선언, 규칙, screen operation과 recalculation을 포함한 source-backed Semantic IR record의 file-relative source span
   - runtime request별 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - 아직 구현하지 않은 요구사항은 다음과 같다.
-  - 화면 간 순서·분기, 삭제 이후 접근과 path별 데이터 availability
+  - 조건에 따른 화면 분기의 의미, 삭제 이후 접근과 path별 데이터 availability
   - relation/join 기반 교차 모델 집계 실행과 일반 계산식
   - 조건부 정책의 한국어 표면 문법, Canonical IR lowering과 compiler structured diagnostic 연결
   - 다중 입력 domain과 일반 effect compatibility, 조건부 field requiredness, explicit default와 override
   - snapshot/retain lifecycle analysis, 조건부 Event field/relation producer와 structured diagnostic 확장
   - relation path 기반 다수 output 생성, 실제 relation JSON binding, output delivery, 일반 expression·통화·반올림·가격표 snapshot과 field composition
   - effective condition에 기반한 unreachable 분석
-  - 유저 플로우, module import와 다국어 의미 동등성
+  - module import와 다국어 의미 동등성
   - 3항 이상 관계, 임의의 quantified formula, 실제 JSON relation binding, relation join/projection/aggregation과 CRUD transition
   - semantic dependency 기반 영향 분석과 downstream code generation
 - 성공 기준은 다음과 같다.
@@ -145,7 +146,8 @@ target_spec: "0.4.0"
 - 정적 조건 공간 분석은 typed SMT query를 기준 경로로 삼는다. 현재 runtime policy match는 선언된 무조건 allow/deny 정책을 직접 결정적으로 대조한다. Datalog evaluator는 제거했으며, 재귀적 관계 폐쇄가 필요해질 때에만 별도 RFC로 다시 검토한다.
 - `push/pop`과 assumption switch 같은 증분 solver 전략은 관찰 가능한 의미, witness와 진단 순서를 바꿀 수 없다.
 - RSPDL core는 Canonical IR, semantic analysis와 diagnostics를 소유한다.
-- 정책표, IA, UI projection, 검색, 집계와 code generation은 공개 IR을 소비하는 application 책임이다.
+- 정보구조 분류와 의미 단위 화면 구조·흐름은 언어 의미이며 core가 소유한다. 좌표, 크기, 색, 간격, 시각 상태와 보드 배치는 application projection이다.
+- 정책표, 검색, 집계와 code generation은 공개 IR을 소비하는 application 책임이다.
 - 자유 형식 자연어 직접 해석과 특정 제품 UI는 초기 언어 범위에 포함하지 않는다.
 - 릴리스 명세는 SemVer를 따르고 승인된 의미 변경은 RFC와 conformance fixture를 함께 요구한다.
 - 표현 편의보다 해석의 단일성, 오류의 조기 발견과 설명 가능성을 우선한다.

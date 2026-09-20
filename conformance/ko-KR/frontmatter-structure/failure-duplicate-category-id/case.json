@@ -1,0 +1,1 @@
+{"spec_version": "0.5.0", "locale": "ko-KR", "category": "failure", "expected_module": false, "expected_diagnostics": [{"rule_id": "RSPDL-IA-001", "severity": "error", "message_key": "semantic.information_architecture.duplicate_category_id", "arguments": {"category_id": "shopping.add", "declared_at": "71"}}]}

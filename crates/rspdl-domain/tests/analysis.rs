@@ -48,6 +48,9 @@ fn empty_module(name: &str) -> UnlinkedModule {
         field_producers: Vec::new(),
         relation_producers: Vec::new(),
         policies: Vec::new(),
+        information_architecture: Vec::new(),
+        screen_layouts: Vec::new(),
+        screen_paths: Vec::new(),
     }
 }
 

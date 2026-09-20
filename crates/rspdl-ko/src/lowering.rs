@@ -12,6 +12,10 @@ use rspdl_domain::{
     UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen,
     UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference,
 };
+use rspdl_domain::{
+    ScreenLayoutKind, UnlinkedCategory, UnlinkedLayoutElement, UnlinkedScreenLayout,
+    UnlinkedScreenPath,
+};
 
 use crate::ast::*;
 use crate::{Span, parse};
@@ -69,6 +73,9 @@ struct StableIdIndex {
     events: Vec<Symbol>,
     action_inputs: Vec<ActionInputSymbol>,
     event_inputs: Vec<ActionInputSymbol>,
+    /// Screens are declared across several sentences, so the same screen appears
+    /// more than once here. Resolution dedupes by ID, so that is harmless.
+    screens: Vec<Symbol>,
 }
 
 impl StableIdIndex {
@@ -106,6 +113,9 @@ impl StableIdIndex {
                 }
                 DeclarationAst::Event(value) => {
                     index.events.push(Symbol::from(&value.declaration));
+                }
+                DeclarationAst::Screen(value) => {
+                    index.screens.push(Symbol::from(&value.declaration));
                 }
                 _ => {}
             }
@@ -391,6 +401,39 @@ impl StableIdIndex {
         self.model_reference(candidate.existing_model_name.as_deref()?, span, diagnostics)
     }
 
+    /// Resolves a screen named the way a sentence names one.
+    fn screen_reference(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        resolve_symbols(self.screens.iter(), value, "screen", span, diagnostics)
+    }
+
+    /// Resolves a field that is named without saying which model owns it.
+    ///
+    /// The frontmatter writes `- 입력: 수량` because the screen already says which
+    /// model it touches, but that is a cross-declaration fact and a frontend may
+    /// not reason about it. So the name is matched against every declared field
+    /// and an ambiguity is reported as one, which is the honest answer.
+    fn unscoped_field_reference(
+        &self,
+        value: &str,
+        span: Span,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<SurfaceRef> {
+        resolve_symbols(
+            self.models
+                .iter()
+                .flat_map(|model| model.fields.iter().map(|field| &field.symbol)),
+            value,
+            "field",
+            span,
+            diagnostics,
+        )
+    }
+
     fn field_reference(
         &self,
         model: Option<&SurfaceRef>,
@@ -571,7 +614,32 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         field_producers: Vec::new(),
         relation_producers: Vec::new(),
         policies: Vec::new(),
+        information_architecture: Vec::new(),
+        screen_layouts: Vec::new(),
+        screen_paths: Vec::new(),
     };
+
+    if let Some(frontmatter) = &document.frontmatter {
+        for category in &frontmatter.information_architecture {
+            flatten_category(
+                category,
+                None,
+                &index,
+                &mut module.information_architecture,
+                &mut diagnostics,
+            );
+        }
+        module.screen_layouts = frontmatter
+            .screens
+            .iter()
+            .filter_map(|value| screen_layout(value, &index, &mut diagnostics))
+            .collect();
+        module.screen_paths = frontmatter
+            .paths
+            .iter()
+            .filter_map(|value| screen_path(value, &index, &mut diagnostics))
+            .collect();
+    }
 
     for value in &document.declarations {
         match value {
@@ -1359,6 +1427,192 @@ fn relation_references(
         .collect()
 }
 
+/// Flattens the declared category tree into a pre-order list carrying parent
+/// references.
+///
+/// The parent is a plain reference like every other one here: the frontend does
+/// not resolve it, so a parent naming something that does not exist survives to
+/// the analyzer, which is the only layer allowed to say so.
+fn flatten_category(
+    value: &CategoryAst,
+    parent: Option<SurfaceRef>,
+    index: &StableIdIndex,
+    output: &mut Vec<UnlinkedCategory>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let id = value.declaration.id.clone();
+    output.push(UnlinkedCategory {
+        declaration: declaration(&value.declaration, true),
+        parent,
+        // A screen that does not resolve is reported once, here, and then left
+        // out. Carrying a placeholder forward would make the analyzer say the
+        // same thing a second time in different words.
+        screens: value
+            .screens
+            .iter()
+            .filter_map(|screen| index.screen_reference(&screen.text, screen.span, diagnostics))
+            .collect(),
+        span: value.span,
+    });
+
+    for child in &value.children {
+        // Children point back at the id as written; the span is the parent's own
+        // declaration so a diagnostic lands on the category, not on the child.
+        flatten_category(
+            child,
+            Some(SurfaceRef::stable_id(id.clone(), value.declaration.span)),
+            index,
+            output,
+            diagnostics,
+        );
+    }
+}
+
+/// Lowers one screen's layout, or drops it when the screen it belongs to does
+/// not resolve — there is nothing to attach a layout to.
+fn screen_layout(
+    value: &ScreenLayoutAst,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UnlinkedScreenLayout> {
+    let screen = index.screen_reference(&value.screen.text, value.screen.span, diagnostics)?;
+    Some(UnlinkedScreenLayout {
+        screen,
+        kind: value.kind.map(screen_layout_kind),
+        elements: value
+            .elements
+            .iter()
+            .filter_map(|element| layout_element(element, index, diagnostics))
+            .collect(),
+        span: value.span,
+    })
+}
+
+const fn screen_layout_kind(value: ScreenLayoutKindAst) -> ScreenLayoutKind {
+    match value {
+        ScreenLayoutKindAst::Page => ScreenLayoutKind::Page,
+        ScreenLayoutKindAst::Popup => ScreenLayoutKind::Popup,
+        ScreenLayoutKindAst::Tab => ScreenLayoutKind::Tab,
+        ScreenLayoutKindAst::Link => ScreenLayoutKind::Link,
+    }
+}
+
+/// Lowers one layout element.
+///
+/// An element whose subject does not resolve is dropped rather than carried with
+/// a placeholder: an input with no field and a list with no model do not mean
+/// anything, and the reader has already been told why.
+fn layout_element(
+    value: &LayoutElementAst,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UnlinkedLayoutElement> {
+    let lowered = match value {
+        LayoutElementAst::Header { children, span } => UnlinkedLayoutElement::Header {
+            children: children
+                .iter()
+                .filter_map(|child| layout_element(child, index, diagnostics))
+                .collect(),
+            span: *span,
+        },
+        LayoutElementAst::Section { children, span } => UnlinkedLayoutElement::Section {
+            children: children
+                .iter()
+                .filter_map(|child| layout_element(child, index, diagnostics))
+                .collect(),
+            span: *span,
+        },
+        LayoutElementAst::Heading { text, span } => UnlinkedLayoutElement::Heading {
+            text: text.clone(),
+            span: *span,
+        },
+        LayoutElementAst::Form { inputs, span } => UnlinkedLayoutElement::Form {
+            inputs: inputs
+                .iter()
+                .filter_map(|input| layout_element(input, index, diagnostics))
+                .collect(),
+            span: *span,
+        },
+        LayoutElementAst::Input { field, span } => UnlinkedLayoutElement::Input {
+            field: index.unscoped_field_reference(&field.text, field.span, diagnostics)?,
+            span: *span,
+        },
+        LayoutElementAst::List {
+            model,
+            fields,
+            span,
+        } => {
+            let model_reference = index.model_reference(&model.text, model.span, diagnostics)?;
+            UnlinkedLayoutElement::List {
+                fields: fields
+                    .iter()
+                    .filter_map(|field| {
+                        index.field_reference(
+                            Some(&model_reference),
+                            &field.text,
+                            field.span,
+                            diagnostics,
+                        )
+                    })
+                    .collect(),
+                model: model_reference,
+                span: *span,
+            }
+        }
+        LayoutElementAst::Button {
+            id,
+            name,
+            action,
+            span,
+        } => UnlinkedLayoutElement::Button {
+            id: id.clone(),
+            name: name.clone(),
+            // A button whose action does not resolve keeps its place. The button
+            // is still there for a path to leave from; only the unreadable part
+            // is dropped, and it was already reported.
+            action: action
+                .as_ref()
+                .and_then(|value| index.action_reference(&value.text, value.span, diagnostics)),
+            span: *span,
+        },
+        LayoutElementAst::Placeholder { text, span } => UnlinkedLayoutElement::Placeholder {
+            text: text.clone(),
+            span: *span,
+        },
+    };
+    Some(lowered)
+}
+
+/// Lowers one path, or drops it when either endpoint screen does not resolve.
+/// The element half is coined by the layout, so it stays as written and the
+/// analyzer checks it against that screen's elements.
+fn screen_path(
+    value: &ScreenPathAst,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UnlinkedScreenPath> {
+    let source_screen = index.screen_reference(
+        &value.source_screen.text,
+        value.source_screen.span,
+        diagnostics,
+    )?;
+    let target_screen = index.screen_reference(
+        &value.target_screen.text,
+        value.target_screen.span,
+        diagnostics,
+    )?;
+    Some(UnlinkedScreenPath {
+        source_screen,
+        source_element: SurfaceRef::stable_id(
+            value.source_element.text.clone(),
+            value.source_element.span,
+        ),
+        target_screen,
+        label: value.label.clone(),
+        span: value.span,
+    })
+}
+
 fn declaration(value: &NamedIdAst, keep_id: bool) -> UnlinkedDeclaration {
     UnlinkedDeclaration {
         name: value.name.clone(),
@@ -1491,6 +1745,192 @@ mod tests {
     use rspdl_domain::{Frontend, UnlinkedOperand};
 
     use super::*;
+
+    const FRONTMATTER_SOURCE: &str = r#"---
+모듈: 장바구니(shopping)
+
+정보구조:
+  주문(order):
+    결제(payment): [create_cart, create_item]
+    조회(inquiry): [cart_detail]
+
+화면:
+  create_item:
+    유형: page
+    레이아웃:
+      - 머리말:
+          - 제목: "항목 추가"
+      - 구역:
+          - 폼:
+              - 입력: quantity
+              - 입력: amount
+          - 목록: { 모델: item, 필드: [quantity] }
+          - 버튼: { id: submit, 이름: "담기", 행동: add_item }
+          - 자리: "배송지 지도"
+  cart_detail:
+    레이아웃:
+      - 제목: "장바구니"
+
+흐름:
+  - 출발: create_item.submit
+    도착: cart_detail
+    설명: "담기 성공"
+---
+
+장바구니 항목(item)은 다음 필드들로 구성되어 있다.
+    수량(quantity): 필수 정수
+    금액(amount): 필수 정수
+
+장바구니 항목 입력 화면(create_item)에서는 장바구니 항목을 생성할 수 있다.
+장바구니 항목 입력 화면(create_item)에서는 장바구니 항목의 수량, 금액을 입력할 수 있다.
+장바구니 작성 화면(create_cart)에서는 장바구니 항목을 생성할 수 있다.
+장바구니 상세 화면(cart_detail)에서는 장바구니 항목의 수량을 조회할 수 있다.
+담기(add_item)는 행동이다.
+"#;
+
+    fn lowered_frontmatter() -> UnlinkedModule {
+        let parsed = parse(FRONTMATTER_SOURCE);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let output = lower(&parsed.document.unwrap());
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        output.module.unwrap()
+    }
+
+    #[test]
+    fn flattens_the_category_tree_in_declaration_order() {
+        let module = lowered_frontmatter();
+        let ids: Vec<_> = module
+            .information_architecture
+            .iter()
+            .map(|category| category.declaration.id.as_deref().unwrap())
+            .collect();
+        // 선언 순서 그대로의 pre-order 다. 정렬하지 않는다.
+        assert_eq!(ids, vec!["order", "payment", "inquiry"]);
+
+        let parents: Vec<_> = module
+            .information_architecture
+            .iter()
+            .map(|category| category.parent.as_ref().map(SurfaceRef::id))
+            .collect();
+        assert_eq!(parents, vec![None, Some("order"), Some("order")]);
+
+        let payment = &module.information_architecture[1];
+        let screens: Vec<_> = payment.screens.iter().map(SurfaceRef::id).collect();
+        assert_eq!(screens, vec!["create_cart", "create_item"]);
+    }
+
+    #[test]
+    fn frontmatter_names_resolve_the_way_sentence_names_do() {
+        let module = lowered_frontmatter();
+        // 머리말에 적은 이름도 문장의 이름과 같은 해석기를 지난다. 그래서 여기 실린 것은
+        // 사람이 쓴 이름이 아니라 이미 풀린 stable ID 다.
+        let payment = &module.information_architecture[1];
+        let screens: Vec<_> = payment.screens.iter().map(SurfaceRef::id).collect();
+        assert_eq!(screens, vec!["create_cart", "create_item"]);
+    }
+
+    #[test]
+    fn an_unknown_frontmatter_name_is_reported_once_at_the_locale_boundary() {
+        let source = FRONTMATTER_SOURCE.replace("도착: cart_detail", "도착: 없는 화면");
+        let parsed = parse(&source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let output = lower(&parsed.document.unwrap());
+        let keys: Vec<_> = output
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message_key.as_str())
+            .collect();
+        // 원인 하나에 진단 하나. 풀리지 않은 경로는 여기서 빠지므로 분석기가 같은 말을
+        // 다른 표현으로 한 번 더 하지 않는다.
+        assert_eq!(keys, vec!["ko.reference.not_found"]);
+        // 오류가 하나라도 있으면 frontend 는 모듈을 아예 내보내지 않는다. 분석기가 이
+        // 문서를 볼 일이 없으므로 연쇄가 생길 자리도 없다.
+        assert!(output.module.is_none());
+    }
+
+    #[test]
+    fn lowers_the_layout_vocabulary_preserving_order() {
+        let module = lowered_frontmatter();
+        assert_eq!(module.screen_layouts.len(), 2);
+
+        let layout = &module.screen_layouts[0];
+        assert_eq!(layout.screen.id(), "create_item");
+        assert_eq!(layout.kind, Some(ScreenLayoutKind::Page));
+
+        let UnlinkedLayoutElement::Header { children, .. } = &layout.elements[0] else {
+            panic!("첫 요소는 머리말이다: {:?}", layout.elements[0]);
+        };
+        assert!(matches!(
+            &children[0],
+            UnlinkedLayoutElement::Heading { text, .. } if text == "항목 추가"
+        ));
+
+        let UnlinkedLayoutElement::Section { children, .. } = &layout.elements[1] else {
+            panic!("둘째 요소는 구역이다: {:?}", layout.elements[1]);
+        };
+        let UnlinkedLayoutElement::Form { inputs, .. } = &children[0] else {
+            panic!("구역의 첫 자식은 폼이다: {:?}", children[0]);
+        };
+        let fields: Vec<_> = inputs
+            .iter()
+            .map(|input| match input {
+                UnlinkedLayoutElement::Input { field, .. } => field.id(),
+                other => panic!("폼 안에는 입력만 온다: {other:?}"),
+            })
+            .collect();
+        assert_eq!(fields, vec!["quantity", "amount"]);
+
+        assert!(matches!(
+            &children[1],
+            UnlinkedLayoutElement::List { model, fields, .. }
+                if model.id() == "item" && fields.len() == 1 && fields[0].id() == "quantity"
+        ));
+        assert!(matches!(
+            &children[2],
+            UnlinkedLayoutElement::Button { id, name, action, .. }
+                if id == "submit"
+                    && name == "담기"
+                    && action.as_ref().map(SurfaceRef::id) == Some("add_item")
+        ));
+        assert!(matches!(
+            &children[3],
+            UnlinkedLayoutElement::Placeholder { text, .. } if text == "배송지 지도"
+        ));
+    }
+
+    #[test]
+    fn an_unstated_screen_kind_stays_unstated() {
+        let module = lowered_frontmatter();
+        let layout = &module.screen_layouts[1];
+        assert_eq!(layout.screen.id(), "cart_detail");
+        // page 로 채우지 않는다. 선언되지 않은 의도를 추측하지 않는다.
+        assert_eq!(layout.kind, None);
+    }
+
+    #[test]
+    fn a_path_leaves_from_an_element_inside_a_screen() {
+        let module = lowered_frontmatter();
+        assert_eq!(module.screen_paths.len(), 1);
+        let path = &module.screen_paths[0];
+        assert_eq!(path.source_screen.id(), "create_item");
+        assert_eq!(path.source_element.id(), "submit");
+        assert_eq!(path.target_screen.id(), "cart_detail");
+        // 설명은 조건식이 아니라 사람이 읽는 문자열이라 그대로 남는다.
+        assert_eq!(path.label.as_deref(), Some("담기 성공"));
+    }
+
+    #[test]
+    fn a_document_without_frontmatter_lowers_to_empty_structure_lists() {
+        let source = r#"@모듈 승인(expense)
+신청(request)은 다음 필드들로 구성되어 있다.
+    금액(amount): 필수 정수
+"#;
+        let parsed = parse(source);
+        let module = lower(&parsed.document.unwrap()).module.unwrap();
+        assert!(module.information_architecture.is_empty());
+        assert!(module.screen_layouts.is_empty());
+        assert!(module.screen_paths.is_empty());
+    }
 
     #[test]
     fn lowers_surface_names_to_stable_id_references() {

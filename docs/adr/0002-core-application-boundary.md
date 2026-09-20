@@ -4,8 +4,8 @@ title: Core와 Application Projection 경계
 type: adr
 status: active
 created: 2026-07-31
-version: "2"
-summary: Keeps compiler, IR, semantic analysis, and diagnostics in the RSPDL core while assigning view projections, filtering, and aggregation to applications.
+version: "3"
+summary: Keeps compiler, IR, semantic analysis, diagnostics, and semantic-unit screen structure in the RSPDL core while assigning visual presentation, filtering, and aggregation to applications.
 topics:
   - compiler-boundary
   - semantic-ir
@@ -15,10 +15,12 @@ related:
   - rspdl-language-prd
   - rspdl-compiler-architecture
   - field-provenance-and-sum-derivation
+  - document-frontmatter-structure
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
-last_updated: "2026-08-03"
+  - screen-structure-spec-divergence
+last_updated: "2026-09-20"
 owners:
   - rspdl-maintainers
 target_spec: "0.2.0"
@@ -42,7 +44,12 @@ target_spec: "0.2.0"
 - application의 표시용 집계와 달리 source에 선언된 계산식과 dependency 검증은 core 의미다.
 - application은 표시 label, locale별 table column과 undefined 표시 정책을 소유한다.
 - 화면의 stable ID와 데이터 생성·입력·조회·수정·삭제 동작은 lifecycle 검증에 필요한 core 의미다.
-- 화면 배치, widget, navigation과 시각 상태는 application projection이다.
+- 정보구조 분류, 의미 단위 화면 구조와 화면 사이 경로는 core 의미다. 선언된 구조는 문장이
+  선언한 의미와 대조되어야 하고, 대조할 수 있으려면 같은 IR 안에 있어야 한다
+  ([RFC-0009](../rfcs/0009-document-frontmatter-structure.md)).
+- 좌표, 크기, 색, 간격, 폰트, 시각 상태와 보드 위의 노드 배치는 application projection이다.
+  경계는 사라진 것이 아니라 **옮겨졌다** — 의미 단위까지가 core이고, 그것을 어떻게 보이게 할지는
+  여전히 application의 몫이다.
 - `rspdl-compiler`와 `rspdl-cli`에는 application 전용 table 또는 query API를 추가하지 않는다.
 
 ## How
@@ -52,13 +59,16 @@ target_spec: "0.2.0"
 - application은 공개 IR과 diagnostic serialization만 의존해 view model을 만든다.
 - 여러 application이 projection을 공유해야 하면 core와 분리된 integration 또는 application library로 구현한다.
 - projection이 언어 의미 자체가 될 때만 별도 RFC와 ADR로 core 편입을 재검토한다.
+  [RFC-0009](../rfcs/0009-document-frontmatter-structure.md)가 이 경로를 실제로 밟은 첫 사례이며,
+  그때 옮긴 것은 구조뿐이고 표현은 옮기지 않았다.
 
 ## Constraints
 
-- core API에는 특정 화면, table column, filter option, pagination 또는 UI 상태를 포함하지 않는다.
+- core API에는 table column, filter option, pagination 또는 시각 상태를 포함하지 않는다.
 - application 편의를 위해 IR에 중복 표시 필드나 집계 결과를 저장하지 않는다.
 - semantic check 결과의 설명 가능성과 결정성은 application 경계로 넘기지 않는다.
-- 화면을 데이터 생산·소비 지점으로 참조하는 것은 허용하지만 특정 UI component 구조를 core IR에 포함하지 않는다.
+- 화면의 구조는 닫힌 의미 단위 어휘로만 표현하고, 특정 UI 프레임워크의 component 이름이나 렌더링
+  결과는 core IR에 포함하지 않는다.
 - conformance fixture는 application view shape가 아니라 IR, 의미 결과와 진단을 검증한다.
 
 ## References
@@ -67,3 +77,4 @@ target_spec: "0.2.0"
 - [RSPDL Compiler Architecture](../architecture.md)
 - [Rust와 한국어 우선 독립 Locale Frontend](0001-rust-korean-first-frontends.md)
 - [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](../rfcs/0005-field-provenance-and-sum-derivation.md)
+- [문서 머리말 구조 선언](../rfcs/0009-document-frontmatter-structure.md)
