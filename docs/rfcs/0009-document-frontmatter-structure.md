@@ -126,10 +126,11 @@ target_spec: "0.5.0"
 `장바구니 항목의 수량을 입력할 수 있다`라고 쓰면 머리말도 `- 입력: 수량`이라고 쓴다. 한 언어에
 이름 짓는 방법이 둘이면, 기획자는 한국어 문서를 쓰다가 머리말에서만 영어 식별자로 갈아타야 한다.
 
-머리말에 적힌 이름은 `SurfaceRef`로 그대로 실려 미해결 상태로 분석기에 도달하고, 문장의 참조를
-푸는 것과 **같은 해석기**가 푼다. 따라서 없는 이름과 모호한 이름의 진단도 문장과 같다
-(`ko.reference.not_found`, `ko.reference.ambiguous`). Locale frontend가 이름을 풀지 않는다는 기존
-경계는 그대로다.
+머리말에 적힌 이름은 파싱과 lowering을 거치는 동안 `SurfaceRef`로 실려 다니다가, 문장의 참조를
+푸는 것과 **같은 해석기**가 Locale frontend 안에서 푼다. 분석기에는 이미 stable ID가 된 뒤에
+도달한다. 따라서 없는 이름과 모호한 이름의 진단도 문장과 같다
+(`ko.reference.not_found`, `ko.reference.ambiguous`). 이름이 어떤 모양인지는 Locale 지식이므로
+해석이 frontend에 있는 것이 맞고, 분석기는 Locale과 무관한 stable ID만 다룬다는 경계는 그대로다.
 
 버튼의 `id`는 예외다. 그것은 문서가 처음 만드는 이름이므로 다른 선언을 가리키는 참조가 아니다.
 
@@ -170,7 +171,10 @@ Unlinked IR로 lower한다. 다른 Locale frontend는 자기 언어의 키를 �
 
 분류는 stable ID를 가지며 중첩 매핑으로 계층을 만든다. 잎에는 화면 stable ID 목록을 둔다.
 
-- 분류 ID는 문서 안에서 유일하다. 화면·모델·행동과 다른 이름 공간이다.
+- 분류 ID는 화면·모델·역할·행동과 **같은 최상위 이름 공간**을 쓴다. 겹치면 기존
+  `semantic.declaration.duplicate_id`로 보고된다. 이름 공간을 따로 두려던 초안은 철회했다 —
+  IR에 이름 공간을 표현할 자리가 없어 둘이 똑같은 `CanonicalId`를 갖게 되고, ID로 선언을
+  가리키는 소비자가 둘을 구별할 수 없다. 분류 하나를 다시 이름 짓는 비용보다 크다.
 - 분류 계층은 중첩으로만 적으므로 순환이 표현될 수 없다. 순환 진단을 두지 않는다 —
   도달할 수 없는 규칙은 썩는다.
 - 한 화면은 최대 하나의 분류에 속한다.
@@ -276,7 +280,6 @@ LayoutElement  (enum)
 
 | rule_id | message_key | 심각도 | 조건 |
 | --- | --- | --- | --- |
-| `RSPDL-IA-001` | `semantic.information_architecture.duplicate_category_id` | error | 분류 ID 중복 |
 | `RSPDL-IA-003` | `semantic.information_architecture.screen_multiple_categories` | error | 한 화면이 두 분류에 속함 |
 | `RSPDL-IA-W001` | `semantic.information_architecture.depth_exceeds_convention` | warning | 분류 깊이가 3을 넘음 |
 | `RSPDL-IA-I001` | `semantic.information_architecture.screen_uncategorized` | info | 분류에 없는 화면 |

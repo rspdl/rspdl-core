@@ -522,10 +522,6 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "existing_name"),
             argument(diagnostic, "new_name")
         ),
-        "semantic.information_architecture.duplicate_category_id" => format!(
-            "분류 ID {}가 이미 선언되어 있습니다.",
-            argument(diagnostic, "category_id")
-        ),
         "semantic.information_architecture.screen_multiple_categories" => format!(
             "화면 {}이(가) 분류 {} 외의 분류에도 이미 속해 있습니다. 한 화면은 한 분류에만 속합니다.",
             argument(diagnostic, "screen_id"),

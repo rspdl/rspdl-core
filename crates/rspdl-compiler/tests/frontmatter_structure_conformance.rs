@@ -72,6 +72,31 @@ fn frontmatter_structure_conformance_suite() {
             }
         }
 
+        // 포맷은 뜻을 바꾸지 않는다. 사례마다 다시 써 낸 원문을 한 번 더 컴파일해 같은 IR 과
+        // 같은 진단이 나오는지 본다.
+        //
+        // 이 가족이 formatter 를 덮는 유일한 자리다. 단위 테스트만 두면 감싸야 할 글자를
+        // 하나 빠뜨렸을 때 그 글자를 쓴 사례가 생길 때까지 아무도 모르고, 그동안 `rspdl
+        // format` 은 사용자의 선언을 조용히 지운다.
+        if case.expected_module {
+            let document = rspdl_ko::parse(&source)
+                .document
+                .unwrap_or_else(|| panic!("{name} should parse"));
+            let formatted = rspdl_ko::format_document(&document)
+                .unwrap_or_else(|error| panic!("{name} should format: {error}"));
+            let reformatted = compile_ko(&formatted);
+            assert_eq!(
+                without_spans(&reformatted.module),
+                without_spans(&compiled.module),
+                "{name}: 포맷 뒤 IR 이 달라졌다"
+            );
+            assert_eq!(
+                actual_diagnostics(&reformatted.diagnostics),
+                actual_diagnostics(&compiled.diagnostics),
+                "{name}: 포맷 뒤 진단이 달라졌다"
+            );
+        }
+
         // 오탐 방지 사례의 요점은 개수다. 원인 하나에 진단이 둘이면 사람은 없는 문제를
         // 쫓는다. 목록이 맞는지와 별개로 이 조건을 따로 고정한다.
         if case.category == "false_positive" {
@@ -200,6 +225,25 @@ fn actual_diagnostics(
             )
         })
         .collect()
+}
+
+/// 포맷은 글자의 자리를 옮기므로 span 은 당연히 달라진다. 뜻이 같은지만 본다.
+fn without_spans<T: serde::Serialize>(value: &T) -> serde_json::Value {
+    fn strip(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(object) => {
+                object.remove("span");
+                for value in object.values_mut() {
+                    strip(value);
+                }
+            }
+            serde_json::Value::Array(values) => values.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    let mut value = serde_json::to_value(value).unwrap();
+    strip(&mut value);
+    value
 }
 
 fn repository_root() -> PathBuf {

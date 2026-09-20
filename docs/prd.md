@@ -22,6 +22,7 @@ related:
   - finite-relational-model-finding
   - conditional-data-production
 problem_refs:
+  - screen-structure-spec-divergence
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss

@@ -624,8 +624,17 @@ fn needs_quotes(text: &str) -> bool {
     text.is_empty()
         || text.trim() != text
         || text.chars().any(char::is_control)
-        || text.starts_with(['&', '*', '!', '|', '>', '\'', '[', '{', '"', '#', '-', '?'])
-        || text.contains([':', ',', '#'])
+        // 맨 앞에서만 뜻이 달라지는 것들. anchor·alias·tag·block scalar·작은따옴표는 reader 가
+        // 거절하고, `-` 는 block sequence 항목을, `?` 는 complex key 를 연다.
+        || text.starts_with(['&', '*', '!', '|', '>', '\'', '-', '?'])
+        // 어느 자리에 놓이든 파싱을 바꾸는 것들.
+        //
+        // `:` 는 key 와 value 를 가르고(`split_key`), `,` 는 flow collection 의 항목을
+        // 가르고(`split_flow`), `#` 는 주석을 연다(`strip_comment`). 나머지 넷은 그 두 함수가
+        // 깊이와 따옴표를 세는 글자다 — `[`·`{` 는 깊이를 올려 **뒤따르는 항목을 통째로
+        // 삼키고**, `]`·`}` 는 깊이를 내리거나 collection 을 닫고, `"` 는 따옴표 안으로
+        // 들어가 그 뒤의 구분자를 없앤다.
+        || text.contains([':', ',', '#', '[', ']', '{', '}', '"'])
 }
 
 fn write_categories(
@@ -981,6 +990,31 @@ mod tests {
         assert!(first.contains("제목: \"가격: 표\""), "{first}");
         assert!(first.contains("자리: \"-지도\""), "{first}");
         assert!(first.contains("이름: \"담기, 그리고 계속\""), "{first}");
+    }
+
+    /// flow collection 안의 값은 구분자와 같은 자리에 놓인다. 감싸지 않은 `[` 나 `{` 는 깊이를
+    /// 올려 **뒤따르는 항목을 통째로 삼키고**, `"` 는 따옴표 안으로 들어가 같은 일을 한다.
+    /// 삼켜진 항목은 진단 없이 사라지므로, 각 구분자를 두 자리 모두에서 고정한다.
+    #[test]
+    fn every_flow_delimiter_survives_in_both_flow_positions() {
+        for delimiter in [':', ',', '#', '[', ']', '{', '}', '"', '\\'] {
+            let value = serde_json::to_string(&format!("앞{delimiter}뒤")).unwrap();
+            let source = format!(
+                "---\n모듈: 장바구니(shopping)\n화면:\n  장바구니 화면:\n    레이아웃:\n\
+                 \x20     - 버튼: {{ id: a, 이름: {value}, 행동: 주문 담기 }}\n\
+                 \x20     - 목록: {{ 모델: 주문, 필드: [{value}, 총액] }}\n---\n"
+            );
+            let first = reformat(&source);
+            assert_eq!(
+                frontmatter_shape(&source),
+                frontmatter_shape(&first),
+                "{delimiter} 가 왕복에서 살아남지 못했다:\n{first}"
+            );
+            assert_eq!(first, reformat(&first), "{delimiter} 가 멱등하지 않다");
+            // 삼켜지면 이 둘이 조용히 사라진다.
+            assert!(first.contains("행동: 주문 담기"), "{delimiter}:\n{first}");
+            assert!(first.contains("총액"), "{delimiter}:\n{first}");
+        }
     }
 
     #[test]

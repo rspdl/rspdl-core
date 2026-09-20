@@ -3545,21 +3545,19 @@ fn analyze_frontmatter_structure(
         else {
             continue;
         };
-        if let Some(existing) = category_spans.get(&category_id) {
-            diagnostics.push(
-                data_diagnostic(
-                    "RSPDL-IA-001",
-                    Severity::Error,
-                    "semantic.information_architecture.duplicate_category_id",
-                    category.span,
-                )
-                .with_argument("category_id", &category_id)
-                .with_argument("declared_at", existing.start.to_string()),
-            );
+        // Categories live in the one top-level namespace with models, screens,
+        // roles and actions. They reach the IR as a `CanonicalId` like every
+        // other declaration, and two declarations sharing one ID would be
+        // indistinguishable to anything addressing them by ID. So the collision
+        // is reported by the same helper every other kind uses, once, on the
+        // second declaration — not by a category-specific rule that would only
+        // ever see half the collisions.
+        let collides = top_level_ids.contains(&category_id);
+        duplicate_id(&category_id, category.span, top_level_ids, diagnostics);
+        if collides {
             continue;
         }
         category_spans.insert(category_id.clone(), category.span);
-        top_level_ids.insert(category_id.clone());
 
         let parent_id = category.parent.as_ref().and_then(|parent| {
             category_spans
@@ -3614,7 +3612,10 @@ fn analyze_frontmatter_structure(
         .collect::<BTreeSet<_>>();
 
     let mut layout_spans = BTreeMap::<CanonicalId, TextRange>::new();
-    let mut placed_inputs = BTreeSet::<CanonicalId>::new();
+    // Keyed by screen as well as field: a field ID is model-qualified, so two
+    // screens taking the same field share one ID. Keyed by field alone, one
+    // screen placing it would answer for every other screen that did not.
+    let mut placed_inputs = BTreeSet::<(CanonicalId, CanonicalId)>::new();
 
     for layout in layouts {
         let Some((screen_id, screen)) = screen_by_id
@@ -3811,7 +3812,7 @@ fn report_unplaced_required_inputs(
     analysis: &FrontmatterAnalysis,
     screens: &[ScreenDefinition],
     models: &[DataModelDefinition],
-    placed: &BTreeSet<CanonicalId>,
+    placed: &BTreeSet<(CanonicalId, CanonicalId)>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     if analysis.layouts.is_empty() {
@@ -3830,7 +3831,8 @@ fn report_unplaced_required_inputs(
                 continue;
             };
             for field_id in &operation.field_ids {
-                if placed.contains(field_id) || reported.contains(field_id) {
+                let key = (screen.id.clone(), field_id.clone());
+                if placed.contains(&key) || reported.contains(&key) {
                     continue;
                 }
                 let required = model
@@ -3840,7 +3842,7 @@ fn report_unplaced_required_inputs(
                 if !required {
                     continue;
                 }
-                reported.insert(field_id.clone());
+                reported.insert(key);
                 diagnostics.push(
                     data_diagnostic(
                         "RSPDL-LAYOUT-W001",
@@ -3939,7 +3941,7 @@ fn link_layout_element(
     actions: &BTreeMap<String, CanonicalId>,
     hidden: &BTreeSet<CanonicalId>,
     element_ids: &mut BTreeMap<String, TextRange>,
-    placed: &mut BTreeSet<CanonicalId>,
+    placed: &mut BTreeSet<(CanonicalId, CanonicalId)>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<LayoutElement> {
     let linked = match element {
@@ -4034,7 +4036,7 @@ fn link_layout_element(
                 );
                 return None;
             }
-            placed.insert(definition.id.clone());
+            placed.insert((screen.id.clone(), definition.id.clone()));
             LayoutElement::Input {
                 field_id: definition.id.clone(),
                 span: *span,
@@ -4170,7 +4172,7 @@ fn link_layout_elements(
     actions: &BTreeMap<String, CanonicalId>,
     hidden: &BTreeSet<CanonicalId>,
     element_ids: &mut BTreeMap<String, TextRange>,
-    placed: &mut BTreeSet<CanonicalId>,
+    placed: &mut BTreeSet<(CanonicalId, CanonicalId)>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Vec<LayoutElement> {
     elements
