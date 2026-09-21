@@ -256,6 +256,76 @@ fn compile_frontend_output(
     )
 }
 
+/// One formatted source. `text` is `None` whenever formatting did not happen.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FileFormat {
+    pub path: String,
+    pub text: Option<String>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl FileFormat {
+    fn has_errors(&self) -> bool {
+        self.diagnostics.iter().any(Diagnostic::is_error)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkspaceFormat {
+    pub files: Vec<FileFormat>,
+}
+
+impl WorkspaceFormat {
+    pub fn has_errors(&self) -> bool {
+        self.files.iter().any(FileFormat::has_errors)
+    }
+}
+
+/// Formats each source independently and reports why any of them could not be.
+///
+/// Formatting does not link across files, so each document stands alone. The duplicate-path
+/// check is still here because `compile_ko_files` has it: a caller that passes the same path
+/// twice gets told by one entry point and not the other otherwise.
+pub fn format_ko_files(mut sources: Vec<KoSource>) -> WorkspaceFormat {
+    sources.sort_by(|left, right| (&left.path, &left.text).cmp(&(&right.path, &right.text)));
+    let mut files = sources
+        .into_iter()
+        .map(|source| {
+            let formatted = rspdl_ko::format_source(&source.text);
+            FileFormat {
+                path: source.path,
+                text: formatted.text,
+                diagnostics: formatted.diagnostics,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut path_sources = BTreeMap::<String, Vec<usize>>::new();
+    for (index, file) in files.iter().enumerate() {
+        path_sources
+            .entry(file.path.clone())
+            .or_default()
+            .push(index);
+    }
+    for (path, source_indexes) in path_sources {
+        if source_indexes.len() < 2 {
+            continue;
+        }
+        for index in source_indexes {
+            files[index].diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-SOURCE-001",
+                    "compiler.source.duplicate_path",
+                    Default::default(),
+                )
+                .with_argument("path", &path),
+            );
+        }
+    }
+
+    WorkspaceFormat { files }
+}
+
 pub fn compile_ko_files(sources: Vec<KoSource>) -> WorkspaceCompilation {
     compile_files_with_frontend(&KoreanFrontend, sources)
 }

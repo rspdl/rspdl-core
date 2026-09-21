@@ -33,6 +33,17 @@ export interface WorkspaceCompilation {
   files: FileCompilation[]
 }
 
+export interface FileFormat {
+  path: string
+  /** `null` whenever formatting did not happen; the input is never echoed back. */
+  text: string | null
+  diagnostics: Diagnostic[]
+}
+
+export interface WorkspaceFormat {
+  files: FileFormat[]
+}
+
 export interface RuntimeDiagnostic {
   rule_id: string
   severity: 'error' | 'warning' | 'info'
@@ -136,6 +147,11 @@ export declare function check(
   options?: CheckOptions,
 ): Promise<SdkResponse<WorkspaceCheckReport>>
 
+export declare function format(
+  sources: readonly Source[],
+  options?: CommonOptions,
+): Promise<SdkResponse<WorkspaceFormat>>
+
 export declare function findModel(
   source: Source,
   options?: FindModelOptions,
@@ -147,6 +163,7 @@ declare const sdk: {
   readonly compile: typeof compile
   readonly check: typeof check
   readonly findModel: typeof findModel
+  readonly format: typeof format
 }
 
 export default sdk

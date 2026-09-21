@@ -10,6 +10,7 @@ use rspdl_sdk::SdkError;
 enum Operation {
     Compile,
     Check,
+    Format,
     FindModel,
 }
 
@@ -26,6 +27,7 @@ impl Task for JsonTask {
         let result = match self.operation {
             Operation::Compile => rspdl_sdk::compile_json(&self.request),
             Operation::Check => rspdl_sdk::check_json(&self.request),
+            Operation::Format => rspdl_sdk::format_json(&self.request),
             Operation::FindModel => rspdl_sdk::find_model_json(&self.request),
         };
         result.map_err(binding_error)
@@ -56,6 +58,14 @@ pub fn compile_json(request: String) -> AsyncTask<JsonTask> {
 pub fn check_json(request: String) -> AsyncTask<JsonTask> {
     AsyncTask::new(JsonTask {
         operation: Operation::Check,
+        request,
+    })
+}
+
+#[napi(js_name = "formatJson")]
+pub fn format_json(request: String) -> AsyncTask<JsonTask> {
+    AsyncTask::new(JsonTask {
+        operation: Operation::Format,
         request,
     })
 }

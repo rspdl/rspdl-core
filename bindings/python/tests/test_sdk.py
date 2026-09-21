@@ -37,6 +37,40 @@ class SdkTest(unittest.TestCase):
         self.assertIsNone(response["result"]["files"][0]["module"])
         self.assertTrue(response["result"]["files"][0]["diagnostics"])
 
+    def test_format_rewrites_a_source_in_canonical_form(self) -> None:
+        messy = (
+            "---\n"
+            "모듈: 재고(inventory)\n"
+            "화면:\n"
+            "      재고 입력 화면:\n"
+            "            레이아웃:\n"
+            "                  - 폼:\n"
+            "                              - 입력: 이름\n"
+            "---\n"
+            "\n" + VALID_SOURCE.split("\n", 1)[1] + "\n"
+            "재고 입력 화면(create_item)에서는 재고 항목을 생성할 수 있다.\n"
+            "재고 입력 화면(create_item)에서는 재고 항목의 이름을 입력할 수 있다.\n"
+        )
+
+        response = rspdl.format([{"path": "inventory.rspdl", "text": messy}])
+        formatted = response["result"]["files"][0]["text"]
+
+        self.assertEqual(response["schema_version"], 1)
+        self.assertFalse(response["result"]["files"][0]["diagnostics"])
+        self.assertIsNotNone(formatted)
+        self.assertNotEqual(formatted, messy)
+
+        again = rspdl.format([{"path": "inventory.rspdl", "text": formatted}])
+        self.assertEqual(again["result"]["files"][0]["text"], formatted)
+
+    def test_format_reports_diagnostics_instead_of_echoing_a_broken_source(self) -> None:
+        broken = "@모듈 깨짐(broken)\n\n이것은 문장이 아니다\n"
+
+        response = rspdl.format([{"path": "broken.rspdl", "text": broken}])
+
+        self.assertIsNone(response["result"]["files"][0]["text"])
+        self.assertTrue(response["result"]["files"][0]["diagnostics"])
+
     def test_invalid_sdk_configuration_raises_a_stable_error(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "RSPDL-SDK-003"):
             rspdl.compile(

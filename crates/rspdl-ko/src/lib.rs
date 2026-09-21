@@ -24,7 +24,7 @@ pub use ast::{
     TypeReferenceAst,
 };
 pub use diagnostic::render_diagnostic;
-pub use formatter::{FormatError, format_document};
+pub use formatter::{FormatError, FormatOutput, format_document, format_source};
 pub use lowering::{KoreanFrontend, LowerOutput, lower};
 pub use parser::{ParseOutput, parse};
 pub use rspdl_domain::{Diagnostic, Severity, TextRange as Span};

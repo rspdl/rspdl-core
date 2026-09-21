@@ -79,6 +79,30 @@ def check(
     )
 
 
+def format(  # noqa: A001 - public SDK operation name
+    sources: Sequence[Source],
+    *,
+    locale: str = SUPPORTED_LOCALE,
+) -> SdkResponse:
+    """Rewrite sources in canonical form.
+
+    A source that does not parse comes back with ``text`` set to ``None`` and the
+    parser's diagnostics. The input is never echoed back as if it had been formatted.
+    """
+
+    return _decode(
+        _native.format_json(
+            _encode(
+                {
+                    "schema_version": WIRE_SCHEMA_VERSION,
+                    "locale": locale,
+                    "sources": list(sources),
+                }
+            )
+        )
+    )
+
+
 def find_model(
     source: Source,
     *,
@@ -112,4 +136,5 @@ __all__ = [
     "check",
     "compile",
     "find_model",
+    "format",
 ]

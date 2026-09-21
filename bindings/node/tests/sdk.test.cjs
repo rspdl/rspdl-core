@@ -34,6 +34,44 @@ test('compiler errors remain in the result', async () => {
   assert.ok(response.result.files[0].diagnostics.length > 0)
 })
 
+test('format rewrites a source in canonical form and is idempotent', async () => {
+  const messy = [
+    '---',
+    '모듈: 재고(inventory)',
+    '화면:',
+    '      재고 입력 화면:',
+    '            레이아웃:',
+    '                  - 폼:',
+    '                              - 입력: 이름',
+    '---',
+    '',
+    validSource.slice(validSource.indexOf('\n') + 1).trimEnd(),
+    '',
+    '재고 입력 화면(create_item)에서는 재고 항목을 생성할 수 있다.',
+    '재고 입력 화면(create_item)에서는 재고 항목의 이름을 입력할 수 있다.',
+    '',
+  ].join('\n')
+
+  const response = await sdk.format([{ path: 'inventory.rspdl', text: messy }])
+  const formatted = response.result.files[0].text
+
+  assert.equal(response.schema_version, 1)
+  assert.deepEqual(response.result.files[0].diagnostics, [])
+  assert.notEqual(formatted, messy)
+
+  const again = await sdk.format([{ path: 'inventory.rspdl', text: formatted }])
+  assert.equal(again.result.files[0].text, formatted)
+})
+
+test('format reports diagnostics instead of echoing a broken source', async () => {
+  const response = await sdk.format([
+    { path: 'broken.rspdl', text: '@모듈 깨짐(broken)\n\n이것은 문장이 아니다\n' },
+  ])
+
+  assert.equal(response.result.files[0].text, null)
+  assert.ok(response.result.files[0].diagnostics.length > 0)
+})
+
 test('invalid SDK configuration rejects with a stable code', async () => {
   await assert.rejects(
     sdk.compile([{ path: 'inventory.rspdl', text: validSource }], {
