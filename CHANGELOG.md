@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/rspdl/rspdl-core/compare/rspdl-v0.1.2...rspdl-v0.1.3) (2026-09-21)
+
+
+### Features
+
+* **sdk:** 포맷을 SDK 와 두 바인딩에 노출한다 ([#35](https://github.com/rspdl/rspdl-core/issues/35)) ([f5d28e0](https://github.com/rspdl/rspdl-core/commit/f5d28e054a710bd61a7c967f78a02c5709d9fc59))
+
 ## [0.1.2](https://github.com/rspdl/rspdl-core/compare/rspdl-v0.1.1...rspdl-v0.1.2) (2026-09-20)
 
 
