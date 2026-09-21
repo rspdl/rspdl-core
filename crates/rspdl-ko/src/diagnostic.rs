@@ -11,6 +11,10 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "closing")
         ),
         "ko.lex.invalid_string_literal" => "문자열 literal 형식이 올바르지 않습니다.".into(),
+        "ko.format.unsupported" => format!(
+            "이 문서는 형식을 다시 쓸 수 없습니다: {}",
+            argument(diagnostic, "reason")
+        ),
         "ko.frontmatter.unterminated_block" => {
             "머리말 블록이 --- 로 닫히지 않았습니다.".into()
         }

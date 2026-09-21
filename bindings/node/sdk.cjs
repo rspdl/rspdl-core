@@ -53,6 +53,19 @@ const check = async (sources, data, rawOptions) => {
   )
 }
 
+const format = async (sources, rawOptions) => {
+  const options = normalizeOptions(rawOptions)
+  return decode(
+    native.formatJson(
+      JSON.stringify({
+        schema_version: WIRE_SCHEMA_VERSION,
+        locale: optionOrDefault(options, 'locale', SUPPORTED_LOCALE),
+        sources,
+      }),
+    ),
+  )
+}
+
 const findModel = async (source, rawOptions) => {
   const options = normalizeOptions(rawOptions)
   return decode(
@@ -74,4 +87,5 @@ module.exports = {
   check,
   compile,
   findModel,
+  format,
 }

@@ -1,4 +1,61 @@
+use rspdl_domain::Diagnostic;
+
 use crate::ast::*;
+
+/// 한 source 를 format 한 결과와, 하지 못했다면 그 이유.
+///
+/// format 하지 못했을 때 `text` 는 언제나 `None` 이다. 입력을 그대로 돌려주면 호출자는
+/// format 이 성공했다고 믿고 그 텍스트를 저장한다.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FormatOutput {
+    pub text: Option<String>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// 한 source 를 parse 하고 format 한다. 실패는 전부 진단으로 보고한다.
+///
+/// 문법 오류가 있으면 format 하지 않는다. 깨진 문서를 형식만 맞춰 돌려주면 그 텍스트가
+/// 원본을 덮어쓰면서 무엇이 잘못됐는지도 함께 지워진다.
+pub fn format_source(source: &str) -> FormatOutput {
+    let parsed = crate::parser::parse(source);
+    let mut diagnostics = parsed.diagnostics;
+
+    if diagnostics.iter().any(Diagnostic::is_error) {
+        return FormatOutput {
+            text: None,
+            diagnostics,
+        };
+    }
+    let Some(document) = parsed.document else {
+        return FormatOutput {
+            text: None,
+            diagnostics,
+        };
+    };
+
+    match format_document(&document) {
+        Ok(text) => FormatOutput {
+            text: Some(text),
+            diagnostics,
+        },
+        Err(error) => {
+            // 문서 전체를 내보낼 수 없다는 뜻이므로 모듈 머리를 가리킨다. `FormatError` 는
+            // 자기 span 을 들고 있지 않고, 없는 위치를 지어내는 것보다 문서를 가리키는 편이 낫다.
+            diagnostics.push(
+                Diagnostic::error(
+                    "RSPDL-KO-FMT-001",
+                    "ko.format.unsupported",
+                    document.module.span,
+                )
+                .with_argument("reason", error),
+            );
+            FormatOutput {
+                text: None,
+                diagnostics,
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FormatError {
@@ -813,6 +870,33 @@ fn has_final_consonant(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    /// 깨진 문서를 형식만 맞춰 돌려주면 그 텍스트가 원본을 덮어쓰면서 무엇이 잘못됐는지도
+    /// 함께 지워진다. 그래서 `text` 는 `None` 이어야 하고 입력이 새어 나오면 안 된다.
+    #[test]
+    fn format_source_reports_diagnostics_instead_of_echoing_a_broken_document() {
+        let broken = "@모듈 깨짐(broken)\n\n이것은 문장이 아니다\n";
+        let output = crate::formatter::format_source(broken);
+
+        assert!(output.text.is_none());
+        assert!(output.diagnostics.iter().any(Diagnostic::is_error));
+    }
+
+    #[test]
+    fn format_source_returns_canonical_text_for_a_valid_document() {
+        let source = "@모듈 재고(inventory)\n\n재고 항목(item)은 다음 필드들로 구성되어 있다.\n    이름(name): 필수 문자열\n";
+        let output = crate::formatter::format_source(source);
+
+        let text = output.text.expect("formatted text");
+        assert!(output.diagnostics.is_empty());
+        assert_eq!(
+            crate::formatter::format_source(&text)
+                .text
+                .expect("idempotent"),
+            text
+        );
+    }
+
     use rspdl_domain::analyze;
     use serde_json::Value;
 

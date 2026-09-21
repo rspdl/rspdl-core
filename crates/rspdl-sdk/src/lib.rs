@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use rspdl_compiler::{
     CheckOptions, MAX_MODEL_SCOPE_PER_MODEL, ModelFindingOptions, Source, check_ko_files,
-    compile_ko_files, find_ko_model,
+    compile_ko_files, find_ko_model, format_ko_files,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -82,6 +82,14 @@ struct CheckRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct FormatRequest {
+    schema_version: u32,
+    locale: String,
+    sources: Vec<SdkSource>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FindModelRequest {
     schema_version: u32,
     locale: String,
@@ -126,6 +134,18 @@ pub fn check_json(request_json: &str) -> Result<String, SdkError> {
         request.sources.into_iter().map(Source::from).collect(),
         &runtime_json,
         CheckOptions { solver_timeout },
+    ))
+}
+
+/// Rewrites sources in canonical form so callers never reimplement the layout rules.
+///
+/// A source that does not parse comes back with `text: null` and the parser's diagnostics.
+/// Echoing the input would let a caller store unformatted text believing it was formatted.
+pub fn format_json(request_json: &str) -> Result<String, SdkError> {
+    let request = parse_request::<FormatRequest>(request_json)?;
+    validate_common(request.schema_version, &request.locale, &request.sources)?;
+    serialize_response(format_ko_files(
+        request.sources.into_iter().map(Source::from).collect(),
     ))
 }
 
@@ -323,6 +343,141 @@ mod tests {
 
         assert_eq!(response["schema_version"], WIRE_SCHEMA_VERSION);
         assert!(response["result"].get("result").is_some());
+    }
+
+    const MESSY_FRONTMATTER: &str = "---\n모듈: 재고(inventory)\n화면:\n      재고 입력 화면:\n            레이아웃:\n                  - 폼:\n                              - 입력: 이름\n---\n\n재고 항목(item)은 다음 필드들로 구성되어 있다.\n    이름(name): 필수 문자열\n\n재고 입력 화면(create_item)에서는 재고 항목을 생성할 수 있다.\n재고 입력 화면(create_item)에서는 재고 항목의 이름을 입력할 수 있다.\n";
+
+    /// 비교에서 span 을 걷어낸다. 텍스트가 옮겨지면 byte offset 은 반드시 달라진다.
+    fn without_spans(value: &Value) -> Value {
+        match value {
+            Value::Object(entries) => Value::Object(
+                entries
+                    .iter()
+                    .filter(|(key, _)| key.as_str() != "span")
+                    .map(|(key, nested)| (key.clone(), without_spans(nested)))
+                    .collect(),
+            ),
+            Value::Array(items) => Value::Array(items.iter().map(without_spans).collect()),
+            other => other.clone(),
+        }
+    }
+
+    fn format_once(text: &str) -> Value {
+        let request = json!({
+            "schema_version": WIRE_SCHEMA_VERSION,
+            "locale": SUPPORTED_LOCALE,
+            "sources": [source("inventory.rspdl", text)],
+        });
+        serde_json::from_str(&format_json(&request.to_string()).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn format_rewrites_a_source_in_canonical_form() {
+        let response = format_once(MESSY_FRONTMATTER);
+
+        assert_eq!(response["schema_version"], WIRE_SCHEMA_VERSION);
+        let formatted = response["result"]["files"][0]["text"].as_str().unwrap();
+        assert!(
+            response["result"]["files"][0]["diagnostics"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert_ne!(formatted, MESSY_FRONTMATTER);
+        assert!(formatted.contains("      - 폼:"));
+    }
+
+    /// 왕복과 멱등은 formatter 의 계약이다. JSON 을 거쳐 들어오는 길은 다른 경로이므로
+    /// `formatter.rs` 에서만 고정하면 이 경로가 조용히 갈라질 수 있다.
+    #[test]
+    fn format_through_the_sdk_is_idempotent_and_preserves_meaning() {
+        let once = format_once(MESSY_FRONTMATTER);
+        let formatted = once["result"]["files"][0]["text"].as_str().unwrap();
+        let twice = format_once(formatted);
+
+        assert_eq!(
+            twice["result"]["files"][0]["text"].as_str().unwrap(),
+            formatted
+        );
+
+        let compile_request = |text: &str| {
+            json!({
+                "schema_version": WIRE_SCHEMA_VERSION,
+                "locale": SUPPORTED_LOCALE,
+                "sources": [source("inventory.rspdl", text)],
+            })
+            .to_string()
+        };
+        let before: Value =
+            serde_json::from_str(&compile_json(&compile_request(MESSY_FRONTMATTER)).unwrap())
+                .unwrap();
+        let after: Value =
+            serde_json::from_str(&compile_json(&compile_request(formatted)).unwrap()).unwrap();
+
+        // span 은 빼고 비교한다. format 이 텍스트를 옮겼으니 byte offset 이 달라지는 것은
+        // 당연하고, 지켜야 할 것은 의미가 같다는 쪽이다.
+        assert_eq!(
+            without_spans(&before["result"]["files"][0]["module"]),
+            without_spans(&after["result"]["files"][0]["module"])
+        );
+    }
+
+    /// 입력을 그대로 돌려주면 호출자는 format 이 성공했다고 믿고 그 텍스트를 저장한다.
+    #[test]
+    fn format_reports_diagnostics_instead_of_echoing_an_unparsable_source() {
+        let response = format_once("@모듈 깨짐(broken)\n\n이것은 문장이 아니다\n");
+
+        assert!(response["result"]["files"][0]["text"].is_null());
+        assert!(
+            !response["result"]["files"][0]["diagnostics"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn format_is_independent_of_source_input_order() {
+        let a = source("a.rspdl", VALID_SOURCE);
+        let b = source("b.rspdl", &VALID_SOURCE.replace("inventory", "second"));
+        let request = |sources: Value| {
+            json!({
+                "schema_version": WIRE_SCHEMA_VERSION,
+                "locale": SUPPORTED_LOCALE,
+                "sources": sources,
+            })
+            .to_string()
+        };
+
+        assert_eq!(
+            format_json(&request(json!([a.clone(), b.clone()]))).unwrap(),
+            format_json(&request(json!([b, a]))).unwrap()
+        );
+    }
+
+    #[test]
+    fn format_rejects_binding_configuration_the_same_way_the_others_do() {
+        let unsupported_locale = json!({
+            "schema_version": WIRE_SCHEMA_VERSION,
+            "locale": "en-US",
+            "sources": [source("inventory.rspdl", VALID_SOURCE)],
+        });
+        let empty_sources = json!({
+            "schema_version": WIRE_SCHEMA_VERSION,
+            "locale": SUPPORTED_LOCALE,
+            "sources": [],
+        });
+
+        assert_eq!(
+            format_json(&unsupported_locale.to_string())
+                .unwrap_err()
+                .code(),
+            "RSPDL-SDK-003"
+        );
+        assert_eq!(
+            format_json(&empty_sources.to_string()).unwrap_err().code(),
+            "RSPDL-SDK-004"
+        );
     }
 
     #[test]

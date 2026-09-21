@@ -30,6 +30,11 @@ fn check_json(py: Python<'_>, request: String) -> PyResult<String> {
 }
 
 #[pyfunction]
+fn format_json(py: Python<'_>, request: String) -> PyResult<String> {
+    run_without_gil(py, request, rspdl_sdk::format_json)
+}
+
+#[pyfunction]
 fn find_model_json(py: Python<'_>, request: String) -> PyResult<String> {
     run_without_gil(py, request, rspdl_sdk::find_model_json)
 }
@@ -38,6 +43,7 @@ fn find_model_json(py: Python<'_>, request: String) -> PyResult<String> {
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(compile_json, module)?)?;
     module.add_function(wrap_pyfunction!(check_json, module)?)?;
+    module.add_function(wrap_pyfunction!(format_json, module)?)?;
     module.add_function(wrap_pyfunction!(find_model_json, module)?)?;
     Ok(())
 }
