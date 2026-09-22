@@ -149,26 +149,38 @@ pub enum ScreenLayoutKind {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LayoutElement {
     Header {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         children: Vec<LayoutElement>,
         span: TextRange,
     },
     Section {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         children: Vec<LayoutElement>,
         span: TextRange,
     },
     Heading {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         text: String,
         span: TextRange,
     },
     Form {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         inputs: Vec<LayoutElement>,
         span: TextRange,
     },
     Input {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         field_id: CanonicalId,
         span: TextRange,
     },
     List {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         model_id: CanonicalId,
         field_ids: Vec<CanonicalId>,
         span: TextRange,
@@ -184,6 +196,8 @@ pub enum LayoutElement {
     /// chart. Naming it and leaving it empty beats forcing it into a vocabulary
     /// that does not fit.
     Placeholder {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         text: String,
         span: TextRange,
     },

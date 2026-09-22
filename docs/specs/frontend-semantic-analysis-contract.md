@@ -16,6 +16,7 @@ related:
   - rspdl-compiler-architecture
   - natural-korean-domain-grammar
   - finite-relational-model-finding
+  - stable-screen-elements-and-structured-editing
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots

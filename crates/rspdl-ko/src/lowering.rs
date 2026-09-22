@@ -1602,42 +1602,49 @@ fn layout_element(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<UnlinkedLayoutElement> {
     let lowered = match value {
-        LayoutElementAst::Header { children, span } => UnlinkedLayoutElement::Header {
+        LayoutElementAst::Header { id, children, span } => UnlinkedLayoutElement::Header {
+            id: id.clone(),
             children: children
                 .iter()
                 .filter_map(|child| layout_element(child, index, diagnostics))
                 .collect(),
             span: *span,
         },
-        LayoutElementAst::Section { children, span } => UnlinkedLayoutElement::Section {
+        LayoutElementAst::Section { id, children, span } => UnlinkedLayoutElement::Section {
+            id: id.clone(),
             children: children
                 .iter()
                 .filter_map(|child| layout_element(child, index, diagnostics))
                 .collect(),
             span: *span,
         },
-        LayoutElementAst::Heading { text, span } => UnlinkedLayoutElement::Heading {
+        LayoutElementAst::Heading { id, text, span } => UnlinkedLayoutElement::Heading {
+            id: id.clone(),
             text: text.clone(),
             span: *span,
         },
-        LayoutElementAst::Form { inputs, span } => UnlinkedLayoutElement::Form {
+        LayoutElementAst::Form { id, inputs, span } => UnlinkedLayoutElement::Form {
+            id: id.clone(),
             inputs: inputs
                 .iter()
                 .filter_map(|input| layout_element(input, index, diagnostics))
                 .collect(),
             span: *span,
         },
-        LayoutElementAst::Input { field, span } => UnlinkedLayoutElement::Input {
+        LayoutElementAst::Input { id, field, span } => UnlinkedLayoutElement::Input {
+            id: id.clone(),
             field: index.unscoped_field_reference(&field.text, field.span, diagnostics)?,
             span: *span,
         },
         LayoutElementAst::List {
+            id,
             model,
             fields,
             span,
         } => {
             let model_reference = index.model_reference(&model.text, model.span, diagnostics)?;
             UnlinkedLayoutElement::List {
+                id: id.clone(),
                 fields: fields
                     .iter()
                     .filter_map(|field| {
@@ -1669,7 +1676,8 @@ fn layout_element(
                 .and_then(|value| index.action_reference(&value.text, value.span, diagnostics)),
             span: *span,
         },
-        LayoutElementAst::Placeholder { text, span } => UnlinkedLayoutElement::Placeholder {
+        LayoutElementAst::Placeholder { id, text, span } => UnlinkedLayoutElement::Placeholder {
+            id: id.clone(),
             text: text.clone(),
             span: *span,
         },

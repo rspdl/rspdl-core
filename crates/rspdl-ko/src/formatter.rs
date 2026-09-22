@@ -766,29 +766,63 @@ fn write_elements(output: &mut String, elements: &[LayoutElementAst], indent: us
         // 하이픈 기준으로 두 단 더 들어간다.
         let nested = indent + STEP + STEP;
         match element {
-            LayoutElementAst::Header { children, .. } => {
-                output.push_str(&format!("{bullet}머리말:\n"));
-                write_elements(output, children, nested);
+            LayoutElementAst::Header { id, children, .. } => {
+                write_container_element(
+                    output,
+                    &bullet,
+                    "머리말",
+                    id.as_deref(),
+                    "자식",
+                    children,
+                    nested,
+                );
             }
-            LayoutElementAst::Section { children, .. } => {
-                output.push_str(&format!("{bullet}구역:\n"));
-                write_elements(output, children, nested);
+            LayoutElementAst::Section { id, children, .. } => {
+                write_container_element(
+                    output,
+                    &bullet,
+                    "구역",
+                    id.as_deref(),
+                    "자식",
+                    children,
+                    nested,
+                );
             }
-            LayoutElementAst::Form { inputs, .. } => {
-                output.push_str(&format!("{bullet}폼:\n"));
-                write_elements(output, inputs, nested);
+            LayoutElementAst::Form { id, inputs, .. } => {
+                write_container_element(
+                    output,
+                    &bullet,
+                    "폼",
+                    id.as_deref(),
+                    "입력",
+                    inputs,
+                    nested,
+                );
             }
-            LayoutElementAst::Heading { text, .. } => {
-                output.push_str(&format!("{bullet}제목: {}\n", scalar(text)));
+            LayoutElementAst::Heading { id, text, .. } => {
+                write_scalar_element(output, &bullet, "제목", id.as_deref(), "글", text);
             }
-            LayoutElementAst::Placeholder { text, .. } => {
-                output.push_str(&format!("{bullet}자리: {}\n", scalar(text)));
+            LayoutElementAst::Placeholder { id, text, .. } => {
+                write_scalar_element(output, &bullet, "자리", id.as_deref(), "이름", text);
             }
-            LayoutElementAst::Input { field, .. } => {
-                output.push_str(&format!("{bullet}입력: {}\n", scalar(&field.text)));
+            LayoutElementAst::Input { id, field, .. } => {
+                if let Some(id) = id {
+                    output.push_str(&format!(
+                        "{bullet}입력: {{ id: {id}, 필드: {} }}\n",
+                        scalar(&field.text)
+                    ));
+                } else {
+                    output.push_str(&format!("{bullet}입력: {}\n", scalar(&field.text)));
+                }
             }
-            LayoutElementAst::List { model, fields, .. } => {
-                let mut body = format!("모델: {}", scalar(&model.text));
+            LayoutElementAst::List {
+                id, model, fields, ..
+            } => {
+                let mut body = id
+                    .as_ref()
+                    .map(|id| format!("id: {id}, "))
+                    .unwrap_or_default();
+                body.push_str(&format!("모델: {}", scalar(&model.text)));
                 if !fields.is_empty() {
                     body.push_str(&format!(", 필드: [{}]", references(fields)));
                 }
@@ -804,6 +838,43 @@ fn write_elements(output: &mut String, elements: &[LayoutElementAst], indent: us
                 output.push_str(&format!("{bullet}버튼: {{ {body} }}\n"));
             }
         }
+    }
+}
+
+fn write_container_element(
+    output: &mut String,
+    bullet: &str,
+    kind: &str,
+    id: Option<&str>,
+    child_key: &str,
+    children: &[LayoutElementAst],
+    nested: usize,
+) {
+    output.push_str(&format!("{bullet}{kind}:\n"));
+    if let Some(id) = id {
+        output.push_str(&format!("{}id: {id}\n", pad(nested)));
+        output.push_str(&format!("{}{child_key}:\n", pad(nested)));
+        write_elements(output, children, nested + STEP);
+    } else {
+        write_elements(output, children, nested);
+    }
+}
+
+fn write_scalar_element(
+    output: &mut String,
+    bullet: &str,
+    kind: &str,
+    id: Option<&str>,
+    value_key: &str,
+    text: &str,
+) {
+    if let Some(id) = id {
+        output.push_str(&format!(
+            "{bullet}{kind}: {{ id: {id}, {value_key}: {} }}\n",
+            scalar(text)
+        ));
+    } else {
+        output.push_str(&format!("{bullet}{kind}: {}\n", scalar(text)));
     }
 }
 

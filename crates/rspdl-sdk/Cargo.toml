@@ -10,6 +10,8 @@ rust-version.workspace = true
 
 [dependencies]
 rspdl-compiler = { path = "../rspdl-compiler" }
+rspdl-ko = { path = "../rspdl-ko" }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true

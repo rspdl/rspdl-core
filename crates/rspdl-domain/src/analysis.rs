@@ -4333,8 +4333,27 @@ fn link_layout_element(
     placed: &mut BTreeSet<(CanonicalId, CanonicalId)>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<LayoutElement> {
+    if let Some(id) = unlinked_layout_element_id(element) {
+        let span = unlinked_layout_element_span(element);
+        if let Some(existing) = element_ids.get(id) {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-LAYOUT-003",
+                    Severity::Error,
+                    "semantic.layout.duplicate_element_id",
+                    span,
+                )
+                .with_argument("screen_id", &screen.id)
+                .with_argument("element_id", id)
+                .with_argument("declared_at", existing.start),
+            );
+            return None;
+        }
+        element_ids.insert(id.to_owned(), span);
+    }
     let linked = match element {
-        UnlinkedLayoutElement::Header { children, span } => LayoutElement::Header {
+        UnlinkedLayoutElement::Header { id, children, span } => LayoutElement::Header {
+            id: id.clone(),
             children: link_layout_elements(
                 children,
                 screen,
@@ -4347,7 +4366,8 @@ fn link_layout_element(
             ),
             span: *span,
         },
-        UnlinkedLayoutElement::Section { children, span } => LayoutElement::Section {
+        UnlinkedLayoutElement::Section { id, children, span } => LayoutElement::Section {
+            id: id.clone(),
             children: link_layout_elements(
                 children,
                 screen,
@@ -4360,7 +4380,8 @@ fn link_layout_element(
             ),
             span: *span,
         },
-        UnlinkedLayoutElement::Form { inputs, span } => LayoutElement::Form {
+        UnlinkedLayoutElement::Form { id, inputs, span } => LayoutElement::Form {
+            id: id.clone(),
             inputs: link_layout_elements(
                 inputs,
                 screen,
@@ -4373,15 +4394,17 @@ fn link_layout_element(
             ),
             span: *span,
         },
-        UnlinkedLayoutElement::Heading { text, span } => LayoutElement::Heading {
+        UnlinkedLayoutElement::Heading { id, text, span } => LayoutElement::Heading {
+            id: id.clone(),
             text: text.clone(),
             span: *span,
         },
-        UnlinkedLayoutElement::Placeholder { text, span } => LayoutElement::Placeholder {
+        UnlinkedLayoutElement::Placeholder { id, text, span } => LayoutElement::Placeholder {
+            id: id.clone(),
             text: text.clone(),
             span: *span,
         },
-        UnlinkedLayoutElement::Input { field, span } => {
+        UnlinkedLayoutElement::Input { id, field, span } => {
             let found = screen
                 .operations
                 .iter()
@@ -4427,11 +4450,13 @@ fn link_layout_element(
             }
             placed.insert((screen.id.clone(), definition.id.clone()));
             LayoutElement::Input {
+                id: id.clone(),
                 field_id: definition.id.clone(),
                 span: *span,
             }
         }
         UnlinkedLayoutElement::List {
+            id,
             model,
             fields,
             span,
@@ -4493,6 +4518,7 @@ fn link_layout_element(
                 field_ids.push(candidate.id.clone());
             }
             LayoutElement::List {
+                id: id.clone(),
                 model_id: operation.model_id.clone(),
                 field_ids,
                 span: *span,
@@ -4504,22 +4530,6 @@ fn link_layout_element(
             action,
             span,
         } => {
-            if let Some(existing) = element_ids.get(id) {
-                diagnostics.push(
-                    data_diagnostic(
-                        "RSPDL-LAYOUT-003",
-                        Severity::Error,
-                        "semantic.layout.duplicate_element_id",
-                        *span,
-                    )
-                    .with_argument("screen_id", &screen.id)
-                    .with_argument("element_id", id)
-                    .with_argument("declared_at", existing.start.to_string()),
-                );
-                return None;
-            }
-            element_ids.insert(id.clone(), *span);
-
             let action_id = match action {
                 None => None,
                 Some(reference) => {
@@ -4551,6 +4561,32 @@ fn link_layout_element(
         }
     };
     Some(linked)
+}
+
+fn unlinked_layout_element_id(element: &UnlinkedLayoutElement) -> Option<&str> {
+    match element {
+        UnlinkedLayoutElement::Header { id, .. }
+        | UnlinkedLayoutElement::Section { id, .. }
+        | UnlinkedLayoutElement::Heading { id, .. }
+        | UnlinkedLayoutElement::Form { id, .. }
+        | UnlinkedLayoutElement::Input { id, .. }
+        | UnlinkedLayoutElement::List { id, .. }
+        | UnlinkedLayoutElement::Placeholder { id, .. } => id.as_deref(),
+        UnlinkedLayoutElement::Button { id, .. } => Some(id),
+    }
+}
+
+fn unlinked_layout_element_span(element: &UnlinkedLayoutElement) -> TextRange {
+    match element {
+        UnlinkedLayoutElement::Header { span, .. }
+        | UnlinkedLayoutElement::Section { span, .. }
+        | UnlinkedLayoutElement::Heading { span, .. }
+        | UnlinkedLayoutElement::Form { span, .. }
+        | UnlinkedLayoutElement::Input { span, .. }
+        | UnlinkedLayoutElement::List { span, .. }
+        | UnlinkedLayoutElement::Button { span, .. }
+        | UnlinkedLayoutElement::Placeholder { span, .. } => *span,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -21,6 +21,7 @@ related:
   - frontend-semantic-analysis-contract
   - rspdl-language-prd
   - workflow-completion-data-availability
+  - stable-screen-elements-and-structured-editing
 problem_refs:
   - screen-structure-spec-divergence
   - data-lifecycle-modeling-gap

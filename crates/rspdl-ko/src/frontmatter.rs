@@ -1314,29 +1314,38 @@ fn build_element(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<L
 
     let span = entry.key.span;
     match entry.key.text.as_str() {
-        LAYOUT_HEADER => Some(LayoutElementAst::Header {
-            children: build_elements(&entry.value, diagnostics),
-            span,
-        }),
-        LAYOUT_SECTION => Some(LayoutElementAst::Section {
-            children: build_elements(&entry.value, diagnostics),
-            span,
-        }),
-        LAYOUT_HEADING => Some(LayoutElementAst::Heading {
-            text: read_text_value(&entry.value, diagnostics)?,
-            span,
-        }),
-        LAYOUT_PLACEHOLDER => Some(LayoutElementAst::Placeholder {
-            text: read_text_value(&entry.value, diagnostics)?,
-            span,
-        }),
-        LAYOUT_INPUT => Some(LayoutElementAst::Input {
-            field: read_ref_value(&entry.value, diagnostics)?,
-            span,
-        }),
+        LAYOUT_HEADER => {
+            let (id, body) = element_container(&entry.value, "자식", diagnostics);
+            Some(LayoutElementAst::Header {
+                id,
+                children: build_elements(body, diagnostics),
+                span,
+            })
+        }
+        LAYOUT_SECTION => {
+            let (id, body) = element_container(&entry.value, "자식", diagnostics);
+            Some(LayoutElementAst::Section {
+                id,
+                children: build_elements(body, diagnostics),
+                span,
+            })
+        }
+        LAYOUT_HEADING => {
+            let (id, text) = element_scalar(&entry.value, "글", diagnostics)?;
+            Some(LayoutElementAst::Heading { id, text, span })
+        }
+        LAYOUT_PLACEHOLDER => {
+            let (id, text) = element_scalar(&entry.value, "이름", diagnostics)?;
+            Some(LayoutElementAst::Placeholder { id, text, span })
+        }
+        LAYOUT_INPUT => {
+            let (id, field) = element_reference(&entry.value, "필드", diagnostics)?;
+            Some(LayoutElementAst::Input { id, field, span })
+        }
         LAYOUT_FORM => {
+            let (id, body) = element_container(&entry.value, "입력", diagnostics);
             let mut inputs = Vec::new();
-            for child in build_elements(&entry.value, diagnostics) {
+            for child in build_elements(body, diagnostics) {
                 match child {
                     LayoutElementAst::Input { .. } => inputs.push(child),
                     // 폼 안에는 입력만 온다. 다른 어휘를 담으면 폼이 무엇을 모으는 자리인지가
@@ -1344,17 +1353,19 @@ fn build_element(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<L
                     other => diagnostics.push(structure_error(element_span(&other), "입력")),
                 }
             }
-            Some(LayoutElementAst::Form { inputs, span })
+            Some(LayoutElementAst::Form { id, inputs, span })
         }
         LAYOUT_LIST => {
             let fields = expect_mapping(&entry.value, "list_body", diagnostics);
             let mut model = None;
             let mut field_refs = Vec::new();
+            let mut id = None;
             for field in fields {
                 if is_rejected(&field.value) {
                     continue;
                 }
                 match field.key.text.as_str() {
+                    "id" => id = read_element_id(&field.value, diagnostics),
                     "모델" => model = read_ref_value(&field.value, diagnostics),
                     "필드" => {
                         for item in expect_sequence(&field.value, "field_sequence", diagnostics) {
@@ -1375,6 +1386,7 @@ fn build_element(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<L
                 return None;
             };
             Some(LayoutElementAst::List {
+                id,
                 model,
                 fields: field_refs,
                 span,
@@ -1434,6 +1446,74 @@ fn build_element(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<L
             None
         }
     }
+}
+
+fn read_element_id(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<String> {
+    expect_scalar(value, "stable_id", diagnostics)
+        .and_then(|scalar| read_stable_id(scalar, diagnostics))
+}
+
+fn element_container<'a>(
+    value: &'a FmValue,
+    child_key: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> (Option<String>, &'a FmValue) {
+    if matches!(value, FmValue::Sequence { .. }) {
+        return (None, value);
+    }
+    let fields = expect_mapping(value, "element_body", diagnostics);
+    let mut id = None;
+    let mut body = None;
+    for field in fields {
+        match field.key.text.as_str() {
+            "id" => id = read_element_id(&field.value, diagnostics),
+            key if key == child_key => body = Some(&field.value),
+            _ => diagnostics.push(unknown_key(&field.key)),
+        }
+    }
+    (id, body.unwrap_or(value))
+}
+
+fn element_scalar(
+    value: &FmValue,
+    value_key: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(Option<String>, String)> {
+    if matches!(value, FmValue::Scalar(_)) {
+        return Some((None, read_text_value(value, diagnostics)?));
+    }
+    let fields = expect_mapping(value, "element_body", diagnostics);
+    let mut id = None;
+    let mut text = None;
+    for field in fields {
+        match field.key.text.as_str() {
+            "id" => id = read_element_id(&field.value, diagnostics),
+            key if key == value_key => text = read_text_value(&field.value, diagnostics),
+            _ => diagnostics.push(unknown_key(&field.key)),
+        }
+    }
+    Some((id, text?))
+}
+
+fn element_reference(
+    value: &FmValue,
+    value_key: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(Option<String>, FrontmatterRefAst)> {
+    if matches!(value, FmValue::Scalar(_)) {
+        return Some((None, read_ref_value(value, diagnostics)?));
+    }
+    let fields = expect_mapping(value, "element_body", diagnostics);
+    let mut id = None;
+    let mut reference = None;
+    for field in fields {
+        match field.key.text.as_str() {
+            "id" => id = read_element_id(&field.value, diagnostics),
+            key if key == value_key => reference = read_ref_value(&field.value, diagnostics),
+            _ => diagnostics.push(unknown_key(&field.key)),
+        }
+    }
+    Some((id, reference?))
 }
 
 fn element_span(element: &LayoutElementAst) -> Span {

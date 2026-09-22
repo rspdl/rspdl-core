@@ -406,26 +406,32 @@ pub enum ScreenLayoutKindAst {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LayoutElementAst {
     Header {
+        id: Option<String>,
         children: Vec<LayoutElementAst>,
         span: Span,
     },
     Section {
+        id: Option<String>,
         children: Vec<LayoutElementAst>,
         span: Span,
     },
     Heading {
+        id: Option<String>,
         text: String,
         span: Span,
     },
     Form {
+        id: Option<String>,
         inputs: Vec<LayoutElementAst>,
         span: Span,
     },
     Input {
+        id: Option<String>,
         field: FrontmatterRefAst,
         span: Span,
     },
     List {
+        id: Option<String>,
         model: FrontmatterRefAst,
         fields: Vec<FrontmatterRefAst>,
         span: Span,
@@ -439,6 +445,7 @@ pub enum LayoutElementAst {
     },
     /// 선언할 수 없는 자리의 이름표. 지도와 차트가 여기 들어간다.
     Placeholder {
+        id: Option<String>,
         text: String,
         span: Span,
     },

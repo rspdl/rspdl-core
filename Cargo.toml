@@ -29,6 +29,7 @@ num-traits = "0.2.19"
 pyo3 = "0.29.2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+sha2 = "0.10.9"
 thiserror = "2.0.17"
 napi = { version = "3.12.1", default-features = false, features = ["napi8", "async"] }
 napi-build = "2.4.1"

@@ -21,7 +21,7 @@ pub use ast::{
     LayoutElementAst, LiteralAst, ModuleAst, NamedIdAst, OperandAst, PolicyAst, PolicyEffectAst,
     RecalculationAst, RelationOperatorAst, RelationProducerAst, RoleAst, ScreenAst,
     ScreenLayoutAst, ScreenLayoutKindAst, ScreenOperationKindAst, ScreenPathAst, SumDerivationAst,
-    TypeReferenceAst,
+    TypeReferenceAst, WorkflowAcquisitionAst, WorkflowAst, WorkflowCompletionAst, WorkflowDataAst,
 };
 pub use diagnostic::render_diagnostic;
 pub use formatter::{FormatError, FormatOutput, format_document, format_source};

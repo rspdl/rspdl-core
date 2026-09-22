@@ -428,26 +428,38 @@ pub struct UnlinkedCategory {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UnlinkedLayoutElement {
     Header {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         children: Vec<UnlinkedLayoutElement>,
         span: TextRange,
     },
     Section {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         children: Vec<UnlinkedLayoutElement>,
         span: TextRange,
     },
     Heading {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         text: String,
         span: TextRange,
     },
     Form {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         inputs: Vec<UnlinkedLayoutElement>,
         span: TextRange,
     },
     Input {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         field: SurfaceRef,
         span: TextRange,
     },
     List {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         model: SurfaceRef,
         fields: Vec<SurfaceRef>,
         span: TextRange,
@@ -463,6 +475,8 @@ pub enum UnlinkedLayoutElement {
     /// chart. Naming it and leaving it empty beats forcing it into a vocabulary
     /// that does not fit.
     Placeholder {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         text: String,
         span: TextRange,
     },

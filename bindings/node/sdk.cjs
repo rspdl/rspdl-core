@@ -3,6 +3,7 @@
 const native = require('./native.cjs')
 
 const WIRE_SCHEMA_VERSION = 1
+const EDIT_SCHEMA_VERSION = 1
 const SUPPORTED_LOCALE = 'ko-KR'
 
 const decode = async (response) => JSON.parse(await response)
@@ -81,11 +82,17 @@ const findModel = async (source, rawOptions) => {
   )
 }
 
+const edit = async (request) => decode(native.editJson(JSON.stringify(request)))
+const sourceHash = (text) => native.sourceHash(text)
+
 module.exports = {
   SUPPORTED_LOCALE,
+  EDIT_SCHEMA_VERSION,
   WIRE_SCHEMA_VERSION,
   check,
   compile,
   findModel,
   format,
+  edit,
+  sourceHash,
 }

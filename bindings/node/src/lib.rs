@@ -12,6 +12,7 @@ enum Operation {
     Check,
     Format,
     FindModel,
+    Edit,
 }
 
 pub struct JsonTask {
@@ -29,6 +30,7 @@ impl Task for JsonTask {
             Operation::Check => rspdl_sdk::check_json(&self.request),
             Operation::Format => rspdl_sdk::format_json(&self.request),
             Operation::FindModel => rspdl_sdk::find_model_json(&self.request),
+            Operation::Edit => rspdl_sdk::edit_json(&self.request),
         };
         result.map_err(binding_error)
     }
@@ -76,4 +78,17 @@ pub fn find_model_json(request: String) -> AsyncTask<JsonTask> {
         operation: Operation::FindModel,
         request,
     })
+}
+
+#[napi(js_name = "editJson")]
+pub fn edit_json(request: String) -> AsyncTask<JsonTask> {
+    AsyncTask::new(JsonTask {
+        operation: Operation::Edit,
+        request,
+    })
+}
+
+#[napi(js_name = "sourceHash")]
+pub fn source_hash(text: String) -> String {
+    rspdl_sdk::source_hash(&text)
 }
