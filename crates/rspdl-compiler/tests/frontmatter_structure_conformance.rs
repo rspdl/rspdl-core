@@ -167,7 +167,10 @@ fn frontmatter_structure_conformance_suite() {
             let path = &module.screen_paths[0];
             assert_eq!(path.source_screen_id.to_string(), "shopping.create_item");
             assert_eq!(path.source_element_id, "submit");
-            assert_eq!(path.target_screen_id.to_string(), "shopping.cart_detail");
+            assert_eq!(
+                path.target_screen_id.as_ref().unwrap().to_string(),
+                "shopping.cart_detail"
+            );
             assert_eq!(path.label.as_deref(), Some("담기 성공"));
         }
 

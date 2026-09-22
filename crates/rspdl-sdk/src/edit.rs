@@ -1,6 +1,7 @@
 use rspdl_compiler::{Source, compile_ko_files};
 use rspdl_ko::{
-    DocumentAst, FrontmatterRefAst, LayoutElementAst, ScreenPathAst, Span, format_document, parse,
+    DocumentAst, FrontmatterRefAst, HandlerKindAst, LayoutElementAst, SameScreenHandlerAst,
+    ScreenPathAst, Span, format_document, parse,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -56,15 +57,36 @@ pub enum EditOperation {
     Connect {
         source_screen_id: String,
         source_element_id: String,
-        target_screen_id: String,
+        target_screen_id: Option<String>,
+        outcome_id: Option<String>,
+        handler: Option<EditHandler>,
         label: Option<String>,
     },
     Disconnect {
         source_screen_id: String,
         source_element_id: String,
-        target_screen_id: String,
+        target_screen_id: Option<String>,
+        outcome_id: Option<String>,
+        handler: Option<EditHandler>,
         label: Option<String>,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EditHandler {
+    pub kind: EditHandlerKind,
+    pub id: String,
+    pub content: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum EditHandlerKind {
+    State,
+    Message,
+    Popup,
+    Loading,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -120,6 +142,8 @@ pub struct EditPatch {
     pub field_ids: Option<Vec<String>>,
     pub name: Option<String>,
     pub action_id: Option<String>,
+    #[serde(default)]
+    pub clear_action: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -232,6 +256,8 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
             source_screen_id,
             source_element_id,
             target_screen_id,
+            outcome_id,
+            handler,
             label,
         } => {
             let count = {
@@ -248,7 +274,15 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
                     format!("source element matched {count} times"),
                 ));
             }
-            validate_screen(document, target_screen_id)?;
+            if target_screen_id.is_some() == handler.is_some() {
+                return Err((
+                    "RSPDL-EDIT-INVALID",
+                    "connect requires exactly one target_screen_id or handler".into(),
+                ));
+            }
+            if let Some(target) = target_screen_id {
+                validate_screen(document, target)?;
+            }
             let duplicate = document
                 .frontmatter
                 .as_ref()
@@ -258,7 +292,13 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
                 .any(|path| {
                     screen_ref_matches(document, &path.source_screen, source_screen_id)
                         && path.source_element.text == *source_element_id
-                        && screen_ref_matches(document, &path.target_screen, target_screen_id)
+                        && option_screen_ref_matches(
+                            document,
+                            path.target_screen.as_ref(),
+                            target_screen_id.as_deref(),
+                        )
+                        && path.outcome.as_ref().map(|v| v.text.as_str()) == outcome_id.as_deref()
+                        && edit_handler_matches(path.handler.as_ref(), handler.as_ref())
                         && path.label == *label
                 });
             if duplicate {
@@ -270,9 +310,12 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
                 .unwrap()
                 .paths
                 .push(ScreenPathAst {
+                    id: None,
                     source_screen: reference(source_screen_id),
                     source_element: reference(source_element_id),
-                    target_screen: reference(target_screen_id),
+                    target_screen: target_screen_id.as_ref().map(|v| reference(v)),
+                    outcome: outcome_id.as_ref().map(|v| reference(v)),
+                    handler: handler.as_ref().map(to_handler_ast),
                     label: label.clone(),
                     span: empty_span(),
                 });
@@ -282,8 +325,16 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
             source_screen_id,
             source_element_id,
             target_screen_id,
+            outcome_id,
+            handler,
             label,
         } => {
+            if target_screen_id.is_some() == handler.is_some() {
+                return Err((
+                    "RSPDL-EDIT-INVALID",
+                    "disconnect requires exactly one target_screen_id or handler".into(),
+                ));
+            }
             let matching = document
                 .frontmatter
                 .as_ref()
@@ -293,7 +344,13 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
                 .filter(|path| {
                     screen_ref_matches(document, &path.source_screen, source_screen_id)
                         && path.source_element.text == *source_element_id
-                        && screen_ref_matches(document, &path.target_screen, target_screen_id)
+                        && option_screen_ref_matches(
+                            document,
+                            path.target_screen.as_ref(),
+                            target_screen_id.as_deref(),
+                        )
+                        && path.outcome.as_ref().map(|v| v.text.as_str()) == outcome_id.as_deref()
+                        && edit_handler_matches(path.handler.as_ref(), handler.as_ref())
                         && path.label == *label
                 })
                 .count();
@@ -314,11 +371,13 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
             frontmatter.paths.retain(|path| {
                 !(screen_ref_matches_map(&screen_names, &path.source_screen, &source_canonical)
                     && path.source_element.text == *source_element_id
-                    && screen_ref_matches_map(
+                    && option_screen_ref_matches_map(
                         &screen_names,
-                        &path.target_screen,
-                        &target_canonical,
+                        path.target_screen.as_ref(),
+                        target_canonical.as_deref(),
                     )
+                    && path.outcome.as_ref().map(|v| v.text.as_str()) == outcome_id.as_deref()
+                    && edit_handler_matches(path.handler.as_ref(), handler.as_ref())
                     && path.label == *label)
             });
             if frontmatter.paths.len() == before {
@@ -941,6 +1000,7 @@ fn update_element(element: &mut LayoutElementAst, patch: &EditPatch) -> EditResu
         && patch.field_ids.is_none()
         && patch.name.is_none()
         && patch.action_id.is_none()
+        && !patch.clear_action
     {
         return Err(("RSPDL-EDIT-UNCHANGED", "update patch is empty".into()));
     }
@@ -951,6 +1011,7 @@ fn update_element(element: &mut LayoutElementAst, patch: &EditPatch) -> EditResu
                 || patch.field_ids.is_some()
                 || patch.name.is_some()
                 || patch.action_id.is_some()
+                || patch.clear_action
             {
                 return invalid_patch();
             }
@@ -969,6 +1030,7 @@ fn update_element(element: &mut LayoutElementAst, patch: &EditPatch) -> EditResu
                 || patch.field_ids.is_some()
                 || patch.name.is_some()
                 || patch.action_id.is_some()
+                || patch.clear_action
             {
                 return invalid_patch();
             }
@@ -986,6 +1048,7 @@ fn update_element(element: &mut LayoutElementAst, patch: &EditPatch) -> EditResu
                 || patch.field_id.is_some()
                 || patch.name.is_some()
                 || patch.action_id.is_some()
+                || patch.clear_action
             {
                 return invalid_patch();
             }
@@ -1007,6 +1070,7 @@ fn update_element(element: &mut LayoutElementAst, patch: &EditPatch) -> EditResu
                 || patch.field_id.is_some()
                 || patch.model_id.is_some()
                 || patch.field_ids.is_some()
+                || (patch.action_id.is_some() && patch.clear_action)
             {
                 return invalid_patch();
             }
@@ -1018,6 +1082,10 @@ fn update_element(element: &mut LayoutElementAst, patch: &EditPatch) -> EditResu
             if let Some(value) = &patch.action_id {
                 changed |= action.as_ref().map(|item| &item.text) != Some(value);
                 *action = Some(reference(value));
+            }
+            if patch.clear_action {
+                changed |= action.is_some();
+                *action = None;
             }
             if !changed {
                 return unchanged_patch();
@@ -1132,6 +1200,65 @@ fn screen_ref_matches(
     screen_ref_matches_map(&screen_identity_map(document), reference, canonical)
 }
 
+fn option_screen_ref_matches(
+    document: &DocumentAst,
+    reference: Option<&FrontmatterRefAst>,
+    expected: Option<&str>,
+) -> bool {
+    match (reference, expected) {
+        (Some(r), Some(e)) => screen_ref_matches(document, r, e),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn option_screen_ref_matches_map(
+    identities: &[(String, String)],
+    reference: Option<&FrontmatterRefAst>,
+    expected: Option<&str>,
+) -> bool {
+    match (reference, expected) {
+        (Some(r), Some(e)) => screen_ref_matches_map(identities, r, e),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn edit_handler_matches(
+    value: Option<&SameScreenHandlerAst>,
+    expected: Option<&EditHandler>,
+) -> bool {
+    match (value, expected) {
+        (None, None) => true,
+        (Some(v), Some(e)) => {
+            v.id == e.id
+                && v.content == e.content
+                && matches!(
+                    (v.kind, e.kind),
+                    (HandlerKindAst::State, EditHandlerKind::State)
+                        | (HandlerKindAst::Message, EditHandlerKind::Message)
+                        | (HandlerKindAst::Popup, EditHandlerKind::Popup)
+                        | (HandlerKindAst::Loading, EditHandlerKind::Loading)
+                )
+        }
+        _ => false,
+    }
+}
+
+fn to_handler_ast(value: &EditHandler) -> SameScreenHandlerAst {
+    SameScreenHandlerAst {
+        kind: match value.kind {
+            EditHandlerKind::State => HandlerKindAst::State,
+            EditHandlerKind::Message => HandlerKindAst::Message,
+            EditHandlerKind::Popup => HandlerKindAst::Popup,
+            EditHandlerKind::Loading => HandlerKindAst::Loading,
+        },
+        id: value.id.clone(),
+        content: value.content.clone(),
+        span: empty_span(),
+    }
+}
+
 fn screen_ref_matches_map(
     identities: &[(String, String)],
     reference: &FrontmatterRefAst,
@@ -1201,7 +1328,9 @@ mod tests {
             &EditOperation::Connect {
                 source_screen_id: "catalog.product_form".into(),
                 source_element_id: "submit".into(),
-                target_screen_id: "catalog.product_form".into(),
+                target_screen_id: Some("catalog.product_form".into()),
+                outcome_id: None,
+                handler: None,
                 label: Some("저장 뒤".into()),
             },
         )
@@ -1211,7 +1340,9 @@ mod tests {
             &EditOperation::Disconnect {
                 source_screen_id: "catalog.product_form".into(),
                 source_element_id: "submit".into(),
-                target_screen_id: "catalog.product_form".into(),
+                target_screen_id: Some("catalog.product_form".into()),
+                outcome_id: None,
+                handler: None,
                 label: Some("저장 뒤".into()),
             },
         )
@@ -1340,7 +1471,9 @@ mod tests {
         let edge = EditOperation::Connect {
             source_screen_id: "catalog.product_form".into(),
             source_element_id: "submit".into(),
-            target_screen_id: "catalog.product_form".into(),
+            target_screen_id: Some("catalog.product_form".into()),
+            outcome_id: None,
+            handler: None,
             label: Some("반복".into()),
         };
         assert_eq!(
@@ -1352,7 +1485,9 @@ mod tests {
             &EditOperation::Disconnect {
                 source_screen_id: "catalog.product_form".into(),
                 source_element_id: "submit".into(),
-                target_screen_id: "catalog.product_form".into(),
+                target_screen_id: Some("catalog.product_form".into()),
+                outcome_id: None,
+                handler: None,
                 label: Some("반복".into()),
             },
         )
@@ -1378,5 +1513,74 @@ mod tests {
         );
         let module = serde_json::to_value(compiled.files[0].module.as_ref().unwrap()).unwrap();
         assert!(module.to_string().contains("catalog.product.name"));
+    }
+
+    #[test]
+    fn outcome_path_edits_match_every_typed_edge_field() {
+        let mut document = parse(SOURCE).document.unwrap();
+        for outcome in ["ok", "rejected"] {
+            apply(
+                &mut document,
+                &EditOperation::Connect {
+                    source_screen_id: "catalog.product_form".into(),
+                    source_element_id: "submit".into(),
+                    target_screen_id: Some("catalog.product_form".into()),
+                    outcome_id: Some(outcome.into()),
+                    handler: None,
+                    label: None,
+                },
+            )
+            .unwrap();
+        }
+        apply(
+            &mut document,
+            &EditOperation::Disconnect {
+                source_screen_id: "catalog.product_form".into(),
+                source_element_id: "submit".into(),
+                target_screen_id: Some("catalog.product_form".into()),
+                outcome_id: Some("ok".into()),
+                handler: None,
+                label: None,
+            },
+        )
+        .unwrap();
+        let paths = &document.frontmatter.unwrap().paths;
+        assert!(
+            paths
+                .iter()
+                .any(|path| path.outcome.as_ref().is_some_and(|v| v.text == "rejected"))
+        );
+        assert!(
+            !paths
+                .iter()
+                .any(|path| path.outcome.as_ref().is_some_and(|v| v.text == "ok"))
+        );
+    }
+
+    #[test]
+    fn button_action_can_be_cleared_explicitly() {
+        let mut document = parse(SOURCE).document.unwrap();
+        if let LayoutElementAst::Button { action, .. } = find_element_mut(
+            screen_elements_mut(&mut document, "catalog.product_form").unwrap(),
+            "submit",
+        )
+        .unwrap()
+        {
+            *action = Some(reference("save"));
+        }
+        apply(
+            &mut document,
+            &EditOperation::Update {
+                screen_id: "catalog.product_form".into(),
+                element_id: "submit".into(),
+                patch: EditPatch {
+                    clear_action: true,
+                    ..Default::default()
+                },
+            },
+        )
+        .unwrap();
+        let formatted = format_document(&document).unwrap();
+        assert!(formatted.contains("버튼: { id: submit, 이름: 저장 }"));
     }
 }

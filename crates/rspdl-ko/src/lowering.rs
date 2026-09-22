@@ -13,8 +13,11 @@ use rspdl_domain::{
     UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference,
 };
 use rspdl_domain::{
-    ScreenLayoutKind, UnlinkedCategory, UnlinkedLayoutElement, UnlinkedScreenLayout,
-    UnlinkedScreenPath, UnlinkedWorkflow, UnlinkedWorkflowAcquisition, UnlinkedWorkflowCompletion,
+    ScreenLayoutKind, UnlinkedActionOutcome, UnlinkedActionOutcomes, UnlinkedCategory,
+    UnlinkedHandlerKind, UnlinkedLayoutElement, UnlinkedLookupResult, UnlinkedOutcomeData,
+    UnlinkedOutcomeDataSource, UnlinkedOutcomeKind, UnlinkedRecovery, UnlinkedRecoveryKind,
+    UnlinkedSameScreenHandler, UnlinkedScreenLayout, UnlinkedScreenPath, UnlinkedScreenPermission,
+    UnlinkedWorkflow, UnlinkedWorkflowAcquisition, UnlinkedWorkflowCompletion,
     UnlinkedWorkflowData,
 };
 
@@ -618,6 +621,8 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         information_architecture: Vec::new(),
         screen_layouts: Vec::new(),
         screen_paths: Vec::new(),
+        action_outcomes: Vec::new(),
+        lookup_results: Vec::new(),
         workflows: Vec::new(),
     };
 
@@ -640,6 +645,16 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
             .paths
             .iter()
             .filter_map(|value| screen_path(value, &index, &mut diagnostics))
+            .collect();
+        module.action_outcomes = frontmatter
+            .action_outcomes
+            .iter()
+            .filter_map(|value| action_outcomes(value, &index, &mut diagnostics))
+            .collect();
+        module.lookup_results = frontmatter
+            .lookup_results
+            .iter()
+            .filter_map(|value| lookup_result(value, &index, &mut diagnostics))
             .collect();
         module.workflows = frontmatter
             .workflows
@@ -1572,6 +1587,30 @@ fn screen_layout(
     let screen = index.screen_reference(&value.screen.text, value.screen.span, diagnostics)?;
     Some(UnlinkedScreenLayout {
         screen,
+        roles: value
+            .roles
+            .iter()
+            .filter_map(|v| index.role_reference(&v.text, v.span, diagnostics))
+            .collect(),
+        permissions: value
+            .permissions
+            .iter()
+            .filter_map(|p| {
+                let role = index.role_reference(&p.role.text, p.role.span, diagnostics)?;
+                let action = index.action_reference(&p.action.text, p.action.span, diagnostics)?;
+                let model = index.model_reference(&p.model.text, p.model.span, diagnostics)?;
+                let field = p.field.as_ref().and_then(|f| {
+                    index.field_reference(Some(&model), &f.text, f.span, diagnostics)
+                });
+                Some(UnlinkedScreenPermission {
+                    role,
+                    action,
+                    model,
+                    field,
+                    span: p.span,
+                })
+            })
+            .collect(),
         kind: value.kind.map(screen_layout_kind),
         elements: value
             .elements
@@ -1698,19 +1737,150 @@ fn screen_path(
         value.source_screen.span,
         diagnostics,
     )?;
-    let target_screen = index.screen_reference(
-        &value.target_screen.text,
-        value.target_screen.span,
-        diagnostics,
-    )?;
+    let target_screen = value
+        .target_screen
+        .as_ref()
+        .and_then(|v| index.screen_reference(&v.text, v.span, diagnostics));
     Some(UnlinkedScreenPath {
+        id: value.id.clone(),
         source_screen,
         source_element: SurfaceRef::stable_id(
             value.source_element.text.clone(),
             value.source_element.span,
         ),
         target_screen,
+        outcome: value.outcome.as_ref().map(|v| v.text.clone()),
+        handler: value.handler.as_ref().map(|h| UnlinkedSameScreenHandler {
+            kind: match h.kind {
+                HandlerKindAst::State => UnlinkedHandlerKind::State,
+                HandlerKindAst::Message => UnlinkedHandlerKind::Message,
+                HandlerKindAst::Popup => UnlinkedHandlerKind::Popup,
+                HandlerKindAst::Loading => UnlinkedHandlerKind::Loading,
+            },
+            id: h.id.clone(),
+            content: h.content.clone(),
+            span: h.span,
+        }),
         label: value.label.clone(),
+        span: value.span,
+    })
+}
+
+fn action_outcomes(
+    value: &ActionOutcomesAst,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UnlinkedActionOutcomes> {
+    let action = index.action_reference(&value.action.text, value.action.span, diagnostics)?;
+    let outcomes = value
+        .outcomes
+        .iter()
+        .map(|o| UnlinkedActionOutcome {
+            id: o.id.clone(),
+            kind: match o.kind {
+                OutcomeKindAst::Success => UnlinkedOutcomeKind::Success,
+                OutcomeKindAst::Failure => UnlinkedOutcomeKind::Failure,
+                OutcomeKindAst::Cancel => UnlinkedOutcomeKind::Cancel,
+                OutcomeKindAst::Timeout => UnlinkedOutcomeKind::Timeout,
+            },
+            provided_data: o
+                .provided_data
+                .iter()
+                .filter_map(|d| {
+                    let model = index.model_reference(&d.model.text, d.model.span, diagnostics)?;
+                    let field = index.field_reference(
+                        Some(&model),
+                        &d.field.text,
+                        d.field.span,
+                        diagnostics,
+                    )?;
+                    let source = match &d.source {
+                        OutcomeDataSourceAst::Lookup { result } => {
+                            UnlinkedOutcomeDataSource::Lookup {
+                                result_id: result.text.clone(),
+                            }
+                        }
+                        OutcomeDataSourceAst::Derivation { target } => {
+                            UnlinkedOutcomeDataSource::Derivation {
+                                target_field: index.unscoped_field_reference(
+                                    &target.text,
+                                    target.span,
+                                    diagnostics,
+                                )?,
+                            }
+                        }
+                        OutcomeDataSourceAst::Producer { producer } => {
+                            UnlinkedOutcomeDataSource::Producer {
+                                producer_id: producer.text.clone(),
+                            }
+                        }
+                    };
+                    Some(UnlinkedOutcomeData {
+                        model,
+                        field,
+                        source,
+                        span: d.span,
+                    })
+                })
+                .collect(),
+            recovery: o.recovery.as_ref().map(|r| UnlinkedRecovery {
+                kind: match r.kind {
+                    RecoveryKindAst::Retry => UnlinkedRecoveryKind::Retry,
+                    RecoveryKindAst::Return => UnlinkedRecoveryKind::Return,
+                    RecoveryKindAst::Release => UnlinkedRecoveryKind::Release,
+                },
+                screen: r
+                    .screen
+                    .as_ref()
+                    .and_then(|v| index.screen_reference(&v.text, v.span, diagnostics)),
+                element: r
+                    .element
+                    .as_ref()
+                    .map(|v| SurfaceRef::stable_id(v.text.clone(), v.span)),
+                action: r
+                    .action
+                    .as_ref()
+                    .and_then(|v| index.action_reference(&v.text, v.span, diagnostics)),
+                path: r
+                    .path
+                    .as_ref()
+                    .map(|v| SurfaceRef::stable_id(v.text.clone(), v.span)),
+                span: r.span,
+            }),
+            span: o.span,
+        })
+        .collect();
+    Some(UnlinkedActionOutcomes {
+        action,
+        outcomes,
+        span: value.span,
+    })
+}
+
+fn lookup_result(
+    value: &LookupResultAst,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UnlinkedLookupResult> {
+    let action = index.action_reference(&value.action.text, value.action.span, diagnostics)?;
+    let input = index.action_input_reference(
+        Some(&action),
+        &value.input.text,
+        value.input.span,
+        diagnostics,
+    )?;
+    let model = index.model_reference(&value.model.text, value.model.span, diagnostics)?;
+    let fields = value
+        .fields
+        .iter()
+        .filter_map(|f| index.field_reference(Some(&model), &f.text, f.span, diagnostics))
+        .collect();
+    Some(UnlinkedLookupResult {
+        id: value.id.clone(),
+        action,
+        input,
+        model,
+        fields,
         span: value.span,
     })
 }
@@ -2016,7 +2186,7 @@ mod tests {
         let path = &module.screen_paths[0];
         assert_eq!(path.source_screen.id(), "create_item");
         assert_eq!(path.source_element.id(), "submit");
-        assert_eq!(path.target_screen.id(), "cart_detail");
+        assert_eq!(path.target_screen.as_ref().unwrap().id(), "cart_detail");
         // 설명은 조건식이 아니라 사람이 읽는 문자열이라 그대로 남는다.
         assert_eq!(path.label.as_deref(), Some("담기 성공"));
     }

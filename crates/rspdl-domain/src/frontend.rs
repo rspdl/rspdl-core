@@ -487,6 +487,10 @@ pub enum UnlinkedLayoutElement {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedScreenLayout {
     pub screen: SurfaceRef,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<SurfaceRef>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub permissions: Vec<UnlinkedScreenPermission>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<ScreenLayoutKind>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -494,13 +498,111 @@ pub struct UnlinkedScreenLayout {
     pub span: TextRange,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedScreenPermission {
+    pub role: SurfaceRef,
+    pub action: SurfaceRef,
+    pub model: SurfaceRef,
+    pub field: Option<SurfaceRef>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnlinkedOutcomeKind {
+    Success,
+    Failure,
+    Cancel,
+    Timeout,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnlinkedHandlerKind {
+    State,
+    Message,
+    Popup,
+    Loading,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedSameScreenHandler {
+    pub kind: UnlinkedHandlerKind,
+    pub id: String,
+    pub content: Option<String>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnlinkedRecoveryKind {
+    Retry,
+    Return,
+    Release,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedRecovery {
+    pub kind: UnlinkedRecoveryKind,
+    pub screen: Option<SurfaceRef>,
+    pub element: Option<SurfaceRef>,
+    pub action: Option<SurfaceRef>,
+    pub path: Option<SurfaceRef>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UnlinkedOutcomeDataSource {
+    Lookup { result_id: String },
+    Derivation { target_field: SurfaceRef },
+    Producer { producer_id: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedOutcomeData {
+    pub model: SurfaceRef,
+    pub field: SurfaceRef,
+    pub source: UnlinkedOutcomeDataSource,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedActionOutcome {
+    pub id: String,
+    pub kind: UnlinkedOutcomeKind,
+    pub provided_data: Vec<UnlinkedOutcomeData>,
+    pub recovery: Option<UnlinkedRecovery>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedActionOutcomes {
+    pub action: SurfaceRef,
+    pub outcomes: Vec<UnlinkedActionOutcome>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedLookupResult {
+    pub id: String,
+    pub action: SurfaceRef,
+    pub input: SurfaceRef,
+    pub model: SurfaceRef,
+    pub fields: Vec<SurfaceRef>,
+    pub span: TextRange,
+}
+
 /// One path through the product. It leaves from an element inside a screen, not
 /// from the screen as a whole.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedScreenPath {
+    pub id: Option<String>,
     pub source_screen: SurfaceRef,
     pub source_element: SurfaceRef,
-    pub target_screen: SurfaceRef,
+    pub target_screen: Option<SurfaceRef>,
+    pub outcome: Option<String>,
+    pub handler: Option<UnlinkedSameScreenHandler>,
     /// Human-readable description of when this path is taken. It is prose, not a
     /// condition expression, and nothing here interprets it.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -572,6 +674,10 @@ pub struct UnlinkedModule {
     pub screen_layouts: Vec<UnlinkedScreenLayout>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub screen_paths: Vec<UnlinkedScreenPath>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub action_outcomes: Vec<UnlinkedActionOutcomes>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lookup_results: Vec<UnlinkedLookupResult>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub workflows: Vec<UnlinkedWorkflow>,
 }

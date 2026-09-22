@@ -172,6 +172,18 @@ Constraint, policy, conditional production과 relation meta-rule의 anonymous ID
 
 ## Conformance evidence
 
+### Typed action outcomes
+
+Frontends may lower explicit screen-role bindings, exact role/action/model/optional-field permission scopes,
+action-owned typed outcomes, source-backed outcome data, same-screen handlers, and bounded recovery declarations.
+The analyzer resolves outcome IDs within their owning action and retains them on each exact source-button path.
+Legacy paths without an outcome remain valid and are unverified by construction (`outcome_id` is absent).
+
+Lookup acquisition requires an existing-model action input whose model and field match the lookup result and the
+successful outcome adopting that result. Derivations and field producers retain prerequisite field IDs; workflow
+analysis transfers their result only when those prerequisites are available on that path. Conditional or nullable
+presence is reported as structured `unknown`, never converted into verified availability.
+
 - frontend unit test는 source reference가 expected stable-ID `SurfaceRef`로 lowering되는지 검증한다.
 - analyzer test는 Locale source 없이 hand-authored `UnlinkedModule`만 사용한다.
 - compiler conformance는 action mutation의 `SourceId`와 UTF-8 byte `TextRange`가 `Compilation`까지 보존되는지 검사한다.

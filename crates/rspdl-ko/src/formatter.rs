@@ -627,6 +627,84 @@ fn write_frontmatter(output: &mut String, frontmatter: &FrontmatterAst) -> Resul
         }
     }
 
+    if !frontmatter.lookup_results.is_empty() {
+        separate(output, &mut written);
+        output.push_str("조회 결과:\n");
+        for r in &frontmatter.lookup_results {
+            output.push_str(&format!(
+                "  {}:\n    행동: {}\n    입력: {}\n    모델: {}\n    필드: [{}]\n",
+                r.id,
+                scalar(&r.action.text),
+                scalar(&r.input.text),
+                scalar(&r.model.text),
+                references(&r.fields)
+            ));
+        }
+    }
+    if !frontmatter.action_outcomes.is_empty() {
+        separate(output, &mut written);
+        output.push_str("행동 결과:\n");
+        for group in &frontmatter.action_outcomes {
+            output.push_str(&format!("  {}:\n", scalar(&group.action.text)));
+            for o in &group.outcomes {
+                output.push_str(&format!(
+                    "    - id: {}\n      유형: {}\n",
+                    o.id,
+                    match o.kind {
+                        OutcomeKindAst::Success => "성공",
+                        OutcomeKindAst::Failure => "실패",
+                        OutcomeKindAst::Cancel => "취소",
+                        OutcomeKindAst::Timeout => "timeout",
+                    }
+                ));
+                if !o.provided_data.is_empty() {
+                    output.push_str("      제공 데이터:\n");
+                    for d in &o.provided_data {
+                        let (key, value) = match &d.source {
+                            OutcomeDataSourceAst::Lookup { result } => ("조회 결과", &result.text),
+                            OutcomeDataSourceAst::Derivation { target } => {
+                                ("계산 대상", &target.text)
+                            }
+                            OutcomeDataSourceAst::Producer { producer } => {
+                                ("생산자", &producer.text)
+                            }
+                        };
+                        output.push_str(&format!(
+                            "        - 모델: {}\n          필드: {}\n          {}: {}\n",
+                            scalar(&d.model.text),
+                            scalar(&d.field.text),
+                            key,
+                            scalar(value)
+                        ));
+                    }
+                }
+                if let Some(r) = &o.recovery {
+                    let mut parts = vec![format!(
+                        "종류: {}",
+                        match r.kind {
+                            RecoveryKindAst::Retry => "retry",
+                            RecoveryKindAst::Return => "return",
+                            RecoveryKindAst::Release => "release",
+                        }
+                    )];
+                    if let Some(v) = &r.screen {
+                        parts.push(format!("화면: {}", scalar(&v.text)));
+                    }
+                    if let Some(v) = &r.element {
+                        parts.push(format!("요소: {}", scalar(&v.text)));
+                    }
+                    if let Some(v) = &r.action {
+                        parts.push(format!("행동: {}", scalar(&v.text)));
+                    }
+                    if let Some(v) = &r.path {
+                        parts.push(format!("경로: {}", scalar(&v.text)));
+                    }
+                    output.push_str(&format!("      복구: {{ {} }}\n", parts.join(", ")));
+                }
+            }
+        }
+    }
+
     if !frontmatter.workflows.is_empty() {
         separate(output, &mut written);
         output.push_str("업무:\n");
@@ -739,6 +817,34 @@ fn write_screen_layout(output: &mut String, layout: &ScreenLayoutAst, indent: us
         scalar(&layout.screen.text)
     ));
     let body = indent + STEP;
+    if !layout.roles.is_empty() {
+        output.push_str(&format!(
+            "{}역할: [{}]\n",
+            pad(body),
+            references(&layout.roles)
+        ));
+    }
+    if !layout.permissions.is_empty() {
+        output.push_str(&format!("{}권한:\n", pad(body)));
+        for p in &layout.permissions {
+            output.push_str(&format!(
+                "{}- 역할: {}\n{}행동: {}\n{}모델: {}\n",
+                pad(body + STEP),
+                scalar(&p.role.text),
+                pad(body + STEP + STEP),
+                scalar(&p.action.text),
+                pad(body + STEP + STEP),
+                scalar(&p.model.text)
+            ));
+            if let Some(field) = &p.field {
+                output.push_str(&format!(
+                    "{}필드: {}\n",
+                    pad(body + STEP + STEP),
+                    scalar(&field.text)
+                ));
+            }
+        }
+    }
     // 적히지 않은 `유형` 은 적히지 않은 채로 둔다. 여기서 `page` 를 채우면 저자가 하지 않은
     // 결정을 문서가 한 것이 된다.
     if let Some(kind) = layout.kind {
@@ -889,11 +995,34 @@ fn write_path(output: &mut String, path: &ScreenPathAst, indent: usize) {
             path.source_screen.text, path.source_element.text
         ))
     ));
-    output.push_str(&format!(
-        "{}도착: {}\n",
-        pad(body),
-        scalar(&path.target_screen.text)
-    ));
+    if let Some(id) = &path.id {
+        output.push_str(&format!("{}id: {}\n", pad(body), id));
+    }
+    if let Some(outcome) = &path.outcome {
+        output.push_str(&format!("{}결과: {}\n", pad(body), scalar(&outcome.text)));
+    }
+    if let Some(target) = &path.target_screen {
+        output.push_str(&format!("{}도착: {}\n", pad(body), scalar(&target.text)));
+    }
+    if let Some(handler) = &path.handler {
+        let content = handler
+            .content
+            .as_ref()
+            .map(|v| format!(", 내용: {}", scalar(v)))
+            .unwrap_or_default();
+        output.push_str(&format!(
+            "{}처리: {{ 종류: {}, id: {}{} }}\n",
+            pad(body),
+            match handler.kind {
+                HandlerKindAst::State => "상태",
+                HandlerKindAst::Message => "메시지",
+                HandlerKindAst::Popup => "팝업",
+                HandlerKindAst::Loading => "로딩",
+            },
+            handler.id,
+            content
+        ));
+    }
     // 적히지 않은 설명은 빈 문자열이 아니다.
     if let Some(label) = &path.label {
         output.push_str(&format!("{}설명: {}\n", pad(body), scalar(label)));
