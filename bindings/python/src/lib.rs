@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use rspdl_sdk::SdkError;
 
@@ -41,7 +41,14 @@ fn find_model_json(py: Python<'_>, request: String) -> PyResult<String> {
 
 #[pyfunction]
 fn edit_json(py: Python<'_>, request: String) -> PyResult<String> {
-    run_without_gil(py, request, rspdl_sdk::edit_json)
+    py.detach(move || rspdl_sdk::edit_json(&request))
+        .map_err(|error| {
+            let message = format!("{}: {error}", error.code());
+            match error {
+                SdkError::InvalidRequestJson { .. } => PyValueError::new_err(message),
+                _ => PyRuntimeError::new_err(message),
+            }
+        })
 }
 
 #[pyfunction]
