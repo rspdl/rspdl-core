@@ -176,6 +176,7 @@ fn empty_module() -> SemanticModule {
         screen_categories: Vec::new(),
         screen_layouts: Vec::new(),
         screen_paths: Vec::new(),
+        workflows: Vec::new(),
         action_data_mutations: Vec::new(),
         derivations: Vec::new(),
         recalculations: Vec::new(),

@@ -627,6 +627,14 @@ fn write_frontmatter(output: &mut String, frontmatter: &FrontmatterAst) -> Resul
         }
     }
 
+    if !frontmatter.workflows.is_empty() {
+        separate(output, &mut written);
+        output.push_str("업무:\n");
+        for workflow in &frontmatter.workflows {
+            write_workflow(output, workflow, STEP)?;
+        }
+    }
+
     output.push_str("---\n");
     Ok(())
 }
@@ -818,6 +826,69 @@ fn write_path(output: &mut String, path: &ScreenPathAst, indent: usize) {
     // 적히지 않은 설명은 빈 문자열이 아니다.
     if let Some(label) = &path.label {
         output.push_str(&format!("{}설명: {}\n", pad(body), scalar(label)));
+    }
+}
+
+fn write_workflow(
+    output: &mut String,
+    workflow: &WorkflowAst,
+    indent: usize,
+) -> Result<(), FormatError> {
+    output.push_str(&format!(
+        "{}{}:\n",
+        pad(indent),
+        named_id(&workflow.declaration, true)?
+    ));
+    let body = indent + STEP;
+    output.push_str(&format!(
+        "{}시작: {}\n",
+        pad(body),
+        scalar(&workflow.start_screen.text)
+    ));
+    if !workflow.initial_data.is_empty() {
+        output.push_str(&format!("{}초기 데이터:\n", pad(body)));
+        write_workflow_data(output, &workflow.initial_data, body + STEP);
+    }
+    if !workflow.acquisitions.is_empty() {
+        output.push_str(&format!("{}획득:\n", pad(body)));
+        for acquisition in &workflow.acquisitions {
+            output.push_str(&format!(
+                "{}- 출발: {}\n",
+                pad(body + STEP),
+                scalar(&format!(
+                    "{}.{}",
+                    acquisition.source_screen.text, acquisition.source_element.text
+                ))
+            ));
+            output.push_str(&format!("{}데이터:\n", pad(body + STEP + STEP)));
+            write_workflow_data(output, &acquisition.data, body + STEP + STEP + STEP);
+        }
+    }
+    output.push_str(&format!("{}완료:\n", pad(body)));
+    for completion in &workflow.completions {
+        output.push_str(&format!(
+            "{}- 화면: {}\n",
+            pad(body + STEP),
+            scalar(&completion.screen.text)
+        ));
+        output.push_str(&format!("{}필수 데이터:\n", pad(body + STEP + STEP)));
+        write_workflow_data(output, &completion.required_data, body + STEP + STEP + STEP);
+    }
+    Ok(())
+}
+
+fn write_workflow_data(output: &mut String, data: &[WorkflowDataAst], indent: usize) {
+    for item in data {
+        output.push_str(&format!(
+            "{}- 모델: {}\n",
+            pad(indent),
+            scalar(&item.model.text)
+        ));
+        output.push_str(&format!(
+            "{}필드: {}\n",
+            pad(indent + STEP),
+            scalar(&item.field.text)
+        ));
     }
 }
 

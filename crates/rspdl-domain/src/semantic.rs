@@ -218,6 +218,41 @@ pub struct ScreenPathDefinition {
     pub span: TextRange,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct WorkflowDataRequirement {
+    pub model_id: CanonicalId,
+    pub field_id: CanonicalId,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowCompletionDefinition {
+    pub screen_id: CanonicalId,
+    pub required_data: Vec<WorkflowDataRequirement>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowAcquisitionDefinition {
+    pub source_screen_id: CanonicalId,
+    pub source_element_id: String,
+    pub data: Vec<WorkflowDataRequirement>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowDefinition {
+    pub id: CanonicalId,
+    pub name: String,
+    pub start_screen_id: CanonicalId,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub initial_data: Vec<WorkflowDataRequirement>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub acquisitions: Vec<WorkflowAcquisitionDefinition>,
+    pub completions: Vec<WorkflowCompletionDefinition>,
+    pub span: TextRange,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DataMutationKind {
@@ -545,6 +580,8 @@ pub struct SemanticModule {
     pub screen_layouts: Vec<ScreenLayoutDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub screen_paths: Vec<ScreenPathDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub workflows: Vec<WorkflowDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub action_data_mutations: Vec<ActionDataMutationDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

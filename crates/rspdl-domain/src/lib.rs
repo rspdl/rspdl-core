@@ -39,6 +39,8 @@ pub use frontend::{
     UnlinkedRelation, UnlinkedRelationProducer, UnlinkedRelationalConstraint,
     UnlinkedRelationalConstraintKind, UnlinkedRole, UnlinkedScreen, UnlinkedScreenLayout,
     UnlinkedScreenPath, UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference,
+    UnlinkedWorkflow, UnlinkedWorkflowAcquisition, UnlinkedWorkflowCompletion,
+    UnlinkedWorkflowData,
 };
 pub use logic::{
     Atom, AtomView, BooleanExpression, BooleanExpressionView, ComparisonOperator,
@@ -67,7 +69,8 @@ pub use semantic::{
     RelationProducerDefinition, RelationSlotCardinality, RelationalConstraintDefinition,
     RelationalConstraintKind, RoleDefinition, ScreenCategoryAssignment, ScreenDefinition,
     ScreenLayoutDefinition, ScreenLayoutKind, ScreenOperationDefinition, ScreenOperationKind,
-    ScreenPathDefinition, SemanticModule, TemplatePart,
+    ScreenPathDefinition, SemanticModule, TemplatePart, WorkflowAcquisitionDefinition,
+    WorkflowCompletionDefinition, WorkflowDataRequirement, WorkflowDefinition,
 };
 pub use set::{SetExpression, SetExpressionView};
 pub use solver::SolverContractError;

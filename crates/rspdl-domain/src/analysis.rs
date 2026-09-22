@@ -27,7 +27,8 @@ use crate::{
     UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationProducer,
     UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedScreen,
     UnlinkedScreenLayout, UnlinkedScreenPath, UnlinkedSumDerivation, UnlinkedTemplatePart,
-    UnlinkedTypeReference,
+    UnlinkedTypeReference, UnlinkedWorkflow, UnlinkedWorkflowData, WorkflowAcquisitionDefinition,
+    WorkflowCompletionDefinition, WorkflowDataRequirement, WorkflowDefinition,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -435,6 +436,19 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         &mut diagnostics,
     );
 
+    let workflows = analyze_workflows(
+        module.workflows,
+        &module_id,
+        &models,
+        &screens,
+        &screen_layouts,
+        &screen_paths,
+        &action_data_mutations,
+        &conditional_productions,
+        &mut top_level_ids,
+        &mut diagnostics,
+    );
+
     let mut constraints = Vec::new();
     for value in module.constraints {
         if let Some(definition) = link_constraint(
@@ -487,6 +501,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
             screen_categories,
             screen_layouts,
             screen_paths,
+            workflows,
             action_data_mutations,
             derivations,
             recalculations,
@@ -3488,6 +3503,380 @@ fn analyze_data_usage(
         recalculations: recalculation_definitions,
         field_intents: intents,
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn analyze_workflows(
+    workflows: Vec<UnlinkedWorkflow>,
+    module_id: &CanonicalId,
+    models: &[DataModelDefinition],
+    screens: &[ScreenDefinition],
+    layouts: &[ScreenLayoutDefinition],
+    paths: &[ScreenPathDefinition],
+    mutations: &[ActionDataMutationDefinition],
+    productions: &[ConditionalProductionDefinition],
+    top_level_ids: &mut BTreeSet<CanonicalId>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<WorkflowDefinition> {
+    let all_fields = models
+        .iter()
+        .flat_map(|model| model.fields.iter().map(|field| field.id.clone()))
+        .collect::<BTreeSet<_>>();
+    let mut result = Vec::new();
+    for workflow in workflows {
+        let Some(id) = canonical_member(&workflow.declaration, module_id, diagnostics) else {
+            continue;
+        };
+        duplicate_id(&id, workflow.declaration.span, top_level_ids, diagnostics);
+        let Some(start) = screens
+            .iter()
+            .find(|screen| top_level_reference_matches(&screen.id, &workflow.start_screen))
+        else {
+            continue;
+        };
+        let initial_data = workflow
+            .initial_data
+            .iter()
+            .filter_map(|data| link_workflow_data(data, models))
+            .collect::<Vec<_>>();
+        let completions = workflow
+            .completions
+            .iter()
+            .filter_map(|completion| {
+                let screen = screens
+                    .iter()
+                    .find(|screen| top_level_reference_matches(&screen.id, &completion.screen))?;
+                Some(WorkflowCompletionDefinition {
+                    screen_id: screen.id.clone(),
+                    required_data: completion
+                        .required_data
+                        .iter()
+                        .filter_map(|data| link_workflow_data(data, models))
+                        .collect(),
+                    span: completion.span,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut acquisitions = Vec::new();
+        for acquisition in &workflow.acquisitions {
+            let Some(screen) = screens
+                .iter()
+                .find(|screen| top_level_reference_matches(&screen.id, &acquisition.source_screen))
+            else {
+                continue;
+            };
+            let edge_exists = paths.iter().any(|path| {
+                path.source_screen_id == screen.id
+                    && path.source_element_id == acquisition.source_element.id()
+            });
+            if !edge_exists {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-WORKFLOW-003",
+                        Severity::Error,
+                        "semantic.workflow.acquisition_source_not_found",
+                        acquisition.source_element.span(),
+                    )
+                    .with_argument("workflow_id", &id)
+                    .with_argument("screen_id", &screen.id)
+                    .with_argument("element_id", acquisition.source_element.id()),
+                );
+                continue;
+            }
+            let placed = layouts
+                .iter()
+                .find(|layout| layout.screen_id == screen.id)
+                .map(|layout| placed_input_fields(&layout.elements))
+                .unwrap_or_default();
+            let mut data = Vec::new();
+            for item in &acquisition.data {
+                let Some(requirement) = link_workflow_data(item, models) else {
+                    continue;
+                };
+                if !placed.contains(&requirement.field_id) {
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-WORKFLOW-004",
+                            Severity::Error,
+                            "semantic.workflow.acquired_data_not_placed_input",
+                            item.span,
+                        )
+                        .with_argument("workflow_id", &id)
+                        .with_argument("screen_id", &screen.id)
+                        .with_argument("field_id", &requirement.field_id)
+                        .with_argument("declared_at", screen.span.start),
+                    );
+                    continue;
+                }
+                data.push(requirement);
+            }
+            acquisitions.push(WorkflowAcquisitionDefinition {
+                source_screen_id: screen.id.clone(),
+                source_element_id: acquisition.source_element.id().to_owned(),
+                data,
+                span: acquisition.span,
+            });
+        }
+
+        let mut reachable = BTreeSet::from([start.id.clone()]);
+        loop {
+            let before = reachable.len();
+            for path in paths {
+                if reachable.contains(&path.source_screen_id) {
+                    reachable.insert(path.target_screen_id.clone());
+                }
+            }
+            if reachable.len() == before {
+                break;
+            }
+        }
+        let initial_fields = initial_data
+            .iter()
+            .map(|data| data.field_id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut available = reachable
+            .iter()
+            .map(|screen| (screen.clone(), all_fields.clone()))
+            .collect::<BTreeMap<_, _>>();
+        available.insert(start.id.clone(), initial_fields);
+        loop {
+            let mut changed = false;
+            for path in paths
+                .iter()
+                .filter(|path| reachable.contains(&path.source_screen_id))
+            {
+                let mut outgoing = available
+                    .get(&path.source_screen_id)
+                    .cloned()
+                    .unwrap_or_default();
+                for acquisition in acquisitions.iter().filter(|value| {
+                    value.source_screen_id == path.source_screen_id
+                        && value.source_element_id == path.source_element_id
+                }) {
+                    outgoing.extend(acquisition.data.iter().map(|data| data.field_id.clone()));
+                }
+                if path.target_screen_id == start.id {
+                    continue;
+                }
+                let target = available
+                    .entry(path.target_screen_id.clone())
+                    .or_insert_with(|| all_fields.clone());
+                let next = target
+                    .intersection(&outgoing)
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                if *target != next {
+                    *target = next;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        let reachable_actions = paths
+            .iter()
+            .filter(|path| reachable.contains(&path.source_screen_id))
+            .filter_map(|path| {
+                button_action(layouts, &path.source_screen_id, &path.source_element_id)
+            })
+            .collect::<BTreeSet<_>>();
+        let has_delete = mutations.iter().any(|mutation| {
+            mutation.mutation == DataMutationKind::Delete
+                && reachable_actions.contains(&mutation.action_id)
+        });
+        let has_conditional = productions.iter().any(|production| {
+            production
+                .action_id
+                .as_ref()
+                .is_some_and(|action| reachable_actions.contains(action))
+        });
+        let verification_unknown = has_delete || has_conditional;
+        if verification_unknown {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-WORKFLOW-U001",
+                    Severity::Warning,
+                    "semantic.workflow.verification_unknown",
+                    workflow.span,
+                )
+                .with_argument("workflow_id", &id)
+                .with_argument(
+                    "reason",
+                    if has_delete {
+                        "reachable_delete"
+                    } else {
+                        "conditional_action_production"
+                    },
+                ),
+            );
+        }
+
+        for completion in &completions {
+            if !reachable.contains(&completion.screen_id) {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-WORKFLOW-002",
+                        Severity::Error,
+                        "semantic.workflow.completion_unreachable",
+                        completion.span,
+                    )
+                    .with_argument("workflow_id", &id)
+                    .with_argument("screen_id", &completion.screen_id),
+                );
+                continue;
+            }
+            if verification_unknown {
+                continue;
+            }
+            let at_arrival = available
+                .get(&completion.screen_id)
+                .cloned()
+                .unwrap_or_default();
+            for required in &completion.required_data {
+                if !at_arrival.contains(&required.field_id) {
+                    let witness = missing_data_witness(
+                        &start.id,
+                        &completion.screen_id,
+                        &required.field_id,
+                        paths,
+                        &acquisitions,
+                    )
+                    .unwrap_or_default();
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-WORKFLOW-001",
+                            Severity::Error,
+                            "semantic.workflow.required_data_unavailable",
+                            required.span,
+                        )
+                        .with_argument("workflow_id", &id)
+                        .with_argument("completion_screen_id", &completion.screen_id)
+                        .with_argument("model_id", &required.model_id)
+                        .with_argument("field_id", &required.field_id)
+                        .with_argument("completion_declared_at", completion.span.start)
+                        .with_argument("missing_path", witness),
+                    );
+                }
+            }
+        }
+        result.push(WorkflowDefinition {
+            id,
+            name: workflow.declaration.name,
+            start_screen_id: start.id.clone(),
+            initial_data,
+            acquisitions,
+            completions,
+            span: workflow.span,
+        });
+    }
+    result
+}
+
+fn missing_data_witness(
+    start: &CanonicalId,
+    completion: &CanonicalId,
+    field: &CanonicalId,
+    paths: &[ScreenPathDefinition],
+    acquisitions: &[WorkflowAcquisitionDefinition],
+) -> Option<String> {
+    use std::collections::VecDeque;
+    let mut queue = VecDeque::from([(start.clone(), vec![start.to_string()])]);
+    let mut visited = BTreeSet::from([start.clone()]);
+    while let Some((screen, witness)) = queue.pop_front() {
+        if &screen == completion {
+            return Some(witness.join(" -> "));
+        }
+        for path in paths.iter().filter(|path| path.source_screen_id == screen) {
+            let acquired = acquisitions
+                .iter()
+                .filter(|value| {
+                    value.source_screen_id == screen
+                        && value.source_element_id == path.source_element_id
+                })
+                .any(|value| value.data.iter().any(|data| &data.field_id == field));
+            if acquired {
+                continue;
+            }
+            if visited.insert(path.target_screen_id.clone()) {
+                let mut next = witness.clone();
+                next.push(format!(
+                    "{}.{}",
+                    path.source_screen_id, path.source_element_id
+                ));
+                next.push(path.target_screen_id.to_string());
+                queue.push_back((path.target_screen_id.clone(), next));
+            }
+        }
+    }
+    None
+}
+
+fn link_workflow_data(
+    value: &UnlinkedWorkflowData,
+    models: &[DataModelDefinition],
+) -> Option<WorkflowDataRequirement> {
+    let model = models
+        .iter()
+        .find(|model| top_level_reference_matches(&model.id, &value.model))?;
+    let field = model
+        .fields
+        .iter()
+        .find(|field| member_reference_matches(&field.id, &field.local_id, &value.field))?;
+    Some(WorkflowDataRequirement {
+        model_id: model.id.clone(),
+        field_id: field.id.clone(),
+        span: value.span,
+    })
+}
+
+fn placed_input_fields(elements: &[LayoutElement]) -> BTreeSet<CanonicalId> {
+    let mut fields = BTreeSet::new();
+    for element in elements {
+        match element {
+            LayoutElement::Header { children, .. } | LayoutElement::Section { children, .. } => {
+                fields.extend(placed_input_fields(children))
+            }
+            LayoutElement::Form { inputs, .. } => fields.extend(placed_input_fields(inputs)),
+            LayoutElement::Input { field_id, .. } => {
+                fields.insert(field_id.clone());
+            }
+            _ => {}
+        }
+    }
+    fields
+}
+
+fn button_action(
+    layouts: &[ScreenLayoutDefinition],
+    screen_id: &CanonicalId,
+    element_id: &str,
+) -> Option<CanonicalId> {
+    fn find(elements: &[LayoutElement], element_id: &str) -> Option<CanonicalId> {
+        for element in elements {
+            match element {
+                LayoutElement::Header { children, .. }
+                | LayoutElement::Section { children, .. } => {
+                    if let Some(id) = find(children, element_id) {
+                        return Some(id);
+                    }
+                }
+                LayoutElement::Button {
+                    id,
+                    action_id: Some(action_id),
+                    ..
+                } if id == element_id => return Some(action_id.clone()),
+                _ => {}
+            }
+        }
+        None
+    }
+    layouts
+        .iter()
+        .find(|layout| &layout.screen_id == screen_id)
+        .and_then(|layout| find(&layout.elements, element_id))
 }
 
 /// Everything the document frontmatter contributes to the semantic module.

@@ -14,7 +14,8 @@ use rspdl_domain::{
 };
 use rspdl_domain::{
     ScreenLayoutKind, UnlinkedCategory, UnlinkedLayoutElement, UnlinkedScreenLayout,
-    UnlinkedScreenPath,
+    UnlinkedScreenPath, UnlinkedWorkflow, UnlinkedWorkflowAcquisition, UnlinkedWorkflowCompletion,
+    UnlinkedWorkflowData,
 };
 
 use crate::ast::*;
@@ -617,6 +618,7 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         information_architecture: Vec::new(),
         screen_layouts: Vec::new(),
         screen_paths: Vec::new(),
+        workflows: Vec::new(),
     };
 
     if let Some(frontmatter) = &document.frontmatter {
@@ -638,6 +640,11 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
             .paths
             .iter()
             .filter_map(|value| screen_path(value, &index, &mut diagnostics))
+            .collect();
+        module.workflows = frontmatter
+            .workflows
+            .iter()
+            .filter_map(|value| workflow(value, &index, &mut diagnostics))
             .collect();
     }
 
@@ -1339,6 +1346,93 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         module,
         diagnostics,
     }
+}
+
+fn workflow(
+    value: &WorkflowAst,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UnlinkedWorkflow> {
+    let start_screen = index.screen_reference(
+        &value.start_screen.text,
+        value.start_screen.span,
+        diagnostics,
+    );
+    let initial_data = value
+        .initial_data
+        .iter()
+        .filter_map(|item| workflow_data(item, index, diagnostics))
+        .collect();
+    let acquisitions = value
+        .acquisitions
+        .iter()
+        .filter_map(|acquisition| {
+            Some(UnlinkedWorkflowAcquisition {
+                source_screen: index.screen_reference(
+                    &acquisition.source_screen.text,
+                    acquisition.source_screen.span,
+                    diagnostics,
+                )?,
+                source_element: SurfaceRef::stable_id(
+                    acquisition.source_element.text.clone(),
+                    acquisition.source_element.span,
+                ),
+                data: acquisition
+                    .data
+                    .iter()
+                    .filter_map(|item| workflow_data(item, index, diagnostics))
+                    .collect(),
+                span: acquisition.span,
+            })
+        })
+        .collect();
+    let completions = value
+        .completions
+        .iter()
+        .filter_map(|completion| {
+            let required_data = completion
+                .required_data
+                .iter()
+                .filter_map(|item| workflow_data(item, index, diagnostics))
+                .collect();
+            Some(UnlinkedWorkflowCompletion {
+                screen: index.screen_reference(
+                    &completion.screen.text,
+                    completion.screen.span,
+                    diagnostics,
+                )?,
+                required_data,
+                span: completion.span,
+            })
+        })
+        .collect();
+    Some(UnlinkedWorkflow {
+        declaration: declaration(&value.declaration, true),
+        start_screen: start_screen?,
+        initial_data,
+        acquisitions,
+        completions,
+        span: value.span,
+    })
+}
+
+fn workflow_data(
+    value: &WorkflowDataAst,
+    index: &StableIdIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UnlinkedWorkflowData> {
+    let model = index.model_reference(&value.model.text, value.model.span, diagnostics)?;
+    let field = index.field_reference(
+        Some(&model),
+        &value.field.text,
+        value.field.span,
+        diagnostics,
+    )?;
+    Some(UnlinkedWorkflowData {
+        model,
+        field,
+        span: value.span,
+    })
 }
 
 fn lower_action_inputs(

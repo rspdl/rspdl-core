@@ -592,6 +592,27 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "semantic.screen_flow.no_entry_point" => {
             "선언된 흐름에 진입점이 없습니다. 모든 화면이 다른 화면에서만 도달합니다.".to_owned()
         }
+        "semantic.workflow.required_data_unavailable" => format!(
+            "업무 {}의 완료 화면 {}에 도착하는 경로 중 {} 데이터가 확보되지 않는 경로가 있습니다: {}",
+            argument(diagnostic, "workflow_id"), argument(diagnostic, "completion_screen_id"),
+            argument(diagnostic, "field_id"), argument(diagnostic, "missing_path")
+        ),
+        "semantic.workflow.completion_unreachable" => format!(
+            "업무 {}의 완료 화면 {}에 시작 화면에서 도달할 수 없습니다.",
+            argument(diagnostic, "workflow_id"), argument(diagnostic, "screen_id")
+        ),
+        "semantic.workflow.acquisition_source_not_found" => format!(
+            "업무 {}의 데이터 획득 출발점 {}.{}에 해당하는 흐름이 없습니다.",
+            argument(diagnostic, "workflow_id"), argument(diagnostic, "screen_id"), argument(diagnostic, "element_id")
+        ),
+        "semantic.workflow.acquired_data_not_placed_input" => format!(
+            "업무 {}가 {} 화면에서 확보한다고 선언한 {} 필드는 배치되고 선언된 입력이 아닙니다.",
+            argument(diagnostic, "workflow_id"), argument(diagnostic, "screen_id"), argument(diagnostic, "field_id")
+        ),
+        "semantic.workflow.verification_unknown" => format!(
+            "업무 {}의 데이터 가용성은 현재 분석 범위에서 확정할 수 없습니다: {}",
+            argument(diagnostic, "workflow_id"), argument(diagnostic, "reason")
+        ),
         "semantic.screen.duplicate_operation" => format!(
             "화면 {}의 데이터 동작이 중복 선언되었습니다.",
             argument(diagnostic, "screen_id")

@@ -1,0 +1,1 @@
+{"spec_version":"0.6.0","locale":"ko-KR","category":"boundary","expected_module":true,"expected_diagnostics":[{"rule_id":"RSPDL-WORKFLOW-U001","severity":"warning","message_key":"semantic.workflow.verification_unknown"}]}

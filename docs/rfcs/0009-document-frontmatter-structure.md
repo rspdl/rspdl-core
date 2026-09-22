@@ -20,6 +20,7 @@ related:
   - core-application-boundary
   - frontend-semantic-analysis-contract
   - rspdl-language-prd
+  - workflow-completion-data-availability
 problem_refs:
   - screen-structure-spec-divergence
   - data-lifecycle-modeling-gap

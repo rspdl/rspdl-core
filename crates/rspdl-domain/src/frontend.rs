@@ -494,6 +494,38 @@ pub struct UnlinkedScreenPath {
     pub span: TextRange,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedWorkflowData {
+    pub model: SurfaceRef,
+    pub field: SurfaceRef,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedWorkflowCompletion {
+    pub screen: SurfaceRef,
+    pub required_data: Vec<UnlinkedWorkflowData>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedWorkflowAcquisition {
+    pub source_screen: SurfaceRef,
+    pub source_element: SurfaceRef,
+    pub data: Vec<UnlinkedWorkflowData>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct UnlinkedWorkflow {
+    pub declaration: UnlinkedDeclaration,
+    pub start_screen: SurfaceRef,
+    pub initial_data: Vec<UnlinkedWorkflowData>,
+    pub acquisitions: Vec<UnlinkedWorkflowAcquisition>,
+    pub completions: Vec<UnlinkedWorkflowCompletion>,
+    pub span: TextRange,
+}
+
 /// Locale-neutral, unresolved semantic intent produced by a frontend.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedModule {
@@ -526,4 +558,6 @@ pub struct UnlinkedModule {
     pub screen_layouts: Vec<UnlinkedScreenLayout>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub screen_paths: Vec<UnlinkedScreenPath>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub workflows: Vec<UnlinkedWorkflow>,
 }

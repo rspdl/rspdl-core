@@ -51,6 +51,7 @@ fn empty_module(name: &str) -> UnlinkedModule {
         information_architecture: Vec::new(),
         screen_layouts: Vec::new(),
         screen_paths: Vec::new(),
+        workflows: Vec::new(),
     }
 }
 

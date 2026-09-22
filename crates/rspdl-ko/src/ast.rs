@@ -467,6 +467,38 @@ pub struct ScreenPathAst {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowDataAst {
+    pub model: FrontmatterRefAst,
+    pub field: FrontmatterRefAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowCompletionAst {
+    pub screen: FrontmatterRefAst,
+    pub required_data: Vec<WorkflowDataAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowAcquisitionAst {
+    pub source_screen: FrontmatterRefAst,
+    pub source_element: FrontmatterRefAst,
+    pub data: Vec<WorkflowDataAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowAst {
+    pub declaration: NamedIdAst,
+    pub start_screen: FrontmatterRefAst,
+    pub initial_data: Vec<WorkflowDataAst>,
+    pub acquisitions: Vec<WorkflowAcquisitionAst>,
+    pub completions: Vec<WorkflowCompletionAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FrontmatterAst {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub module: Option<NamedIdAst>,
@@ -476,6 +508,8 @@ pub struct FrontmatterAst {
     pub screens: Vec<ScreenLayoutAst>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<ScreenPathAst>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub workflows: Vec<WorkflowAst>,
     pub span: Span,
 }
 

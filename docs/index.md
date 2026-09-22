@@ -32,8 +32,9 @@ related:
   - natural-korean-domain-grammar
   - total-policy-condition-space-analysis
   - typed-domains-and-logic-core
+  - workflow-completion-data-availability
   - frontend-semantic-analysis-contract
-last_updated: "2026-09-20"
+last_updated: "2026-09-23"
 owners:
   - rspdl-maintainers
 ---
@@ -67,4 +68,5 @@ owners:
 | `natural-korean-domain-grammar` | `rfc` | `implemented` | [Korean Domain Frontend Language Specification](rfcs/0004-natural-korean-domain-grammar.md) | Defines Korean record, relation, constraint and policy grammar and its deterministic lowering to the locale-neutral Unlinked IR contract. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `frontend-grammar-implementation-drift` | `ko-KR`, `controlled-language`, `data-model`, `constraints`, `policies`, `relations`, `bounded-model-finding`, `cfg` |
 | `total-policy-condition-space-analysis` | `rfc` | `proposed` | [Total Policy Condition Spaces and SMT-First Consistency Analysis](rfcs/0006-total-policy-condition-space-analysis.md) | Defines closed policy vocabulary, exhaustive condition-space coverage, explicit override semantics, and SMT-first consistency analysis. | `policy-consistency-blind-spots`, `data-lifecycle-modeling-gap` | `policy-analysis`, `smt`, `condition-coverage`, `totality`, `override`, `closed-vocabulary` |
 | `typed-domains-and-logic-core` | `rfc` | `proposed` | [정규화 타입·도메인과 논리 IR 코어](rfcs/0002-typed-domains-and-logic-core.md) | Defines normalized value domains, typed set and Boolean IR, and its boundary with finite relational model finding. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `type-system`, `data-model`, `domains`, `set-algebra`, `smt` |
+| `workflow-completion-data-availability` | `rfc` | `implemented` | [업무 완료 경로의 데이터 가용성 계약](rfcs/0010-workflow-completion-data-availability.md) | Defines explicit workflow starts, completion obligations, preconditions, and submit-bound input acquisition with conservative path analysis. | `data-lifecycle-modeling-gap`, `screen-structure-spec-divergence`, `semantic-source-provenance-loss` | `workflow`, `data-lifecycle`, `path-analysis`, `completion-contract`, `frontmatter`, `canonical-ir` |
 | `frontend-semantic-analysis-contract` | `spec` | `implemented` | [Frontend and Semantic Analysis Contract](specs/frontend-semantic-analysis-contract.md) | Defines stable-ID Unlinked records, semantic product value types, action data mutations, relations, rules, and the structured diagnostic boundary shared by frontends. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `semantic-source-provenance-loss` | `compiler-frontend`, `unlinked-ir`, `semantic-analysis`, `locale-independence`, `conformance` |

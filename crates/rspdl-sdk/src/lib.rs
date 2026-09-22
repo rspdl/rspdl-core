@@ -289,6 +289,29 @@ mod tests {
     }
 
     #[test]
+    fn compile_response_exposes_workflow_contracts() {
+        let text = include_str!(
+            "../../../conformance/ko-KR/workflow-data/normal-alternative-producers/input.rspdl"
+        );
+        let request = json!({
+            "schema_version": WIRE_SCHEMA_VERSION,
+            "locale": SUPPORTED_LOCALE,
+            "sources": [source("workflow.rspdl", text)],
+        });
+        let response: Value =
+            serde_json::from_str(&compile_json(&request.to_string()).unwrap()).unwrap();
+        let workflow = &response["result"]["files"][0]["module"]["workflows"][0];
+        assert_eq!(workflow["id"], "booking.complete_booking");
+        assert_eq!(workflow["start_screen_id"], "booking.select_route");
+        assert_eq!(workflow["acquisitions"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            workflow["completions"][0]["required_data"][0]["field_id"],
+            "booking.booking.contact"
+        );
+        assert_eq!(response["result"]["files"][0]["diagnostics"], json!([]));
+    }
+
+    #[test]
     fn compile_is_independent_of_source_input_order() {
         let first = json!({
             "schema_version": WIRE_SCHEMA_VERSION,

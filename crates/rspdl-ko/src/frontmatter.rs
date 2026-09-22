@@ -12,7 +12,8 @@ use std::borrow::Cow;
 
 use crate::ast::{
     CategoryAst, FrontmatterAst, FrontmatterRefAst, LayoutElementAst, NamedIdAst, ScreenLayoutAst,
-    ScreenLayoutKindAst, ScreenPathAst,
+    ScreenLayoutKindAst, ScreenPathAst, WorkflowAcquisitionAst, WorkflowAst, WorkflowCompletionAst,
+    WorkflowDataAst,
 };
 use crate::{Diagnostic, Span};
 
@@ -35,6 +36,7 @@ const KEY_MODULE: &str = "모듈";
 const KEY_INFORMATION_ARCHITECTURE: &str = "정보구조";
 const KEY_SCREENS: &str = "화면";
 const KEY_PATHS: &str = "흐름";
+const KEY_WORKFLOWS: &str = "업무";
 
 pub(crate) struct FrontmatterOutput<'a> {
     pub(crate) frontmatter: Option<FrontmatterAst>,
@@ -1009,6 +1011,7 @@ fn build_frontmatter(
         information_architecture: Vec::new(),
         screens: Vec::new(),
         paths: Vec::new(),
+        workflows: Vec::new(),
         span,
     };
 
@@ -1031,11 +1034,170 @@ fn build_frontmatter(
             KEY_PATHS => {
                 frontmatter.paths = build_paths(&entry.value, diagnostics);
             }
+            KEY_WORKFLOWS => {
+                frontmatter.workflows = build_workflows(&entry.value, diagnostics);
+            }
             _ => diagnostics.push(unknown_key(&entry.key)),
         }
     }
 
     frontmatter
+}
+
+fn build_workflows(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Vec<WorkflowAst> {
+    let mut workflows = Vec::new();
+    for entry in expect_mapping(value, "workflow_mapping", diagnostics) {
+        if is_rejected(&entry.value) {
+            continue;
+        }
+        let Some(declaration) = read_named_id(&entry.key, diagnostics) else {
+            continue;
+        };
+        let entries = expect_mapping(&entry.value, "workflow_entry", diagnostics);
+        for child in entries {
+            if !matches!(
+                child.key.text.as_str(),
+                "시작" | "초기 데이터" | "획득" | "완료"
+            ) {
+                diagnostics.push(unknown_key(&child.key));
+            }
+        }
+        let Some(start) =
+            find(entries, "시작").and_then(|value| read_ref_value(value, diagnostics))
+        else {
+            if !has_rejected(entries) {
+                diagnostics.push(structure_error(entry.value.span(), "시작"));
+            }
+            continue;
+        };
+        let initial_data = find(entries, "초기 데이터")
+            .map(|value| build_workflow_data(value, diagnostics))
+            .unwrap_or_default();
+        let acquisitions = find(entries, "획득")
+            .map(|value| build_workflow_acquisitions(value, diagnostics))
+            .unwrap_or_default();
+        let Some(completions_value) = find(entries, "완료") else {
+            if !has_rejected(entries) {
+                diagnostics.push(structure_error(entry.value.span(), "완료"));
+            }
+            continue;
+        };
+        let completions = build_workflow_completions(completions_value, diagnostics);
+        if completions.is_empty() && !is_rejected(completions_value) {
+            diagnostics.push(structure_error(
+                completions_value.span(),
+                "하나 이상의 완료",
+            ));
+            continue;
+        }
+        workflows.push(WorkflowAst {
+            declaration,
+            start_screen: start,
+            initial_data,
+            acquisitions,
+            completions,
+            span: entry.value.span(),
+        });
+    }
+    workflows
+}
+
+fn build_workflow_acquisitions(
+    value: &FmValue,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<WorkflowAcquisitionAst> {
+    let mut acquisitions = Vec::new();
+    for item in expect_sequence(value, "workflow_acquisition_sequence", diagnostics) {
+        let entries = expect_mapping(item, "workflow_acquisition", diagnostics);
+        for entry in entries {
+            if !matches!(entry.key.text.as_str(), "출발" | "데이터") {
+                diagnostics.push(unknown_key(&entry.key));
+            }
+        }
+        let source = find(entries, "출발").and_then(|value| read_element_path(value, diagnostics));
+        let data = find(entries, "데이터").map(|value| build_workflow_data(value, diagnostics));
+        match (source, data) {
+            (Some((source_screen, source_element)), Some(data)) => {
+                acquisitions.push(WorkflowAcquisitionAst {
+                    source_screen,
+                    source_element,
+                    data,
+                    span: item.span(),
+                })
+            }
+            _ if !has_rejected(entries) => {
+                diagnostics.push(structure_error(item.span(), "출발, 데이터"))
+            }
+            _ => {}
+        }
+    }
+    acquisitions
+}
+
+fn build_workflow_completions(
+    value: &FmValue,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<WorkflowCompletionAst> {
+    let mut completions = Vec::new();
+    for item in expect_sequence(value, "workflow_completion_sequence", diagnostics) {
+        let entries = expect_mapping(item, "workflow_completion", diagnostics);
+        for entry in entries {
+            if !matches!(entry.key.text.as_str(), "화면" | "필수 데이터") {
+                diagnostics.push(unknown_key(&entry.key));
+            }
+        }
+        let Some(screen) =
+            find(entries, "화면").and_then(|value| read_ref_value(value, diagnostics))
+        else {
+            if !has_rejected(entries) {
+                diagnostics.push(structure_error(item.span(), "화면"));
+            }
+            continue;
+        };
+        let Some(required) = find(entries, "필수 데이터") else {
+            if !has_rejected(entries) {
+                diagnostics.push(structure_error(item.span(), "필수 데이터"));
+            }
+            continue;
+        };
+        let required_data = build_workflow_data(required, diagnostics);
+        if required_data.is_empty() && !is_rejected(required) {
+            diagnostics.push(structure_error(required.span(), "하나 이상의 필수 데이터"));
+            continue;
+        }
+        completions.push(WorkflowCompletionAst {
+            screen,
+            required_data,
+            span: item.span(),
+        });
+    }
+    completions
+}
+
+fn build_workflow_data(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Vec<WorkflowDataAst> {
+    let mut data = Vec::new();
+    for item in expect_sequence(value, "workflow_data_sequence", diagnostics) {
+        let entries = expect_mapping(item, "workflow_data", diagnostics);
+        for entry in entries {
+            if !matches!(entry.key.text.as_str(), "모델" | "필드") {
+                diagnostics.push(unknown_key(&entry.key));
+            }
+        }
+        let model = find(entries, "모델").and_then(|value| read_ref_value(value, diagnostics));
+        let field = find(entries, "필드").and_then(|value| read_ref_value(value, diagnostics));
+        match (model, field) {
+            (Some(model), Some(field)) => data.push(WorkflowDataAst {
+                model,
+                field,
+                span: item.span(),
+            }),
+            _ if !has_rejected(entries) => {
+                diagnostics.push(structure_error(item.span(), "모델, 필드"))
+            }
+            _ => {}
+        }
+    }
+    data
 }
 
 /// 분류 나무. 깊이는 여기서 강제하지 않는다 — 관례를 벗어났는지는 의미 규칙이 아니라
