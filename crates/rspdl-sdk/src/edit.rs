@@ -283,6 +283,14 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
             if let Some(target) = target_screen_id {
                 validate_screen(document, target)?;
             }
+            let source_screen_ref = screen_source_reference(document, source_screen_id)?;
+            let target_screen_ref = target_screen_id
+                .as_deref()
+                .map(|target| screen_source_reference(document, target))
+                .transpose()?;
+            let outcome_ref = outcome_id.as_deref().map(|outcome| {
+                normalize_outcome_reference(document, source_screen_id, source_element_id, outcome)
+            });
             let duplicate = document
                 .frontmatter
                 .as_ref()
@@ -297,7 +305,13 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
                             path.target_screen.as_ref(),
                             target_screen_id.as_deref(),
                         )
-                        && path.outcome.as_ref().map(|v| v.text.as_str()) == outcome_id.as_deref()
+                        && option_outcome_ref_matches(
+                            document,
+                            source_screen_id,
+                            source_element_id,
+                            path.outcome.as_ref(),
+                            outcome_id.as_deref(),
+                        )
                         && edit_handler_matches(path.handler.as_ref(), handler.as_ref())
                         && path.label == *label
                 });
@@ -311,10 +325,10 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
                 .paths
                 .push(ScreenPathAst {
                     id: None,
-                    source_screen: reference(source_screen_id),
+                    source_screen: reference(&source_screen_ref),
                     source_element: reference(source_element_id),
-                    target_screen: target_screen_id.as_ref().map(|v| reference(v)),
-                    outcome: outcome_id.as_ref().map(|v| reference(v)),
+                    target_screen: target_screen_ref.as_deref().map(reference),
+                    outcome: outcome_ref.as_deref().map(reference),
                     handler: handler.as_ref().map(to_handler_ast),
                     label: label.clone(),
                     span: empty_span(),
@@ -349,7 +363,13 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
                             path.target_screen.as_ref(),
                             target_screen_id.as_deref(),
                         )
-                        && path.outcome.as_ref().map(|v| v.text.as_str()) == outcome_id.as_deref()
+                        && option_outcome_ref_matches(
+                            document,
+                            source_screen_id,
+                            source_element_id,
+                            path.outcome.as_ref(),
+                            outcome_id.as_deref(),
+                        )
                         && edit_handler_matches(path.handler.as_ref(), handler.as_ref())
                         && path.label == *label
                 })
@@ -363,28 +383,33 @@ fn apply(document: &mut DocumentAst, operation: &EditOperation) -> EditResult {
                     format!("screen path matched {matching} times"),
                 ));
             }
-            let source_canonical = source_screen_id.clone();
-            let target_canonical = target_screen_id.clone();
-            let screen_names = screen_identity_map(document);
-            let frontmatter = document.frontmatter.as_mut().unwrap();
-            let before = frontmatter.paths.len();
-            frontmatter.paths.retain(|path| {
-                !(screen_ref_matches_map(&screen_names, &path.source_screen, &source_canonical)
-                    && path.source_element.text == *source_element_id
-                    && option_screen_ref_matches_map(
-                        &screen_names,
-                        path.target_screen.as_ref(),
-                        target_canonical.as_deref(),
-                    )
-                    && path.outcome.as_ref().map(|v| v.text.as_str()) == outcome_id.as_deref()
-                    && edit_handler_matches(path.handler.as_ref(), handler.as_ref())
-                    && path.label == *label)
-            });
-            if frontmatter.paths.len() == before {
-                Err(("RSPDL-EDIT-NOT-FOUND", "screen path not found".into()))
-            } else {
-                Ok(())
-            }
+            let index = document
+                .frontmatter
+                .as_ref()
+                .unwrap()
+                .paths
+                .iter()
+                .position(|path| {
+                    screen_ref_matches(document, &path.source_screen, source_screen_id)
+                        && path.source_element.text == *source_element_id
+                        && option_screen_ref_matches(
+                            document,
+                            path.target_screen.as_ref(),
+                            target_screen_id.as_deref(),
+                        )
+                        && option_outcome_ref_matches(
+                            document,
+                            source_screen_id,
+                            source_element_id,
+                            path.outcome.as_ref(),
+                            outcome_id.as_deref(),
+                        )
+                        && edit_handler_matches(path.handler.as_ref(), handler.as_ref())
+                        && path.label == *label
+                })
+                .expect("exactly one matching path was counted");
+            document.frontmatter.as_mut().unwrap().paths.remove(index);
+            Ok(())
         }
         EditOperation::Insert {
             screen_id,
@@ -1174,6 +1199,112 @@ fn reference(value: &str) -> FrontmatterRefAst {
         span: empty_span(),
     }
 }
+
+fn screen_source_reference(
+    document: &DocumentAst,
+    canonical: &str,
+) -> Result<String, (&'static str, String)> {
+    let module_id = &document.module.declaration.id;
+    document
+        .declarations
+        .iter()
+        .find_map(|declaration| match declaration {
+            rspdl_ko::DeclarationAst::Screen(screen)
+                if canonical == format!("{module_id}.{}", screen.declaration.id) =>
+            {
+                Some(if screen.declaration.name.is_empty() {
+                    screen.declaration.id.clone()
+                } else {
+                    screen.declaration.name.clone()
+                })
+            }
+            _ => None,
+        })
+        .ok_or((
+            "RSPDL-EDIT-SCREEN-NOT-FOUND",
+            format!("screen {canonical} not found"),
+        ))
+}
+
+fn normalize_outcome_reference(
+    document: &DocumentAst,
+    source_screen_id: &str,
+    source_element_id: &str,
+    reference: &str,
+) -> String {
+    let Some(elements) = screen_elements(document, source_screen_id).ok() else {
+        return reference.to_owned();
+    };
+    let Some(LayoutElementAst::Button {
+        action: Some(action),
+        ..
+    }) = find_element(elements, source_element_id)
+    else {
+        return reference.to_owned();
+    };
+    let Some(action_id) = canonical_action_id(document, &action.text) else {
+        return reference.to_owned();
+    };
+    document
+        .frontmatter
+        .as_ref()
+        .unwrap()
+        .action_outcomes
+        .iter()
+        .filter(|group| {
+            canonical_action_id(document, &group.action.text).as_deref() == Some(&action_id)
+        })
+        .flat_map(|group| &group.outcomes)
+        .find(|outcome| {
+            outcome.id == reference || format!("{action_id}.{}", outcome.id) == reference
+        })
+        .map_or_else(|| reference.to_owned(), |outcome| outcome.id.clone())
+}
+
+fn canonical_action_id(document: &DocumentAst, reference: &str) -> Option<String> {
+    let module_id = &document.module.declaration.id;
+    let matches = document
+        .declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            rspdl_ko::DeclarationAst::Action(action) => {
+                let canonical = format!("{module_id}.{}", action.declaration.id);
+                (reference == action.declaration.name
+                    || reference == action.declaration.id
+                    || reference == canonical)
+                    .then_some(canonical)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [canonical] => Some(canonical.clone()),
+        _ => None,
+    }
+}
+
+fn option_outcome_ref_matches(
+    document: &DocumentAst,
+    source_screen_id: &str,
+    source_element_id: &str,
+    value: Option<&FrontmatterRefAst>,
+    expected: Option<&str>,
+) -> bool {
+    match (value, expected) {
+        (Some(value), Some(expected)) => {
+            normalize_outcome_reference(document, source_screen_id, source_element_id, &value.text)
+                == normalize_outcome_reference(
+                    document,
+                    source_screen_id,
+                    source_element_id,
+                    expected,
+                )
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
 fn screen_identity_map(document: &DocumentAst) -> Vec<(String, String)> {
     let module_id = &document.module.declaration.id;
     let mut identities = document
@@ -1207,18 +1338,6 @@ fn option_screen_ref_matches(
 ) -> bool {
     match (reference, expected) {
         (Some(r), Some(e)) => screen_ref_matches(document, r, e),
-        (None, None) => true,
-        _ => false,
-    }
-}
-
-fn option_screen_ref_matches_map(
-    identities: &[(String, String)],
-    reference: Option<&FrontmatterRefAst>,
-    expected: Option<&str>,
-) -> bool {
-    match (reference, expected) {
-        (Some(r), Some(e)) => screen_ref_matches_map(identities, r, e),
         (None, None) => true,
         _ => false,
     }
@@ -1282,6 +1401,8 @@ mod tests {
     const SOURCE: &str = include_str!(
         "../../../conformance/ko-KR/frontmatter-structure/boundary-stable-element-ids/input.rspdl"
     );
+    const OUTCOME_SOURCE: &str =
+        include_str!("../../../conformance/ko-KR/action-outcomes/normal-lookup/input.rspdl");
 
     #[test]
     fn every_structured_operation_uses_explicit_ids() {
@@ -1555,6 +1676,183 @@ mod tests {
                 .iter()
                 .any(|path| path.outcome.as_ref().is_some_and(|v| v.text == "ok"))
         );
+    }
+
+    #[test]
+    fn canonical_outcome_disconnect_matches_authored_id_and_keeps_other_outcomes() {
+        let mut document = parse(OUTCOME_SOURCE).document.unwrap();
+        let missing_handler = EditHandler {
+            kind: EditHandlerKind::Message,
+            id: "missing".into(),
+            content: Some("예약을 찾지 못했습니다.".into()),
+        };
+
+        assert_eq!(
+            apply(
+                &mut document,
+                &EditOperation::Connect {
+                    source_screen_id: "booking.lookup_screen".into(),
+                    source_element_id: "lookup".into(),
+                    target_screen_id: None,
+                    outcome_id: Some("booking.lookup.not_found".into()),
+                    handler: Some(missing_handler.clone()),
+                    label: None,
+                },
+            )
+            .unwrap_err()
+            .0,
+            "RSPDL-EDIT-UNCHANGED"
+        );
+
+        apply(
+            &mut document,
+            &EditOperation::Disconnect {
+                source_screen_id: "booking.lookup_screen".into(),
+                source_element_id: "lookup".into(),
+                target_screen_id: None,
+                outcome_id: Some("booking.lookup.not_found".into()),
+                handler: Some(missing_handler),
+                label: None,
+            },
+        )
+        .unwrap();
+
+        let paths = &document.frontmatter.unwrap().paths;
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].outcome.as_ref().unwrap().text, "found");
+        assert_eq!(
+            paths[0].target_screen.as_ref().unwrap().text,
+            "예약 완료 화면"
+        );
+    }
+
+    #[test]
+    fn canonical_outcome_matching_is_scoped_to_the_source_button_action() {
+        let source = r#"---
+모듈: 작업(flow)
+화면:
+  작업 화면:
+    레이아웃:
+      - 버튼: { id: lookup_button, 이름: "조회", 행동: 조회 }
+      - 버튼: { id: save_button, 이름: "저장", 행동: 저장 }
+행동 결과:
+  조회:
+    - id: failed
+      유형: 실패
+  저장:
+    - id: failed
+      유형: 실패
+흐름:
+  - 출발: 작업 화면.lookup_button
+    결과: failed
+    처리: { 종류: 메시지, id: failed }
+  - 출발: 작업 화면.save_button
+    결과: failed
+    처리: { 종류: 메시지, id: failed }
+---
+
+항목(item)은 다음 필드들로 구성되어 있다.
+    값(value): 필수 문자열
+
+조회(lookup)는 행동이다.
+저장(save)은 행동이다.
+작업 화면(work_screen)에서는 항목의 값을 조회할 수 있다.
+"#;
+        let parsed = parse(source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let mut document = parsed.document.unwrap();
+        let handler = EditHandler {
+            kind: EditHandlerKind::Message,
+            id: "failed".into(),
+            content: None,
+        };
+
+        assert_eq!(
+            apply(
+                &mut document,
+                &EditOperation::Disconnect {
+                    source_screen_id: "flow.work_screen".into(),
+                    source_element_id: "lookup_button".into(),
+                    target_screen_id: None,
+                    outcome_id: Some("flow.save.failed".into()),
+                    handler: Some(handler.clone()),
+                    label: None,
+                },
+            )
+            .unwrap_err()
+            .0,
+            "RSPDL-EDIT-NOT-FOUND"
+        );
+        assert_eq!(document.frontmatter.as_ref().unwrap().paths.len(), 2);
+
+        apply(
+            &mut document,
+            &EditOperation::Disconnect {
+                source_screen_id: "flow.work_screen".into(),
+                source_element_id: "lookup_button".into(),
+                target_screen_id: None,
+                outcome_id: Some("flow.lookup.failed".into()),
+                handler: Some(handler),
+                label: None,
+            },
+        )
+        .unwrap();
+        let paths = &document.frontmatter.unwrap().paths;
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].source_element.text, "save_button");
+    }
+
+    #[test]
+    fn canonical_connect_writes_valid_surface_refs_and_returns_its_compilation() {
+        let mut document = parse(OUTCOME_SOURCE).document.unwrap();
+        document
+            .frontmatter
+            .as_mut()
+            .unwrap()
+            .paths
+            .retain(|path| path.id.as_deref() != Some("booking.found_path"));
+        let source = format_document(&document).unwrap();
+        let response = edit(EditRequest {
+            schema_version: EDIT_SCHEMA_VERSION,
+            locale: SUPPORTED_LOCALE.into(),
+            source: EditSource {
+                path: "normal-lookup.rspdl".into(),
+                text: source.clone(),
+            },
+            expected_source_hash: source_hash(&source),
+            edit: EditOperation::Connect {
+                source_screen_id: "booking.lookup_screen".into(),
+                source_element_id: "lookup".into(),
+                target_screen_id: Some("booking.done_screen".into()),
+                outcome_id: Some("booking.lookup.found".into()),
+                handler: None,
+                label: None,
+            },
+        });
+        assert!(matches!(response.outcome, EditOutcome::Applied));
+        let candidate = response.candidate_text.unwrap();
+        assert!(candidate.contains("출발: 예약 화면.lookup"));
+        assert!(candidate.contains("결과: found"));
+        assert!(candidate.contains("도착: 예약 완료 화면"));
+        assert!(!candidate.contains("출발: booking.lookup_screen"));
+        assert!(!candidate.contains("도착: booking.done_screen"));
+
+        let reparsed = parse(&candidate);
+        assert!(
+            reparsed.diagnostics.is_empty(),
+            "{:?}",
+            reparsed.diagnostics
+        );
+        assert_eq!(
+            format_document(&reparsed.document.unwrap()).unwrap(),
+            candidate
+        );
+        let independent = serde_json::to_value(compile_ko_files(vec![Source::new(
+            "normal-lookup.rspdl",
+            candidate,
+        )]))
+        .unwrap();
+        assert_eq!(response.compilation, Some(independent));
     }
 
     #[test]
