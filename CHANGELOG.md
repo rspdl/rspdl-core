@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/rspdl/rspdl-core/compare/rspdl-v0.1.3...rspdl-v0.1.4) (2026-09-23)
+
+
+### Features
+
+* add planning contracts and structured screen editing ([9edbdee](https://github.com/rspdl/rspdl-core/commit/9edbdee6dded7d0ba97e18946e2337c35d599b55))
+
 ## [0.1.3](https://github.com/rspdl/rspdl-core/compare/rspdl-v0.1.2...rspdl-v0.1.3) (2026-09-21)
 
 
