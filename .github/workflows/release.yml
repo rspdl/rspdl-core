@@ -6,15 +6,27 @@ on:
       - main
   workflow_dispatch:
     inputs:
-      artifact_run_id:
-        description: Release workflow run containing the Node.js artifacts to recover
+      repair_target:
+        description: Registry publication to repair from an existing Release run
         required: true
+        default: npm
+        type: choice
+        options:
+          - npm
+          - pypi
+      artifact_run_id:
+        description: Release workflow run containing the artifacts to recover
+        required: true
+        type: string
+      release_version:
+        description: Exact X.Y.Z release version (required for PyPI repair)
+        required: false
         type: string
 
 permissions: {}
 
 concurrency:
-  group: release-main
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.repair_target == 'pypi' && 'release-repair-pypi' || 'release-main' }}
   cancel-in-progress: false
 
 jobs:
@@ -222,9 +234,89 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ env.NPM_BOOTSTRAP_TOKEN }}
 
+  validate-pypi-repair:
+    name: Validate PyPI repair artifacts
+    if: github.event_name == 'workflow_dispatch' && inputs.repair_target == 'pypi'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out repair validator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - name: Validate original release provenance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RSPDL_REPAIR_RUN_ID: ${{ inputs.artifact_run_id }}
+          RSPDL_REPAIR_VERSION: ${{ inputs.release_version }}
+        run: python3 scripts/validate_release_repair.py provenance
+      - name: Download Python wheels from the original release run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: python-*
+          path: dist
+          merge-multiple: true
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+      - name: Validate wheel contents and platform coverage
+        env:
+          RSPDL_REPAIR_VERSION: ${{ inputs.release_version }}
+          RSPDL_REPAIR_WHEEL_DIR: dist
+        run: python3 scripts/validate_release_repair.py wheels
+      - name: Preserve validated wheels for the protected publish job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: validated-python-wheels
+          path: dist/*.whl
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 1
+
+  repair-pypi:
+    name: Repair PyPI release from validated artifacts
+    if: github.event_name == 'workflow_dispatch' && inputs.repair_target == 'pypi'
+    needs: validate-pypi-repair
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repair validator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - name: Download validated wheels
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: validated-python-wheels
+          path: dist
+      - name: Revalidate wheels after protected-environment admission
+        env:
+          RSPDL_REPAIR_VERSION: ${{ inputs.release_version }}
+          RSPDL_REPAIR_WHEEL_DIR: dist
+        run: python3 scripts/validate_release_repair.py wheels
+      - name: Publish only missing wheels with Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true
+
   repair-npm:
     name: Repair npm release from existing artifacts
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.repair_target == 'npm'
     runs-on: ubuntu-latest
     environment: npm
     permissions:
