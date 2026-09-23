@@ -11,8 +11,11 @@
 use std::borrow::Cow;
 
 use crate::ast::{
-    CategoryAst, FrontmatterAst, FrontmatterRefAst, LayoutElementAst, NamedIdAst, ScreenLayoutAst,
-    ScreenLayoutKindAst, ScreenPathAst,
+    ActionOutcomeAst, ActionOutcomesAst, CategoryAst, FrontmatterAst, FrontmatterRefAst,
+    HandlerKindAst, LayoutElementAst, LookupResultAst, NamedIdAst, OutcomeDataAst,
+    OutcomeDataSourceAst, OutcomeKindAst, RecoveryAst, RecoveryKindAst, SameScreenHandlerAst,
+    ScreenLayoutAst, ScreenLayoutKindAst, ScreenPathAst, ScreenPermissionAst,
+    WorkflowAcquisitionAst, WorkflowAst, WorkflowCompletionAst, WorkflowDataAst,
 };
 use crate::{Diagnostic, Span};
 
@@ -35,6 +38,9 @@ const KEY_MODULE: &str = "모듈";
 const KEY_INFORMATION_ARCHITECTURE: &str = "정보구조";
 const KEY_SCREENS: &str = "화면";
 const KEY_PATHS: &str = "흐름";
+const KEY_WORKFLOWS: &str = "업무";
+const KEY_ACTION_OUTCOMES: &str = "행동 결과";
+const KEY_LOOKUP_RESULTS: &str = "조회 결과";
 
 pub(crate) struct FrontmatterOutput<'a> {
     pub(crate) frontmatter: Option<FrontmatterAst>,
@@ -994,6 +1000,15 @@ fn read_stable_id(scalar: &FmScalar, diagnostics: &mut Vec<Diagnostic>) -> Optio
     Some(scalar.text.clone())
 }
 
+fn read_path_id(scalar: &FmScalar, diagnostics: &mut Vec<Diagnostic>) -> Option<String> {
+    if scalar.quoted || scalar.text.split('.').any(|part| !is_id_like(part)) {
+        diagnostics.push(scalar_error(scalar.span, "path_id"));
+        None
+    } else {
+        Some(scalar.text.clone())
+    }
+}
+
 fn read_text_value(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<String> {
     let scalar = expect_scalar(value, "text", diagnostics)?;
     Some(scalar.text.clone())
@@ -1009,6 +1024,9 @@ fn build_frontmatter(
         information_architecture: Vec::new(),
         screens: Vec::new(),
         paths: Vec::new(),
+        action_outcomes: Vec::new(),
+        lookup_results: Vec::new(),
+        workflows: Vec::new(),
         span,
     };
 
@@ -1031,11 +1049,176 @@ fn build_frontmatter(
             KEY_PATHS => {
                 frontmatter.paths = build_paths(&entry.value, diagnostics);
             }
+            KEY_WORKFLOWS => {
+                frontmatter.workflows = build_workflows(&entry.value, diagnostics);
+            }
+            KEY_ACTION_OUTCOMES => {
+                frontmatter.action_outcomes = build_action_outcomes(&entry.value, diagnostics)
+            }
+            KEY_LOOKUP_RESULTS => {
+                frontmatter.lookup_results = build_lookup_results(&entry.value, diagnostics)
+            }
             _ => diagnostics.push(unknown_key(&entry.key)),
         }
     }
 
     frontmatter
+}
+
+fn build_workflows(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Vec<WorkflowAst> {
+    let mut workflows = Vec::new();
+    for entry in expect_mapping(value, "workflow_mapping", diagnostics) {
+        if is_rejected(&entry.value) {
+            continue;
+        }
+        let Some(declaration) = read_named_id(&entry.key, diagnostics) else {
+            continue;
+        };
+        let entries = expect_mapping(&entry.value, "workflow_entry", diagnostics);
+        for child in entries {
+            if !matches!(
+                child.key.text.as_str(),
+                "시작" | "초기 데이터" | "획득" | "완료"
+            ) {
+                diagnostics.push(unknown_key(&child.key));
+            }
+        }
+        let Some(start) =
+            find(entries, "시작").and_then(|value| read_ref_value(value, diagnostics))
+        else {
+            if !has_rejected(entries) {
+                diagnostics.push(structure_error(entry.value.span(), "시작"));
+            }
+            continue;
+        };
+        let initial_data = find(entries, "초기 데이터")
+            .map(|value| build_workflow_data(value, diagnostics))
+            .unwrap_or_default();
+        let acquisitions = find(entries, "획득")
+            .map(|value| build_workflow_acquisitions(value, diagnostics))
+            .unwrap_or_default();
+        let Some(completions_value) = find(entries, "완료") else {
+            if !has_rejected(entries) {
+                diagnostics.push(structure_error(entry.value.span(), "완료"));
+            }
+            continue;
+        };
+        let completions = build_workflow_completions(completions_value, diagnostics);
+        if completions.is_empty() && !is_rejected(completions_value) {
+            diagnostics.push(structure_error(
+                completions_value.span(),
+                "하나 이상의 완료",
+            ));
+            continue;
+        }
+        workflows.push(WorkflowAst {
+            declaration,
+            start_screen: start,
+            initial_data,
+            acquisitions,
+            completions,
+            span: entry.value.span(),
+        });
+    }
+    workflows
+}
+
+fn build_workflow_acquisitions(
+    value: &FmValue,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<WorkflowAcquisitionAst> {
+    let mut acquisitions = Vec::new();
+    for item in expect_sequence(value, "workflow_acquisition_sequence", diagnostics) {
+        let entries = expect_mapping(item, "workflow_acquisition", diagnostics);
+        for entry in entries {
+            if !matches!(entry.key.text.as_str(), "출발" | "데이터") {
+                diagnostics.push(unknown_key(&entry.key));
+            }
+        }
+        let source = find(entries, "출발").and_then(|value| read_element_path(value, diagnostics));
+        let data = find(entries, "데이터").map(|value| build_workflow_data(value, diagnostics));
+        match (source, data) {
+            (Some((source_screen, source_element)), Some(data)) => {
+                acquisitions.push(WorkflowAcquisitionAst {
+                    source_screen,
+                    source_element,
+                    data,
+                    span: item.span(),
+                })
+            }
+            _ if !has_rejected(entries) => {
+                diagnostics.push(structure_error(item.span(), "출발, 데이터"))
+            }
+            _ => {}
+        }
+    }
+    acquisitions
+}
+
+fn build_workflow_completions(
+    value: &FmValue,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<WorkflowCompletionAst> {
+    let mut completions = Vec::new();
+    for item in expect_sequence(value, "workflow_completion_sequence", diagnostics) {
+        let entries = expect_mapping(item, "workflow_completion", diagnostics);
+        for entry in entries {
+            if !matches!(entry.key.text.as_str(), "화면" | "필수 데이터") {
+                diagnostics.push(unknown_key(&entry.key));
+            }
+        }
+        let Some(screen) =
+            find(entries, "화면").and_then(|value| read_ref_value(value, diagnostics))
+        else {
+            if !has_rejected(entries) {
+                diagnostics.push(structure_error(item.span(), "화면"));
+            }
+            continue;
+        };
+        let Some(required) = find(entries, "필수 데이터") else {
+            if !has_rejected(entries) {
+                diagnostics.push(structure_error(item.span(), "필수 데이터"));
+            }
+            continue;
+        };
+        let required_data = build_workflow_data(required, diagnostics);
+        if required_data.is_empty() && !is_rejected(required) {
+            diagnostics.push(structure_error(required.span(), "하나 이상의 필수 데이터"));
+            continue;
+        }
+        completions.push(WorkflowCompletionAst {
+            screen,
+            required_data,
+            span: item.span(),
+        });
+    }
+    completions
+}
+
+fn build_workflow_data(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Vec<WorkflowDataAst> {
+    let mut data = Vec::new();
+    for item in expect_sequence(value, "workflow_data_sequence", diagnostics) {
+        let entries = expect_mapping(item, "workflow_data", diagnostics);
+        for entry in entries {
+            if !matches!(entry.key.text.as_str(), "모델" | "필드") {
+                diagnostics.push(unknown_key(&entry.key));
+            }
+        }
+        let model = find(entries, "모델").and_then(|value| read_ref_value(value, diagnostics));
+        let field = find(entries, "필드").and_then(|value| read_ref_value(value, diagnostics));
+        match (model, field) {
+            (Some(model), Some(field)) => data.push(WorkflowDataAst {
+                model,
+                field,
+                span: item.span(),
+            }),
+            _ if !has_rejected(entries) => {
+                diagnostics.push(structure_error(item.span(), "모델, 필드"))
+            }
+            _ => {}
+        }
+    }
+    data
 }
 
 /// 분류 나무. 깊이는 여기서 강제하지 않는다 — 관례를 벗어났는지는 의미 규칙이 아니라
@@ -1089,6 +1272,8 @@ fn build_screen_layouts(
         };
         let mut layout = ScreenLayoutAst {
             screen,
+            roles: Vec::new(),
+            permissions: Vec::new(),
             kind: None,
             elements: Vec::new(),
             span: entry.key.span,
@@ -1105,6 +1290,10 @@ fn build_screen_layouts(
                 }
                 "레이아웃" => {
                     layout.elements = build_elements(&field.value, diagnostics);
+                }
+                "역할" => layout.roles = read_ref_list(&field.value, diagnostics),
+                "권한" => {
+                    layout.permissions = build_screen_permissions(&field.value, diagnostics)
                 }
                 _ => diagnostics.push(unknown_key(&field.key)),
             }
@@ -1152,29 +1341,38 @@ fn build_element(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<L
 
     let span = entry.key.span;
     match entry.key.text.as_str() {
-        LAYOUT_HEADER => Some(LayoutElementAst::Header {
-            children: build_elements(&entry.value, diagnostics),
-            span,
-        }),
-        LAYOUT_SECTION => Some(LayoutElementAst::Section {
-            children: build_elements(&entry.value, diagnostics),
-            span,
-        }),
-        LAYOUT_HEADING => Some(LayoutElementAst::Heading {
-            text: read_text_value(&entry.value, diagnostics)?,
-            span,
-        }),
-        LAYOUT_PLACEHOLDER => Some(LayoutElementAst::Placeholder {
-            text: read_text_value(&entry.value, diagnostics)?,
-            span,
-        }),
-        LAYOUT_INPUT => Some(LayoutElementAst::Input {
-            field: read_ref_value(&entry.value, diagnostics)?,
-            span,
-        }),
+        LAYOUT_HEADER => {
+            let (id, body) = element_container(&entry.value, "자식", diagnostics);
+            Some(LayoutElementAst::Header {
+                id,
+                children: build_elements(body, diagnostics),
+                span,
+            })
+        }
+        LAYOUT_SECTION => {
+            let (id, body) = element_container(&entry.value, "자식", diagnostics);
+            Some(LayoutElementAst::Section {
+                id,
+                children: build_elements(body, diagnostics),
+                span,
+            })
+        }
+        LAYOUT_HEADING => {
+            let (id, text) = element_scalar(&entry.value, "글", diagnostics)?;
+            Some(LayoutElementAst::Heading { id, text, span })
+        }
+        LAYOUT_PLACEHOLDER => {
+            let (id, text) = element_scalar(&entry.value, "이름", diagnostics)?;
+            Some(LayoutElementAst::Placeholder { id, text, span })
+        }
+        LAYOUT_INPUT => {
+            let (id, field) = element_reference(&entry.value, "필드", diagnostics)?;
+            Some(LayoutElementAst::Input { id, field, span })
+        }
         LAYOUT_FORM => {
+            let (id, body) = element_container(&entry.value, "입력", diagnostics);
             let mut inputs = Vec::new();
-            for child in build_elements(&entry.value, diagnostics) {
+            for child in build_elements(body, diagnostics) {
                 match child {
                     LayoutElementAst::Input { .. } => inputs.push(child),
                     // 폼 안에는 입력만 온다. 다른 어휘를 담으면 폼이 무엇을 모으는 자리인지가
@@ -1182,17 +1380,19 @@ fn build_element(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<L
                     other => diagnostics.push(structure_error(element_span(&other), "입력")),
                 }
             }
-            Some(LayoutElementAst::Form { inputs, span })
+            Some(LayoutElementAst::Form { id, inputs, span })
         }
         LAYOUT_LIST => {
             let fields = expect_mapping(&entry.value, "list_body", diagnostics);
             let mut model = None;
             let mut field_refs = Vec::new();
+            let mut id = None;
             for field in fields {
                 if is_rejected(&field.value) {
                     continue;
                 }
                 match field.key.text.as_str() {
+                    "id" => id = read_element_id(&field.value, diagnostics),
                     "모델" => model = read_ref_value(&field.value, diagnostics),
                     "필드" => {
                         for item in expect_sequence(&field.value, "field_sequence", diagnostics) {
@@ -1213,6 +1413,7 @@ fn build_element(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<L
                 return None;
             };
             Some(LayoutElementAst::List {
+                id,
                 model,
                 fields: field_refs,
                 span,
@@ -1274,6 +1475,74 @@ fn build_element(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<L
     }
 }
 
+fn read_element_id(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<String> {
+    expect_scalar(value, "stable_id", diagnostics)
+        .and_then(|scalar| read_stable_id(scalar, diagnostics))
+}
+
+fn element_container<'a>(
+    value: &'a FmValue,
+    child_key: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> (Option<String>, &'a FmValue) {
+    if matches!(value, FmValue::Sequence { .. }) {
+        return (None, value);
+    }
+    let fields = expect_mapping(value, "element_body", diagnostics);
+    let mut id = None;
+    let mut body = None;
+    for field in fields {
+        match field.key.text.as_str() {
+            "id" => id = read_element_id(&field.value, diagnostics),
+            key if key == child_key => body = Some(&field.value),
+            _ => diagnostics.push(unknown_key(&field.key)),
+        }
+    }
+    (id, body.unwrap_or(value))
+}
+
+fn element_scalar(
+    value: &FmValue,
+    value_key: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(Option<String>, String)> {
+    if matches!(value, FmValue::Scalar(_)) {
+        return Some((None, read_text_value(value, diagnostics)?));
+    }
+    let fields = expect_mapping(value, "element_body", diagnostics);
+    let mut id = None;
+    let mut text = None;
+    for field in fields {
+        match field.key.text.as_str() {
+            "id" => id = read_element_id(&field.value, diagnostics),
+            key if key == value_key => text = read_text_value(&field.value, diagnostics),
+            _ => diagnostics.push(unknown_key(&field.key)),
+        }
+    }
+    Some((id, text?))
+}
+
+fn element_reference(
+    value: &FmValue,
+    value_key: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(Option<String>, FrontmatterRefAst)> {
+    if matches!(value, FmValue::Scalar(_)) {
+        return Some((None, read_ref_value(value, diagnostics)?));
+    }
+    let fields = expect_mapping(value, "element_body", diagnostics);
+    let mut id = None;
+    let mut reference = None;
+    for field in fields {
+        match field.key.text.as_str() {
+            "id" => id = read_element_id(&field.value, diagnostics),
+            key if key == value_key => reference = read_ref_value(&field.value, diagnostics),
+            _ => diagnostics.push(unknown_key(&field.key)),
+        }
+    }
+    Some((id, reference?))
+}
+
 fn element_span(element: &LayoutElementAst) -> Span {
     match element {
         LayoutElementAst::Header { span, .. }
@@ -1287,6 +1556,239 @@ fn element_span(element: &LayoutElementAst) -> Span {
     }
 }
 
+fn read_ref_list(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Vec<FrontmatterRefAst> {
+    match value {
+        FmValue::Sequence { items, .. } => items
+            .iter()
+            .filter_map(|v| read_ref_value(v, diagnostics))
+            .collect(),
+        _ => read_ref_value(value, diagnostics).into_iter().collect(),
+    }
+}
+
+fn build_screen_permissions(
+    value: &FmValue,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<ScreenPermissionAst> {
+    expect_sequence(value, "permission_sequence", diagnostics)
+        .iter()
+        .filter_map(|item| {
+            let e = expect_mapping(item, "permission", diagnostics);
+            for x in e {
+                if !matches!(x.key.text.as_str(), "역할" | "행동" | "모델" | "필드") {
+                    diagnostics.push(unknown_key(&x.key));
+                }
+            }
+            Some(ScreenPermissionAst {
+                role: read_ref_value(find(e, "역할")?, diagnostics)?,
+                action: read_ref_value(find(e, "행동")?, diagnostics)?,
+                model: read_ref_value(find(e, "모델")?, diagnostics)?,
+                field: find(e, "필드").and_then(|v| read_ref_value(v, diagnostics)),
+                span: item.span(),
+            })
+        })
+        .collect()
+}
+
+fn build_action_outcomes(
+    value: &FmValue,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<ActionOutcomesAst> {
+    expect_mapping(value, "action_outcome_mapping", diagnostics)
+        .iter()
+        .filter_map(|entry| {
+            let action = read_ref(&entry.key, diagnostics)?;
+            let outcomes = expect_sequence(&entry.value, "outcome_sequence", diagnostics)
+                .iter()
+                .filter_map(|item| {
+                    let e = expect_mapping(item, "outcome", diagnostics);
+                    for x in e {
+                        if !matches!(x.key.text.as_str(), "id" | "유형" | "제공 데이터" | "복구")
+                        {
+                            diagnostics.push(unknown_key(&x.key));
+                        }
+                    }
+                    let id = find(e, "id")
+                        .and_then(|v| expect_scalar(v, "stable_id", diagnostics))
+                        .and_then(|v| read_stable_id(v, diagnostics))?;
+                    let kind = match find(e, "유형")
+                        .and_then(|v| expect_scalar(v, "outcome_kind", diagnostics))?
+                        .text
+                        .as_str()
+                    {
+                        "성공" => OutcomeKindAst::Success,
+                        "실패" => OutcomeKindAst::Failure,
+                        "취소" => OutcomeKindAst::Cancel,
+                        "timeout" => OutcomeKindAst::Timeout,
+                        _ => {
+                            diagnostics.push(scalar_error(
+                                find(e, "유형").unwrap().span(),
+                                "outcome_kind",
+                            ));
+                            return None;
+                        }
+                    };
+                    let provided_data = find(e, "제공 데이터")
+                        .map(|v| build_outcome_data(v, diagnostics))
+                        .unwrap_or_default();
+                    let recovery = find(e, "복구").and_then(|v| build_recovery(v, diagnostics));
+                    Some(ActionOutcomeAst {
+                        id,
+                        kind,
+                        provided_data,
+                        recovery,
+                        span: item.span(),
+                    })
+                })
+                .collect();
+            Some(ActionOutcomesAst {
+                action,
+                outcomes,
+                span: entry.value.span(),
+            })
+        })
+        .collect()
+}
+
+fn build_outcome_data(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Vec<OutcomeDataAst> {
+    expect_sequence(value, "outcome_data_sequence", diagnostics)
+        .iter()
+        .filter_map(|item| {
+            let e = expect_mapping(item, "outcome_data", diagnostics);
+            for x in e {
+                if !matches!(
+                    x.key.text.as_str(),
+                    "모델" | "필드" | "조회 결과" | "계산 대상" | "생산자"
+                ) {
+                    diagnostics.push(unknown_key(&x.key));
+                }
+            }
+            let model = read_ref_value(find(e, "모델")?, diagnostics)?;
+            let field = read_ref_value(find(e, "필드")?, diagnostics)?;
+            let sources = [("조회 결과", 0), ("계산 대상", 1), ("생산자", 2)]
+                .into_iter()
+                .filter_map(|(k, n)| find(e, k).map(|v| (n, v)))
+                .collect::<Vec<_>>();
+            if sources.len() != 1 {
+                diagnostics.push(structure_error(item.span(), "outcome_data_source"));
+                return None;
+            }
+            let source = match sources[0] {
+                (0, v) => OutcomeDataSourceAst::Lookup {
+                    result: read_ref_value(v, diagnostics)?,
+                },
+                (1, v) => OutcomeDataSourceAst::Derivation {
+                    target: read_ref_value(v, diagnostics)?,
+                },
+                (_, v) => OutcomeDataSourceAst::Producer {
+                    producer: read_ref_value(v, diagnostics)?,
+                },
+            };
+            Some(OutcomeDataAst {
+                model,
+                field,
+                source,
+                span: item.span(),
+            })
+        })
+        .collect()
+}
+
+fn build_recovery(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Option<RecoveryAst> {
+    let e = expect_mapping(value, "recovery", diagnostics);
+    for x in e {
+        if !matches!(
+            x.key.text.as_str(),
+            "종류" | "화면" | "요소" | "행동" | "경로"
+        ) {
+            diagnostics.push(unknown_key(&x.key));
+        }
+    }
+    let kind = match expect_scalar(find(e, "종류")?, "recovery_kind", diagnostics)?
+        .text
+        .as_str()
+    {
+        "retry" => RecoveryKindAst::Retry,
+        "return" => RecoveryKindAst::Return,
+        "release" => RecoveryKindAst::Release,
+        _ => {
+            diagnostics.push(scalar_error(value.span(), "recovery_kind"));
+            return None;
+        }
+    };
+    Some(RecoveryAst {
+        kind,
+        screen: find(e, "화면").and_then(|v| read_ref_value(v, diagnostics)),
+        element: find(e, "요소").and_then(|v| read_ref_value(v, diagnostics)),
+        action: find(e, "행동").and_then(|v| read_ref_value(v, diagnostics)),
+        path: find(e, "경로").and_then(|v| read_ref_value(v, diagnostics)),
+        span: value.span(),
+    })
+}
+
+fn build_lookup_results(
+    value: &FmValue,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<LookupResultAst> {
+    expect_mapping(value, "lookup_result_mapping", diagnostics)
+        .iter()
+        .filter_map(|entry| {
+            let id = read_stable_id(&entry.key, diagnostics)?;
+            let e = expect_mapping(&entry.value, "lookup_result", diagnostics);
+            for x in e {
+                if !matches!(x.key.text.as_str(), "행동" | "입력" | "모델" | "필드") {
+                    diagnostics.push(unknown_key(&x.key));
+                }
+            }
+            Some(LookupResultAst {
+                id,
+                action: read_ref_value(find(e, "행동")?, diagnostics)?,
+                input: read_ref_value(find(e, "입력")?, diagnostics)?,
+                model: read_ref_value(find(e, "모델")?, diagnostics)?,
+                fields: find(e, "필드")
+                    .map(|v| read_ref_list(v, diagnostics))
+                    .unwrap_or_default(),
+                span: entry.value.span(),
+            })
+        })
+        .collect()
+}
+
+fn build_handler(
+    value: &FmValue,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<SameScreenHandlerAst> {
+    let e = expect_mapping(value, "handler", diagnostics);
+    for x in e {
+        if !matches!(x.key.text.as_str(), "종류" | "id" | "내용") {
+            diagnostics.push(unknown_key(&x.key));
+        }
+    }
+    let kind = match expect_scalar(find(e, "종류")?, "handler_kind", diagnostics)?
+        .text
+        .as_str()
+    {
+        "상태" => HandlerKindAst::State,
+        "메시지" => HandlerKindAst::Message,
+        "팝업" => HandlerKindAst::Popup,
+        "로딩" => HandlerKindAst::Loading,
+        _ => {
+            diagnostics.push(scalar_error(value.span(), "handler_kind"));
+            return None;
+        }
+    };
+    let id = find(e, "id")
+        .and_then(|v| expect_scalar(v, "stable_id", diagnostics))
+        .and_then(|v| read_stable_id(v, diagnostics))?;
+    let content = find(e, "내용").and_then(|v| read_text_value(v, diagnostics));
+    Some(SameScreenHandlerAst {
+        kind,
+        id,
+        content,
+        span: value.span(),
+    })
+}
+
 fn build_paths(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Vec<ScreenPathAst> {
     let mut paths = Vec::new();
     for item in expect_sequence(value, "path_sequence", diagnostics) {
@@ -1298,7 +1800,10 @@ fn build_paths(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Vec<Screen
             if is_rejected(&entry.value) {
                 continue;
             }
-            if !matches!(entry.key.text.as_str(), "출발" | "도착" | "설명") {
+            if !matches!(
+                entry.key.text.as_str(),
+                "id" | "출발" | "도착" | "설명" | "결과" | "처리"
+            ) {
                 diagnostics.push(unknown_key(&entry.key));
             }
         }
@@ -1310,24 +1815,31 @@ fn build_paths(value: &FmValue, diagnostics: &mut Vec<Diagnostic>) -> Vec<Screen
             }
             continue;
         };
-        let Some(target) = find(entries, "도착") else {
-            if !has_rejected(entries) {
-                diagnostics.push(structure_error(span, "도착"));
-            }
+        let target = find(entries, "도착");
+        let handler = find(entries, "처리");
+        if target.is_none() && handler.is_none() {
+            diagnostics.push(structure_error(span, "도착"));
             continue;
-        };
+        }
+        if target.is_some() && handler.is_some() {
+            diagnostics.push(structure_error(span, "도착_or_처리"));
+            continue;
+        }
         let Some((source_screen, source_element)) = read_element_path(source, diagnostics) else {
             continue;
         };
-        let Some(target_screen) = read_ref_value(target, diagnostics) else {
-            continue;
-        };
+        let target_screen = target.and_then(|v| read_ref_value(v, diagnostics));
         let label = find(entries, "설명").and_then(|value| read_text_value(value, diagnostics));
 
         paths.push(ScreenPathAst {
+            id: find(entries, "id")
+                .and_then(|v| expect_scalar(v, "path_id", diagnostics))
+                .and_then(|v| read_path_id(v, diagnostics)),
             source_screen,
             source_element,
             target_screen,
+            outcome: find(entries, "결과").and_then(|v| read_ref_value(v, diagnostics)),
+            handler: handler.and_then(|v| build_handler(v, diagnostics)),
             label,
             span,
         });
@@ -1474,7 +1986,7 @@ mod tests {
         let path = &frontmatter.paths[0];
         assert_eq!(path.source_screen.text, "create_item");
         assert_eq!(path.source_element.text, "submit");
-        assert_eq!(path.target_screen.text, "cart_detail");
+        assert_eq!(path.target_screen.as_ref().unwrap().text, "cart_detail");
         assert_eq!(path.label.as_deref(), Some("담기 성공"));
     }
 
@@ -1649,7 +2161,10 @@ mod tests {
         assert_eq!(path.source_screen.text, "장바구니 항목 입력 화면");
         assert_eq!(path.source_element.text, "submit");
         // 따옴표 없이 띄어쓴 이름이 통째로 도착으로 실려야 한다.
-        assert_eq!(path.target_screen.text, "장바구니 상세 화면");
+        assert_eq!(
+            path.target_screen.as_ref().unwrap().text,
+            "장바구니 상세 화면"
+        );
     }
 
     #[test]

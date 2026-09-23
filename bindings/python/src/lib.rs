@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use rspdl_sdk::SdkError;
 
@@ -39,11 +39,30 @@ fn find_model_json(py: Python<'_>, request: String) -> PyResult<String> {
     run_without_gil(py, request, rspdl_sdk::find_model_json)
 }
 
+#[pyfunction]
+fn edit_json(py: Python<'_>, request: String) -> PyResult<String> {
+    py.detach(move || rspdl_sdk::edit_json(&request))
+        .map_err(|error| {
+            let message = format!("{}: {error}", error.code());
+            match error {
+                SdkError::InvalidRequestJson { .. } => PyValueError::new_err(message),
+                _ => PyRuntimeError::new_err(message),
+            }
+        })
+}
+
+#[pyfunction]
+fn source_hash(text: String) -> String {
+    rspdl_sdk::source_hash(&text)
+}
+
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(compile_json, module)?)?;
     module.add_function(wrap_pyfunction!(check_json, module)?)?;
     module.add_function(wrap_pyfunction!(format_json, module)?)?;
     module.add_function(wrap_pyfunction!(find_model_json, module)?)?;
+    module.add_function(wrap_pyfunction!(edit_json, module)?)?;
+    module.add_function(wrap_pyfunction!(source_hash, module)?)?;
     Ok(())
 }

@@ -30,10 +30,13 @@ related:
   - field-provenance-and-sum-derivation
   - finite-relational-model-finding
   - natural-korean-domain-grammar
+  - stable-screen-elements-and-structured-editing
   - total-policy-condition-space-analysis
+  - typed-action-outcomes-and-recovery
   - typed-domains-and-logic-core
+  - workflow-completion-data-availability
   - frontend-semantic-analysis-contract
-last_updated: "2026-09-20"
+last_updated: "2026-09-23"
 owners:
   - rspdl-maintainers
 ---
@@ -65,6 +68,9 @@ owners:
 | `field-provenance-and-sum-derivation` | `rfc` | `implemented` | [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md) | Defines sentence-shaped screen operations, action data mutations, provenance checks, sum dependencies, and recalculation triggers. | `data-lifecycle-modeling-gap`, `semantic-source-provenance-loss` | `data-lifecycle`, `field-provenance`, `screen-usage`, `action-result`, `derivation`, `aggregation`, `diagnostics` |
 | `finite-relational-model-finding` | `rfc` | `implemented` | [Finite Relational Rules and Bounded Model Finding](rfcs/0007-finite-relational-model-finding.md) | Defines unary and binary relations, explicit relational meta-rules, and bounded virtual-data model finding without runtime records. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `first-order-logic`, `relation`, `bounded-model-finding`, `cardinality`, `counterexample` |
 | `natural-korean-domain-grammar` | `rfc` | `implemented` | [Korean Domain Frontend Language Specification](rfcs/0004-natural-korean-domain-grammar.md) | Defines Korean record, relation, constraint and policy grammar and its deterministic lowering to the locale-neutral Unlinked IR contract. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `frontend-grammar-implementation-drift` | `ko-KR`, `controlled-language`, `data-model`, `constraints`, `policies`, `relations`, `bounded-model-finding`, `cfg` |
+| `stable-screen-elements-and-structured-editing` | `rfc` | `implemented` | [안정적 화면 요소 식별과 컴파일러 소유 구조화 편집](rfcs/0011-stable-screen-elements-and-structured-editing.md) | Defines optional explicit IDs for every semantic layout element and a source-hash guarded compiler edit API that returns compiled candidates without saving. | `screen-structure-spec-divergence`, `semantic-source-provenance-loss` | `screen-layout`, `stable-id`, `structured-editing`, `source-hash`, `sdk`, `canonical-ir` |
 | `total-policy-condition-space-analysis` | `rfc` | `proposed` | [Total Policy Condition Spaces and SMT-First Consistency Analysis](rfcs/0006-total-policy-condition-space-analysis.md) | Defines closed policy vocabulary, exhaustive condition-space coverage, explicit override semantics, and SMT-first consistency analysis. | `policy-consistency-blind-spots`, `data-lifecycle-modeling-gap` | `policy-analysis`, `smt`, `condition-coverage`, `totality`, `override`, `closed-vocabulary` |
+| `typed-action-outcomes-and-recovery` | `rfc` | `implemented` | [행동 결과, 역할 연결과 제한된 복구 의무](rfcs/0012-typed-action-outcomes-and-recovery.md) | Defines typed action outcomes, explicit screen-role bindings, outcome-specific data provenance, and bounded recovery obligations without inferring business policy. | `screen-structure-spec-divergence`, `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `action-outcome`, `screen-role`, `workflow-data`, `recovery`, `timeout` |
 | `typed-domains-and-logic-core` | `rfc` | `proposed` | [정규화 타입·도메인과 논리 IR 코어](rfcs/0002-typed-domains-and-logic-core.md) | Defines normalized value domains, typed set and Boolean IR, and its boundary with finite relational model finding. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `type-system`, `data-model`, `domains`, `set-algebra`, `smt` |
+| `workflow-completion-data-availability` | `rfc` | `implemented` | [업무 완료 경로의 데이터 가용성 계약](rfcs/0010-workflow-completion-data-availability.md) | Defines explicit workflow starts, completion obligations, preconditions, and submit-bound input acquisition with conservative path analysis. | `data-lifecycle-modeling-gap`, `screen-structure-spec-divergence`, `semantic-source-provenance-loss` | `workflow`, `data-lifecycle`, `path-analysis`, `completion-contract`, `frontmatter`, `canonical-ir` |
 | `frontend-semantic-analysis-contract` | `spec` | `implemented` | [Frontend and Semantic Analysis Contract](specs/frontend-semantic-analysis-contract.md) | Defines stable-ID Unlinked records, semantic product value types, action data mutations, relations, rules, and the structured diagnostic boundary shared by frontends. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `semantic-source-provenance-loss` | `compiler-frontend`, `unlinked-ir`, `semantic-analysis`, `locale-independence`, `conformance` |

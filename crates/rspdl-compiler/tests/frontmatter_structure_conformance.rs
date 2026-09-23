@@ -41,7 +41,10 @@ fn frontmatter_structure_conformance_suite() {
         let name = dir.file_name().unwrap().to_string_lossy().into_owned();
         let case: Case =
             serde_json::from_str(&fs::read_to_string(dir.join("case.json")).unwrap()).unwrap();
-        assert_eq!(case.spec_version, "0.5.0", "case {name}");
+        assert!(
+            matches!(case.spec_version.as_str(), "0.5.0" | "0.7.0"),
+            "case {name}"
+        );
         assert_eq!(case.locale, "ko-KR", "case {name}");
         categories.insert(case.category.clone());
 
@@ -164,7 +167,10 @@ fn frontmatter_structure_conformance_suite() {
             let path = &module.screen_paths[0];
             assert_eq!(path.source_screen_id.to_string(), "shopping.create_item");
             assert_eq!(path.source_element_id, "submit");
-            assert_eq!(path.target_screen_id.to_string(), "shopping.cart_detail");
+            assert_eq!(
+                path.target_screen_id.as_ref().unwrap().to_string(),
+                "shopping.cart_detail"
+            );
             assert_eq!(path.label.as_deref(), Some("담기 성공"));
         }
 
@@ -179,6 +185,23 @@ fn frontmatter_structure_conformance_suite() {
                     .all(|layout| layout.kind.is_none()),
                 "an unstated screen kind must stay unstated"
             );
+        }
+        if name == "boundary-stable-element-ids" {
+            let module = compiled.module.as_ref().expect("stable elements compile");
+            let json = serde_json::to_value(&module.screen_layouts[0].elements).unwrap();
+            let text = json.to_string();
+            for id in [
+                "header",
+                "title",
+                "content",
+                "product_form",
+                "name_input",
+                "products",
+                "preview",
+                "submit",
+            ] {
+                assert!(text.contains(&format!("\"id\":\"{id}\"")), "missing {id}");
+            }
         }
     }
 

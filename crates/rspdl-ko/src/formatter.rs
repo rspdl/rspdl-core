@@ -627,6 +627,92 @@ fn write_frontmatter(output: &mut String, frontmatter: &FrontmatterAst) -> Resul
         }
     }
 
+    if !frontmatter.lookup_results.is_empty() {
+        separate(output, &mut written);
+        output.push_str("조회 결과:\n");
+        for r in &frontmatter.lookup_results {
+            output.push_str(&format!(
+                "  {}:\n    행동: {}\n    입력: {}\n    모델: {}\n    필드: [{}]\n",
+                r.id,
+                scalar(&r.action.text),
+                scalar(&r.input.text),
+                scalar(&r.model.text),
+                references(&r.fields)
+            ));
+        }
+    }
+    if !frontmatter.action_outcomes.is_empty() {
+        separate(output, &mut written);
+        output.push_str("행동 결과:\n");
+        for group in &frontmatter.action_outcomes {
+            output.push_str(&format!("  {}:\n", scalar(&group.action.text)));
+            for o in &group.outcomes {
+                output.push_str(&format!(
+                    "    - id: {}\n      유형: {}\n",
+                    o.id,
+                    match o.kind {
+                        OutcomeKindAst::Success => "성공",
+                        OutcomeKindAst::Failure => "실패",
+                        OutcomeKindAst::Cancel => "취소",
+                        OutcomeKindAst::Timeout => "timeout",
+                    }
+                ));
+                if !o.provided_data.is_empty() {
+                    output.push_str("      제공 데이터:\n");
+                    for d in &o.provided_data {
+                        let (key, value) = match &d.source {
+                            OutcomeDataSourceAst::Lookup { result } => ("조회 결과", &result.text),
+                            OutcomeDataSourceAst::Derivation { target } => {
+                                ("계산 대상", &target.text)
+                            }
+                            OutcomeDataSourceAst::Producer { producer } => {
+                                ("생산자", &producer.text)
+                            }
+                        };
+                        output.push_str(&format!(
+                            "        - 모델: {}\n          필드: {}\n          {}: {}\n",
+                            scalar(&d.model.text),
+                            scalar(&d.field.text),
+                            key,
+                            scalar(value)
+                        ));
+                    }
+                }
+                if let Some(r) = &o.recovery {
+                    let mut parts = vec![format!(
+                        "종류: {}",
+                        match r.kind {
+                            RecoveryKindAst::Retry => "retry",
+                            RecoveryKindAst::Return => "return",
+                            RecoveryKindAst::Release => "release",
+                        }
+                    )];
+                    if let Some(v) = &r.screen {
+                        parts.push(format!("화면: {}", scalar(&v.text)));
+                    }
+                    if let Some(v) = &r.element {
+                        parts.push(format!("요소: {}", scalar(&v.text)));
+                    }
+                    if let Some(v) = &r.action {
+                        parts.push(format!("행동: {}", scalar(&v.text)));
+                    }
+                    if let Some(v) = &r.path {
+                        parts.push(format!("경로: {}", scalar(&v.text)));
+                    }
+                    output.push_str(&format!("      복구: {{ {} }}\n", parts.join(", ")));
+                }
+            }
+        }
+    }
+
+    if !frontmatter.workflows.is_empty() {
+        separate(output, &mut written);
+        output.push_str("업무:\n");
+        for workflow in &frontmatter.workflows {
+            write_workflow(output, workflow, STEP)?;
+        }
+    }
+
     output.push_str("---\n");
     Ok(())
 }
@@ -731,6 +817,34 @@ fn write_screen_layout(output: &mut String, layout: &ScreenLayoutAst, indent: us
         scalar(&layout.screen.text)
     ));
     let body = indent + STEP;
+    if !layout.roles.is_empty() {
+        output.push_str(&format!(
+            "{}역할: [{}]\n",
+            pad(body),
+            references(&layout.roles)
+        ));
+    }
+    if !layout.permissions.is_empty() {
+        output.push_str(&format!("{}권한:\n", pad(body)));
+        for p in &layout.permissions {
+            output.push_str(&format!(
+                "{}- 역할: {}\n{}행동: {}\n{}모델: {}\n",
+                pad(body + STEP),
+                scalar(&p.role.text),
+                pad(body + STEP + STEP),
+                scalar(&p.action.text),
+                pad(body + STEP + STEP),
+                scalar(&p.model.text)
+            ));
+            if let Some(field) = &p.field {
+                output.push_str(&format!(
+                    "{}필드: {}\n",
+                    pad(body + STEP + STEP),
+                    scalar(&field.text)
+                ));
+            }
+        }
+    }
     // 적히지 않은 `유형` 은 적히지 않은 채로 둔다. 여기서 `page` 를 채우면 저자가 하지 않은
     // 결정을 문서가 한 것이 된다.
     if let Some(kind) = layout.kind {
@@ -758,29 +872,63 @@ fn write_elements(output: &mut String, elements: &[LayoutElementAst], indent: us
         // 하이픈 기준으로 두 단 더 들어간다.
         let nested = indent + STEP + STEP;
         match element {
-            LayoutElementAst::Header { children, .. } => {
-                output.push_str(&format!("{bullet}머리말:\n"));
-                write_elements(output, children, nested);
+            LayoutElementAst::Header { id, children, .. } => {
+                write_container_element(
+                    output,
+                    &bullet,
+                    "머리말",
+                    id.as_deref(),
+                    "자식",
+                    children,
+                    nested,
+                );
             }
-            LayoutElementAst::Section { children, .. } => {
-                output.push_str(&format!("{bullet}구역:\n"));
-                write_elements(output, children, nested);
+            LayoutElementAst::Section { id, children, .. } => {
+                write_container_element(
+                    output,
+                    &bullet,
+                    "구역",
+                    id.as_deref(),
+                    "자식",
+                    children,
+                    nested,
+                );
             }
-            LayoutElementAst::Form { inputs, .. } => {
-                output.push_str(&format!("{bullet}폼:\n"));
-                write_elements(output, inputs, nested);
+            LayoutElementAst::Form { id, inputs, .. } => {
+                write_container_element(
+                    output,
+                    &bullet,
+                    "폼",
+                    id.as_deref(),
+                    "입력",
+                    inputs,
+                    nested,
+                );
             }
-            LayoutElementAst::Heading { text, .. } => {
-                output.push_str(&format!("{bullet}제목: {}\n", scalar(text)));
+            LayoutElementAst::Heading { id, text, .. } => {
+                write_scalar_element(output, &bullet, "제목", id.as_deref(), "글", text);
             }
-            LayoutElementAst::Placeholder { text, .. } => {
-                output.push_str(&format!("{bullet}자리: {}\n", scalar(text)));
+            LayoutElementAst::Placeholder { id, text, .. } => {
+                write_scalar_element(output, &bullet, "자리", id.as_deref(), "이름", text);
             }
-            LayoutElementAst::Input { field, .. } => {
-                output.push_str(&format!("{bullet}입력: {}\n", scalar(&field.text)));
+            LayoutElementAst::Input { id, field, .. } => {
+                if let Some(id) = id {
+                    output.push_str(&format!(
+                        "{bullet}입력: {{ id: {id}, 필드: {} }}\n",
+                        scalar(&field.text)
+                    ));
+                } else {
+                    output.push_str(&format!("{bullet}입력: {}\n", scalar(&field.text)));
+                }
             }
-            LayoutElementAst::List { model, fields, .. } => {
-                let mut body = format!("모델: {}", scalar(&model.text));
+            LayoutElementAst::List {
+                id, model, fields, ..
+            } => {
+                let mut body = id
+                    .as_ref()
+                    .map(|id| format!("id: {id}, "))
+                    .unwrap_or_default();
+                body.push_str(&format!("모델: {}", scalar(&model.text)));
                 if !fields.is_empty() {
                     body.push_str(&format!(", 필드: [{}]", references(fields)));
                 }
@@ -799,6 +947,43 @@ fn write_elements(output: &mut String, elements: &[LayoutElementAst], indent: us
     }
 }
 
+fn write_container_element(
+    output: &mut String,
+    bullet: &str,
+    kind: &str,
+    id: Option<&str>,
+    child_key: &str,
+    children: &[LayoutElementAst],
+    nested: usize,
+) {
+    output.push_str(&format!("{bullet}{kind}:\n"));
+    if let Some(id) = id {
+        output.push_str(&format!("{}id: {id}\n", pad(nested)));
+        output.push_str(&format!("{}{child_key}:\n", pad(nested)));
+        write_elements(output, children, nested + STEP);
+    } else {
+        write_elements(output, children, nested);
+    }
+}
+
+fn write_scalar_element(
+    output: &mut String,
+    bullet: &str,
+    kind: &str,
+    id: Option<&str>,
+    value_key: &str,
+    text: &str,
+) {
+    if let Some(id) = id {
+        output.push_str(&format!(
+            "{bullet}{kind}: {{ id: {id}, {value_key}: {} }}\n",
+            scalar(text)
+        ));
+    } else {
+        output.push_str(&format!("{bullet}{kind}: {}\n", scalar(text)));
+    }
+}
+
 fn write_path(output: &mut String, path: &ScreenPathAst, indent: usize) {
     // 하이픈 뒤 본문의 열이 이 매핑의 들여쓰기다. 뒤따르는 키들이 그 열에 맞아야 한 항목이 된다.
     let body = indent + STEP;
@@ -810,14 +995,100 @@ fn write_path(output: &mut String, path: &ScreenPathAst, indent: usize) {
             path.source_screen.text, path.source_element.text
         ))
     ));
-    output.push_str(&format!(
-        "{}도착: {}\n",
-        pad(body),
-        scalar(&path.target_screen.text)
-    ));
+    if let Some(id) = &path.id {
+        output.push_str(&format!("{}id: {}\n", pad(body), id));
+    }
+    if let Some(outcome) = &path.outcome {
+        output.push_str(&format!("{}결과: {}\n", pad(body), scalar(&outcome.text)));
+    }
+    if let Some(target) = &path.target_screen {
+        output.push_str(&format!("{}도착: {}\n", pad(body), scalar(&target.text)));
+    }
+    if let Some(handler) = &path.handler {
+        let content = handler
+            .content
+            .as_ref()
+            .map(|v| format!(", 내용: {}", scalar(v)))
+            .unwrap_or_default();
+        output.push_str(&format!(
+            "{}처리: {{ 종류: {}, id: {}{} }}\n",
+            pad(body),
+            match handler.kind {
+                HandlerKindAst::State => "상태",
+                HandlerKindAst::Message => "메시지",
+                HandlerKindAst::Popup => "팝업",
+                HandlerKindAst::Loading => "로딩",
+            },
+            handler.id,
+            content
+        ));
+    }
     // 적히지 않은 설명은 빈 문자열이 아니다.
     if let Some(label) = &path.label {
         output.push_str(&format!("{}설명: {}\n", pad(body), scalar(label)));
+    }
+}
+
+fn write_workflow(
+    output: &mut String,
+    workflow: &WorkflowAst,
+    indent: usize,
+) -> Result<(), FormatError> {
+    output.push_str(&format!(
+        "{}{}:\n",
+        pad(indent),
+        named_id(&workflow.declaration, true)?
+    ));
+    let body = indent + STEP;
+    output.push_str(&format!(
+        "{}시작: {}\n",
+        pad(body),
+        scalar(&workflow.start_screen.text)
+    ));
+    if !workflow.initial_data.is_empty() {
+        output.push_str(&format!("{}초기 데이터:\n", pad(body)));
+        write_workflow_data(output, &workflow.initial_data, body + STEP);
+    }
+    if !workflow.acquisitions.is_empty() {
+        output.push_str(&format!("{}획득:\n", pad(body)));
+        for acquisition in &workflow.acquisitions {
+            output.push_str(&format!(
+                "{}- 출발: {}\n",
+                pad(body + STEP),
+                scalar(&format!(
+                    "{}.{}",
+                    acquisition.source_screen.text, acquisition.source_element.text
+                ))
+            ));
+            output.push_str(&format!("{}데이터:\n", pad(body + STEP + STEP)));
+            write_workflow_data(output, &acquisition.data, body + STEP + STEP + STEP);
+        }
+    }
+    output.push_str(&format!("{}완료:\n", pad(body)));
+    for completion in &workflow.completions {
+        output.push_str(&format!(
+            "{}- 화면: {}\n",
+            pad(body + STEP),
+            scalar(&completion.screen.text)
+        ));
+        output.push_str(&format!("{}필수 데이터:\n", pad(body + STEP + STEP)));
+        write_workflow_data(output, &completion.required_data, body + STEP + STEP + STEP);
+    }
+    Ok(())
+}
+
+fn write_workflow_data(output: &mut String, data: &[WorkflowDataAst], indent: usize) {
+    for item in data {
+        output.push_str(&format!(
+            "{}- 모델: {}\n",
+            pad(indent),
+            scalar(&item.model.text)
+        ));
+        output.push_str(&format!(
+            "{}필드: {}\n",
+            pad(indent + STEP),
+            scalar(&item.field.text)
+        ));
     }
 }
 

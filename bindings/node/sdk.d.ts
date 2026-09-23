@@ -134,6 +134,7 @@ export interface FindModelOptions extends CheckOptions {
 }
 
 export declare const WIRE_SCHEMA_VERSION: 1
+export declare const EDIT_SCHEMA_VERSION: 1
 export declare const SUPPORTED_LOCALE: 'ko-KR'
 
 export declare function compile(
@@ -157,13 +158,20 @@ export declare function findModel(
   options?: FindModelOptions,
 ): Promise<SdkResponse<ModelFindingReport>>
 
+export declare function edit(request: JsonObject): Promise<JsonObject>
+/** Fingerprint exact source text as lowercase SHA-256 of its UTF-8 bytes. */
+export declare function sourceHash(text: string): string
+
 declare const sdk: {
   readonly WIRE_SCHEMA_VERSION: typeof WIRE_SCHEMA_VERSION
+  readonly EDIT_SCHEMA_VERSION: typeof EDIT_SCHEMA_VERSION
   readonly SUPPORTED_LOCALE: typeof SUPPORTED_LOCALE
   readonly compile: typeof compile
   readonly check: typeof check
   readonly findModel: typeof findModel
   readonly format: typeof format
+  readonly edit: typeof edit
+  readonly sourceHash: typeof sourceHash
 }
 
 export default sdk

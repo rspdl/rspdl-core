@@ -1,0 +1,1 @@
+{"spec_version":"0.8.0","locale":"ko-KR","category":"normal","expected_module":true,"expected_diagnostics":[{"rule_id":"RSPDL-LAYOUT-W001","severity":"warning","message_key":"semantic.layout.required_input_without_slot"}]}

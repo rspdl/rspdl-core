@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence, TypedDict
 from . import _native
 
 WIRE_SCHEMA_VERSION = 1
+EDIT_SCHEMA_VERSION = 1
 SUPPORTED_LOCALE = "ko-KR"
 __version__ = version("rspdl")
 
@@ -127,8 +128,21 @@ def find_model(
     )
 
 
+def edit(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a compiler-validated candidate source without saving it."""
+
+    return _decode(_native.edit_json(_encode(request)))
+
+
+def source_hash(text: str) -> str:
+    """Fingerprint exact source text as lowercase SHA-256 of its UTF-8 bytes."""
+
+    return _native.source_hash(text)
+
+
 __all__ = [
     "SUPPORTED_LOCALE",
+    "EDIT_SCHEMA_VERSION",
     "WIRE_SCHEMA_VERSION",
     "SdkResponse",
     "Source",
@@ -137,4 +151,6 @@ __all__ = [
     "compile",
     "find_model",
     "format",
+    "edit",
+    "source_hash",
 ]

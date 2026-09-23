@@ -585,6 +585,7 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
             argument(diagnostic, "element_id"),
             argument(diagnostic, "target_screen_id")
         ),
+        "semantic.screen_flow.duplicate_path_id" => format!("흐름 id {}이(가) 중복 선언되었습니다.",argument(diagnostic,"path_id")),
         "semantic.screen_flow.unreachable_screen" => format!(
             "화면 {}에 도달하는 경로가 없습니다.",
             argument(diagnostic, "screen_id")
@@ -592,6 +593,46 @@ pub fn render_diagnostic(diagnostic: &Diagnostic) -> String {
         "semantic.screen_flow.no_entry_point" => {
             "선언된 흐름에 진입점이 없습니다. 모든 화면이 다른 화면에서만 도달합니다.".to_owned()
         }
+        "semantic.workflow.required_data_unavailable" => format!(
+            "업무 {}의 완료 화면 {}에 도착하는 경로 중 {} 데이터가 확보되지 않는 경로가 있습니다: {}",
+            argument(diagnostic, "workflow_id"), argument(diagnostic, "completion_screen_id"),
+            argument(diagnostic, "field_id"), argument(diagnostic, "missing_path")
+        ),
+        "semantic.workflow.completion_unreachable" => format!(
+            "업무 {}의 완료 화면 {}에 시작 화면에서 도달할 수 없습니다.",
+            argument(diagnostic, "workflow_id"), argument(diagnostic, "screen_id")
+        ),
+        "semantic.workflow.acquisition_source_not_found" => format!(
+            "업무 {}의 데이터 획득 출발점 {}.{}에 해당하는 흐름이 없습니다.",
+            argument(diagnostic, "workflow_id"), argument(diagnostic, "screen_id"), argument(diagnostic, "element_id")
+        ),
+        "semantic.workflow.acquired_data_not_placed_input" => format!(
+            "업무 {}가 {} 화면에서 확보한다고 선언한 {} 필드는 배치되고 선언된 입력이 아닙니다.",
+            argument(diagnostic, "workflow_id"), argument(diagnostic, "screen_id"), argument(diagnostic, "field_id")
+        ),
+        "semantic.workflow.verification_unknown" => format!(
+            "업무 {}의 데이터 가용성은 현재 분석 범위에서 확정할 수 없습니다: {}",
+            argument(diagnostic, "workflow_id"), argument(diagnostic, "reason")
+        ),
+        "semantic.outcome.duplicate_lookup_result" => format!("조회 결과 {}이(가) 중복 선언되었습니다.", argument(diagnostic,"result_id")),
+        "semantic.outcome.lookup_input_mismatch" => format!("조회 결과 {}의 행동 입력과 모델이 일치하지 않습니다.", argument(diagnostic,"result_id")),
+        "semantic.outcome.duplicate_id" => format!("행동 {}의 결과 {}이(가) 중복 선언되었습니다.",argument(diagnostic,"action_id"),argument(diagnostic,"outcome_id")),
+        "semantic.outcome.lookup_source_mismatch" => format!("행동 {}의 조회 결과 {}은(는) 필드 {}의 성공 데이터 근거가 아닙니다.",argument(diagnostic,"action_id"),argument(diagnostic,"result_id"),argument(diagnostic,"field_id")),
+        "semantic.outcome.derivation_source_mismatch" => format!("필드 {}을(를) 만드는 계산 선언이 정확히 하나가 아닙니다.",argument(diagnostic,"field_id")),
+        "semantic.outcome.producer_source_mismatch" => format!("생산자 {}은(는) 이 행동과 필드의 데이터 근거가 아닙니다.",argument(diagnostic,"producer_id")),
+        "semantic.outcome.non_success_provides_data" => format!("성공이 아닌 결과 {}은(는) 제공 데이터를 선언할 수 없습니다.",argument(diagnostic,"outcome_id")),
+        "semantic.outcome.producer_coverage_unknown" => format!("조건부 생산자 {}이(가) 결과 {}에서 항상 실행되는지 확정할 수 없습니다.",argument(diagnostic,"producer_id"),argument(diagnostic,"outcome_id")),
+        "semantic.outcome.optional_data_unknown" => format!("선택 필드 {}의 값이 결과 {}에서 항상 존재하는지 확정할 수 없습니다.",argument(diagnostic,"field_id"),argument(diagnostic,"outcome_id")),
+        "semantic.outcome.path_mismatch" => format!("화면 흐름의 결과 {}이(가) 출발 버튼 행동의 결과가 아닙니다.",argument(diagnostic,"outcome_id")),
+        "semantic.outcome.handler_missing" => format!("{}.{} 버튼의 결과 {}을(를) 처리하는 경로가 없습니다.",argument(diagnostic,"screen_id"),argument(diagnostic,"element_id"),argument(diagnostic,"outcome_id")),
+        "semantic.outcome.handler_ambiguous" => format!("{}.{} 버튼의 결과 {} 처리 경로가 여러 개라 하나로 확정할 수 없습니다.",argument(diagnostic,"screen_id"),argument(diagnostic,"element_id"),argument(diagnostic,"outcome_id")),
+        "semantic.outcome.legacy_path_unverified" => format!("{}.{}의 기존 흐름은 행동 결과가 연결되지 않아 결과 처리를 검증하지 않았습니다.",argument(diagnostic,"screen_id"),argument(diagnostic,"element_id")),
+        "semantic.recovery.target_invalid" => format!("결과 {}의 복구 대상이 정확한 화면 버튼 또는 경로와 연결되지 않습니다.",argument(diagnostic,"outcome_id")),
+        "semantic.recovery.release_execution_unknown" => format!("결과 {}의 release 행동은 제공되지만 실제 실행과 멱등성은 확정할 수 없습니다.",argument(diagnostic,"outcome_id")),
+        "semantic.screen_permission.denied" => format!("화면 {}의 역할 {} 행동 {}은(는) 모델 {} 정책에서 거부됩니다.",argument(diagnostic,"screen_id"),argument(diagnostic,"role_id"),argument(diagnostic,"action_id"),argument(diagnostic,"model_id")),
+        "semantic.screen_permission.verification_unknown" => format!("화면 {}의 역할 {} 행동 {}에 대한 모델 {} 정책 허용 여부를 확정할 수 없습니다.",argument(diagnostic,"screen_id"),argument(diagnostic,"role_id"),argument(diagnostic,"action_id"),argument(diagnostic,"model_id")),
+        "semantic.screen_permission.role_not_bound" => format!("화면 {}의 권한 역할 {}이(가) 화면 역할에 연결되지 않았습니다.",argument(diagnostic,"screen_id"),argument(diagnostic,"role_id")),
+        "semantic.screen_permission.action_not_exposed" => format!("화면 {}의 권한 행동 {}을(를) 실행하는 버튼이 없습니다.",argument(diagnostic,"screen_id"),argument(diagnostic,"action_id")),
         "semantic.screen.duplicate_operation" => format!(
             "화면 {}의 데이터 동작이 중복 선언되었습니다.",
             argument(diagnostic, "screen_id")

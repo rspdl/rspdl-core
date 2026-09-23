@@ -11,6 +11,9 @@ use rspdl_compiler::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod edit;
+pub use edit::{EDIT_SCHEMA_VERSION, source_hash};
+
 pub const WIRE_SCHEMA_VERSION: u32 = 1;
 pub const SUPPORTED_LOCALE: &str = "ko-KR";
 const DEFAULT_SOLVER_TIMEOUT_MS: u64 = 5_000;
@@ -174,6 +177,13 @@ pub fn find_model_json(request_json: &str) -> Result<String, SdkError> {
     ))
 }
 
+pub fn edit_json(request_json: &str) -> Result<String, SdkError> {
+    let request = parse_request::<edit::EditRequest>(request_json)?;
+    serde_json::to_string(&edit::edit(request)).map_err(|error| SdkError::ResponseSerialization {
+        reason: error.to_string(),
+    })
+}
+
 fn parse_request<T: for<'de> Deserialize<'de>>(request_json: &str) -> Result<T, SdkError> {
     serde_json::from_str(request_json).map_err(|error| SdkError::InvalidRequestJson {
         reason: error.to_string(),
@@ -286,6 +296,71 @@ mod tests {
         );
         let model_span = &response["result"]["files"][0]["module"]["models"][0]["span"];
         assert!(model_span["start"].as_u64().unwrap() < model_span["end"].as_u64().unwrap());
+    }
+
+    #[test]
+    fn compile_response_exposes_workflow_contracts() {
+        let text = include_str!(
+            "../../../conformance/ko-KR/workflow-data/normal-alternative-producers/input.rspdl"
+        );
+        let request = json!({
+            "schema_version": WIRE_SCHEMA_VERSION,
+            "locale": SUPPORTED_LOCALE,
+            "sources": [source("workflow.rspdl", text)],
+        });
+        let response: Value =
+            serde_json::from_str(&compile_json(&request.to_string()).unwrap()).unwrap();
+        let workflow = &response["result"]["files"][0]["module"]["workflows"][0];
+        assert_eq!(workflow["id"], "booking.complete_booking");
+        assert_eq!(workflow["start_screen_id"], "booking.select_route");
+        assert_eq!(workflow["acquisitions"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            workflow["completions"][0]["required_data"][0]["field_id"],
+            "booking.booking.contact"
+        );
+        assert_eq!(response["result"]["files"][0]["diagnostics"], json!([]));
+    }
+
+    #[test]
+    fn structured_edit_checks_hash_and_returns_compiled_candidate() {
+        let text = include_str!(
+            "../../../conformance/ko-KR/frontmatter-structure/boundary-stable-element-ids/input.rspdl"
+        );
+        let hash = source_hash(text);
+        let request = json!({
+            "schema_version": EDIT_SCHEMA_VERSION,
+            "locale": SUPPORTED_LOCALE,
+            "source": { "path": "catalog.rspdl", "text": text },
+            "expected_source_hash": hash,
+            "edit": {
+                "operation": "update",
+                "screen_id": "catalog.product_form",
+                "element_id": "title",
+                "patch": { "text": "새 상품" }
+            }
+        });
+        let response: Value =
+            serde_json::from_str(&edit_json(&request.to_string()).unwrap()).unwrap();
+        assert_eq!(response["outcome"]["status"], "applied");
+        assert!(
+            response["candidate_text"]
+                .as_str()
+                .unwrap()
+                .contains("새 상품")
+        );
+        assert_eq!(
+            response["compilation"]["files"][0]["diagnostics"],
+            json!([])
+        );
+        assert_ne!(response["source_hash"], response["candidate_source_hash"]);
+
+        let mut stale = request;
+        stale["expected_source_hash"] = json!("00");
+        let response: Value =
+            serde_json::from_str(&edit_json(&stale.to_string()).unwrap()).unwrap();
+        assert_eq!(response["outcome"]["status"], "rejected");
+        assert_eq!(response["outcome"]["code"], "RSPDL-EDIT-STALE");
+        assert!(response["candidate_text"].is_null());
     }
 
     #[test]

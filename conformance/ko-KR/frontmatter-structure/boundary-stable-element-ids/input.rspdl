@@ -1,0 +1,26 @@
+---
+모듈: 상품(catalog)
+화면:
+  상품 입력 화면:
+    레이아웃:
+      - 머리말:
+          id: header
+          자식:
+            - 제목: { id: title, 글: "상품 입력" }
+      - 구역:
+          id: content
+          자식:
+            - 폼:
+                id: product_form
+                입력:
+                  - 입력: { id: name_input, 필드: 이름 }
+            - 목록: { id: products, 모델: 상품, 필드: [이름] }
+            - 자리: { id: preview, 이름: "미리보기" }
+            - 버튼: { id: submit, 이름: "저장" }
+---
+
+상품(product)은 다음 필드들로 구성되어 있다.
+    이름(name): 필수 문자열
+상품 입력 화면(product_form)에서는 상품을 생성할 수 있다.
+상품 입력 화면(product_form)에서는 상품의 이름을 입력할 수 있다.
+상품 입력 화면(product_form)에서는 상품의 이름을 조회할 수 있다.

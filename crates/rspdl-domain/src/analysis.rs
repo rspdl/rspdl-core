@@ -7,27 +7,33 @@ use serde::Serialize;
 use crate::frontend::ProductionTriggerKind;
 use crate::{
     ActionDataMutationDefinition, ActionDataMutationProvenance, ActionDefinition,
-    ActionInputDefinition, ActionInputKind, CanonicalId, CanonicalType, CanonicalValue,
-    CategoryDefinition, ConditionalProductionDefinition, ConstraintDefinition, ConstraintOperand,
-    CreationBranchDefinition, CreationDecision, DataModelDefinition, DataMutationKind,
-    DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition, EnumType,
-    EnumVariantDefinition, EventDefinition, EventInputDefinition, EventInputKind, FieldDefinition,
-    FieldIntentDefinition, FieldProducerCondition, FieldProducerDefinition, FieldProducerSource,
-    LayoutElement, ModelError, OutputRelationSlotDefinition, PolicyDefinition, PolicyEffect,
+    ActionInputDefinition, ActionInputKind, ActionOutcomeDefinition, CanonicalId, CanonicalType,
+    CanonicalValue, CategoryDefinition, ConditionalProductionDefinition, ConstraintDefinition,
+    ConstraintOperand, CreationBranchDefinition, CreationDecision, DataModelDefinition,
+    DataMutationKind, DerivationDefinition, DerivationExpression, Diagnostic, EnumDefinition,
+    EnumType, EnumVariantDefinition, EventDefinition, EventInputDefinition, EventInputKind,
+    FieldDefinition, FieldIntentDefinition, FieldProducerCondition, FieldProducerDefinition,
+    FieldProducerSource, HandlerKind, LayoutElement, LookupResultDefinition, ModelError,
+    OutcomeDataDefinition, OutcomeDataSourceDefinition, OutcomeDataVerification, OutcomeKind,
+    OutputRelationSlotDefinition, PolicyDefinition, PolicyEffect, PolicyVerification,
     ProducerPhase, ProductionCardinality, ProductionTriggerDefinition, QuantityDimension,
-    RecalculationDefinition, RelationDefinition, RelationOperator, RelationProducerDefinition,
-    RelationSlotCardinality, RelationalConstraintDefinition, RelationalConstraintKind,
-    RoleDefinition, ScreenCategoryAssignment, ScreenDefinition, ScreenLayoutDefinition,
-    ScreenOperationDefinition, ScreenOperationKind, ScreenPathDefinition, SemanticModule, Severity,
-    SourceId, SurfaceRef, TemplatePart, TextRange, UnlinkedActionDataMutation,
-    UnlinkedActionInputKind, UnlinkedCategory, UnlinkedConstraint, UnlinkedCreationBranch,
-    UnlinkedDataModel, UnlinkedDeclaration, UnlinkedEventInputKind, UnlinkedFieldIntent,
-    UnlinkedFieldProducer, UnlinkedFieldProducerCondition, UnlinkedFieldProducerSource,
-    UnlinkedLayoutElement, UnlinkedLiteral, UnlinkedModule, UnlinkedOperand, UnlinkedPolicy,
-    UnlinkedRecalculation, UnlinkedRelation, UnlinkedRelationProducer,
-    UnlinkedRelationalConstraint, UnlinkedRelationalConstraintKind, UnlinkedScreen,
-    UnlinkedScreenLayout, UnlinkedScreenPath, UnlinkedSumDerivation, UnlinkedTemplatePart,
-    UnlinkedTypeReference,
+    RecalculationDefinition, RecoveryDefinition, RecoveryKind, RelationDefinition,
+    RelationOperator, RelationProducerDefinition, RelationSlotCardinality,
+    RelationalConstraintDefinition, RelationalConstraintKind, RoleDefinition,
+    SameScreenHandlerDefinition, ScreenCategoryAssignment, ScreenDefinition,
+    ScreenLayoutDefinition, ScreenOperationDefinition, ScreenOperationKind, ScreenPathDefinition,
+    ScreenPermissionDefinition, SemanticModule, Severity, SourceId, SurfaceRef, TemplatePart,
+    TextRange, UnlinkedActionDataMutation, UnlinkedActionInputKind, UnlinkedActionOutcomes,
+    UnlinkedCategory, UnlinkedConstraint, UnlinkedCreationBranch, UnlinkedDataModel,
+    UnlinkedDeclaration, UnlinkedEventInputKind, UnlinkedFieldIntent, UnlinkedFieldProducer,
+    UnlinkedFieldProducerCondition, UnlinkedFieldProducerSource, UnlinkedHandlerKind,
+    UnlinkedLayoutElement, UnlinkedLiteral, UnlinkedLookupResult, UnlinkedModule, UnlinkedOperand,
+    UnlinkedOutcomeDataSource, UnlinkedOutcomeKind, UnlinkedPolicy, UnlinkedRecalculation,
+    UnlinkedRecoveryKind, UnlinkedRelation, UnlinkedRelationProducer, UnlinkedRelationalConstraint,
+    UnlinkedRelationalConstraintKind, UnlinkedScreen, UnlinkedScreenLayout, UnlinkedScreenPath,
+    UnlinkedSumDerivation, UnlinkedTemplatePart, UnlinkedTypeReference, UnlinkedWorkflow,
+    UnlinkedWorkflowData, WorkflowAcquisitionDefinition, WorkflowCompletionDefinition,
+    WorkflowDataRequirement, WorkflowDefinition,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -417,6 +423,33 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         &mut diagnostics,
     );
 
+    let mut policies = Vec::new();
+    for value in module.policies {
+        if let Some(definition) = link_policy(
+            value,
+            &module_id,
+            &role_names,
+            &action_names,
+            &models_by_name,
+            &mut top_level_ids,
+            &mut diagnostics,
+        ) {
+            policies.push(definition);
+        }
+    }
+
+    let (lookup_results, action_outcomes) = analyze_action_outcomes(
+        module.lookup_results,
+        module.action_outcomes,
+        &module_id,
+        &actions,
+        &models,
+        &screens,
+        &derivations,
+        &conditional_productions,
+        &mut diagnostics,
+    );
+
     let FrontmatterAnalysis {
         categories: information_architecture,
         screen_categories,
@@ -430,7 +463,27 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         &models,
         &screens,
         &action_names,
+        &roles,
+        &actions,
+        &policies,
+        &action_outcomes,
+        &action_data_mutations,
+        &conditional_productions,
         &field_intents,
+        &mut top_level_ids,
+        &mut diagnostics,
+    );
+
+    let workflows = analyze_workflows(
+        module.workflows,
+        &module_id,
+        &models,
+        &screens,
+        &screen_layouts,
+        &screen_paths,
+        &action_data_mutations,
+        &conditional_productions,
+        &action_outcomes,
         &mut top_level_ids,
         &mut diagnostics,
     );
@@ -446,21 +499,6 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
             &mut diagnostics,
         ) {
             constraints.push(definition);
-        }
-    }
-
-    let mut policies = Vec::new();
-    for value in module.policies {
-        if let Some(definition) = link_policy(
-            value,
-            &module_id,
-            &role_names,
-            &action_names,
-            &models_by_name,
-            &mut top_level_ids,
-            &mut diagnostics,
-        ) {
-            policies.push(definition);
         }
     }
 
@@ -487,6 +525,9 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
             screen_categories,
             screen_layouts,
             screen_paths,
+            action_outcomes,
+            lookup_results,
+            workflows,
             action_data_mutations,
             derivations,
             recalculations,
@@ -3490,6 +3531,997 @@ fn analyze_data_usage(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn analyze_workflows(
+    workflows: Vec<UnlinkedWorkflow>,
+    module_id: &CanonicalId,
+    models: &[DataModelDefinition],
+    screens: &[ScreenDefinition],
+    layouts: &[ScreenLayoutDefinition],
+    paths: &[ScreenPathDefinition],
+    mutations: &[ActionDataMutationDefinition],
+    productions: &[ConditionalProductionDefinition],
+    outcomes: &[ActionOutcomeDefinition],
+    top_level_ids: &mut BTreeSet<CanonicalId>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<WorkflowDefinition> {
+    let all_fields = models
+        .iter()
+        .flat_map(|model| model.fields.iter().map(|field| field.id.clone()))
+        .collect::<BTreeSet<_>>();
+    let mut result = Vec::new();
+    for workflow in workflows {
+        let Some(id) = canonical_member(&workflow.declaration, module_id, diagnostics) else {
+            continue;
+        };
+        duplicate_id(&id, workflow.declaration.span, top_level_ids, diagnostics);
+        let Some(start) = screens
+            .iter()
+            .find(|screen| top_level_reference_matches(&screen.id, &workflow.start_screen))
+        else {
+            continue;
+        };
+        let initial_data = workflow
+            .initial_data
+            .iter()
+            .filter_map(|data| link_workflow_data(data, models))
+            .collect::<Vec<_>>();
+        let completions = workflow
+            .completions
+            .iter()
+            .filter_map(|completion| {
+                let screen = screens
+                    .iter()
+                    .find(|screen| top_level_reference_matches(&screen.id, &completion.screen))?;
+                Some(WorkflowCompletionDefinition {
+                    screen_id: screen.id.clone(),
+                    required_data: completion
+                        .required_data
+                        .iter()
+                        .filter_map(|data| link_workflow_data(data, models))
+                        .collect(),
+                    span: completion.span,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut acquisitions = Vec::new();
+        for acquisition in &workflow.acquisitions {
+            let Some(screen) = screens
+                .iter()
+                .find(|screen| top_level_reference_matches(&screen.id, &acquisition.source_screen))
+            else {
+                continue;
+            };
+            let edge_exists = paths.iter().any(|path| {
+                path.source_screen_id == screen.id
+                    && path.source_element_id == acquisition.source_element.id()
+            });
+            if !edge_exists {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-WORKFLOW-003",
+                        Severity::Error,
+                        "semantic.workflow.acquisition_source_not_found",
+                        acquisition.source_element.span(),
+                    )
+                    .with_argument("workflow_id", &id)
+                    .with_argument("screen_id", &screen.id)
+                    .with_argument("element_id", acquisition.source_element.id()),
+                );
+                continue;
+            }
+            let placed = layouts
+                .iter()
+                .find(|layout| layout.screen_id == screen.id)
+                .map(|layout| placed_input_fields(&layout.elements))
+                .unwrap_or_default();
+            let mut data = Vec::new();
+            for item in &acquisition.data {
+                let Some(requirement) = link_workflow_data(item, models) else {
+                    continue;
+                };
+                if !placed.contains(&requirement.field_id) {
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-WORKFLOW-004",
+                            Severity::Error,
+                            "semantic.workflow.acquired_data_not_placed_input",
+                            item.span,
+                        )
+                        .with_argument("workflow_id", &id)
+                        .with_argument("screen_id", &screen.id)
+                        .with_argument("field_id", &requirement.field_id)
+                        .with_argument("declared_at", screen.span.start),
+                    );
+                    continue;
+                }
+                data.push(requirement);
+            }
+            acquisitions.push(WorkflowAcquisitionDefinition {
+                source_screen_id: screen.id.clone(),
+                source_element_id: acquisition.source_element.id().to_owned(),
+                data,
+                span: acquisition.span,
+            });
+        }
+
+        let mut reachable = BTreeSet::from([start.id.clone()]);
+        loop {
+            let before = reachable.len();
+            for path in paths {
+                if reachable.contains(&path.source_screen_id)
+                    && let Some(target) = &path.target_screen_id
+                {
+                    reachable.insert(target.clone());
+                }
+            }
+            if reachable.len() == before {
+                break;
+            }
+        }
+        let initial_fields = initial_data
+            .iter()
+            .map(|data| data.field_id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut available = reachable
+            .iter()
+            .map(|screen| (screen.clone(), all_fields.clone()))
+            .collect::<BTreeMap<_, _>>();
+        available.insert(start.id.clone(), initial_fields.clone());
+        loop {
+            let mut changed = false;
+            for path in paths.iter().filter(|path| {
+                reachable.contains(&path.source_screen_id) && path.target_screen_id.is_some()
+            }) {
+                let mut outgoing = available
+                    .get(&path.source_screen_id)
+                    .cloned()
+                    .unwrap_or_default();
+                for acquisition in acquisitions.iter().filter(|value| {
+                    value.source_screen_id == path.source_screen_id
+                        && value.source_element_id == path.source_element_id
+                }) {
+                    outgoing.extend(acquisition.data.iter().map(|data| data.field_id.clone()));
+                }
+                if let Some(outcome_id) = &path.outcome_id
+                    && let Some(outcome) = outcomes
+                        .iter()
+                        .find(|o| &o.id == outcome_id && o.kind == OutcomeKind::Success)
+                {
+                    let mut unknown = BTreeSet::new();
+                    transfer_outcome_data(&mut outgoing, &mut unknown, outcome, &all_fields);
+                }
+                let target_id = path.target_screen_id.as_ref().expect("filtered target");
+                if target_id == &start.id {
+                    continue;
+                }
+                let target = available
+                    .entry(target_id.clone())
+                    .or_insert_with(|| all_fields.clone());
+                let next = target
+                    .intersection(&outgoing)
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                if *target != next {
+                    *target = next;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        let reachable_actions = paths
+            .iter()
+            .filter(|path| reachable.contains(&path.source_screen_id))
+            .filter_map(|path| {
+                button_action(layouts, &path.source_screen_id, &path.source_element_id)
+            })
+            .collect::<BTreeSet<_>>();
+        let has_delete = mutations.iter().any(|mutation| {
+            mutation.mutation == DataMutationKind::Delete
+                && reachable_actions.contains(&mutation.action_id)
+        });
+        let has_conditional = productions.iter().any(|production| {
+            production
+                .action_id
+                .as_ref()
+                .is_some_and(|action| reachable_actions.contains(action))
+                && (production
+                    .branches
+                    .iter()
+                    .any(|b| b.decision == CreationDecision::Skip)
+                    || production
+                        .field_producers
+                        .iter()
+                        .any(|p| p.condition.is_some()))
+        });
+        let verification_unknown = has_delete || has_conditional;
+        if verification_unknown {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-WORKFLOW-U001",
+                    Severity::Warning,
+                    "semantic.workflow.verification_unknown",
+                    workflow.span,
+                )
+                .with_argument("workflow_id", &id)
+                .with_argument(
+                    "reason",
+                    if has_delete {
+                        "reachable_delete"
+                    } else {
+                        "conditional_action_production"
+                    },
+                ),
+            );
+        }
+
+        for completion in &completions {
+            if !reachable.contains(&completion.screen_id) {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-WORKFLOW-002",
+                        Severity::Error,
+                        "semantic.workflow.completion_unreachable",
+                        completion.span,
+                    )
+                    .with_argument("workflow_id", &id)
+                    .with_argument("screen_id", &completion.screen_id),
+                );
+                continue;
+            }
+            if has_delete || has_conditional {
+                continue;
+            }
+            let at_arrival = available
+                .get(&completion.screen_id)
+                .cloned()
+                .unwrap_or_default();
+            for required in &completion.required_data {
+                if !at_arrival.contains(&required.field_id) {
+                    let witness = workflow_data_witness(
+                        &start.id,
+                        &completion.screen_id,
+                        &required.field_id,
+                        &initial_fields,
+                        paths,
+                        &acquisitions,
+                        outcomes,
+                    );
+                    if matches!(witness, WorkflowWitness::Unknown) {
+                        diagnostics.push(
+                            data_diagnostic(
+                                "RSPDL-WORKFLOW-U001",
+                                Severity::Warning,
+                                "semantic.workflow.verification_unknown",
+                                required.span,
+                            )
+                            .with_argument("workflow_id", &id)
+                            .with_argument("reason", "outcome_data_presence_unknown"),
+                        );
+                        continue;
+                    }
+                    let WorkflowWitness::Missing(witness) = witness else {
+                        continue;
+                    };
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-WORKFLOW-001",
+                            Severity::Error,
+                            "semantic.workflow.required_data_unavailable",
+                            required.span,
+                        )
+                        .with_argument("workflow_id", &id)
+                        .with_argument("completion_screen_id", &completion.screen_id)
+                        .with_argument("model_id", &required.model_id)
+                        .with_argument("field_id", &required.field_id)
+                        .with_argument("completion_declared_at", completion.span.start)
+                        .with_argument("missing_path", witness),
+                    );
+                }
+            }
+        }
+        result.push(WorkflowDefinition {
+            id,
+            name: workflow.declaration.name,
+            start_screen_id: start.id.clone(),
+            initial_data,
+            acquisitions,
+            completions,
+            span: workflow.span,
+        });
+    }
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+fn analyze_action_outcomes(
+    lookup_values: Vec<UnlinkedLookupResult>,
+    outcome_groups: Vec<UnlinkedActionOutcomes>,
+    module_id: &CanonicalId,
+    actions: &[ActionDefinition],
+    models: &[DataModelDefinition],
+    screens: &[ScreenDefinition],
+    derivations: &[DerivationDefinition],
+    productions: &[ConditionalProductionDefinition],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> (Vec<LookupResultDefinition>, Vec<ActionOutcomeDefinition>) {
+    let mut lookups = Vec::new();
+    let mut seen_lookup = BTreeSet::new();
+    for value in lookup_values {
+        if !seen_lookup.insert(value.id.clone()) {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-OUTCOME-001",
+                    Severity::Error,
+                    "semantic.outcome.duplicate_lookup_result",
+                    value.span,
+                )
+                .with_argument("result_id", &value.id),
+            );
+            continue;
+        }
+        let Some(action) = actions
+            .iter()
+            .find(|a| top_level_reference_matches(&a.id, &value.action))
+        else {
+            continue;
+        };
+        let Some(model) = models
+            .iter()
+            .find(|m| top_level_reference_matches(&m.id, &value.model))
+        else {
+            continue;
+        };
+        let Some(input) = action
+            .inputs
+            .iter()
+            .find(|i| member_reference_matches(&i.id, &i.local_id, &value.input))
+        else {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-OUTCOME-002",
+                    Severity::Error,
+                    "semantic.outcome.lookup_input_mismatch",
+                    value.input.span(),
+                )
+                .with_argument("result_id", &value.id)
+                .with_argument("action_id", &action.id),
+            );
+            continue;
+        };
+        if !matches!(&input.kind, ActionInputKind::ExistingModel{model_id} if model_id == &model.id)
+        {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-OUTCOME-002",
+                    Severity::Error,
+                    "semantic.outcome.lookup_input_mismatch",
+                    value.span,
+                )
+                .with_argument("result_id", &value.id)
+                .with_argument("action_id", &action.id)
+                .with_argument("model_id", &model.id),
+            );
+            continue;
+        }
+        let mut field_ids = value
+            .fields
+            .iter()
+            .filter_map(|r| {
+                model
+                    .fields
+                    .iter()
+                    .find(|f| member_reference_matches(&f.id, &f.local_id, r))
+                    .map(|f| f.id.clone())
+            })
+            .collect::<Vec<_>>();
+        field_ids.sort();
+        field_ids.dedup();
+        lookups.push(LookupResultDefinition {
+            id: value.id,
+            action_id: action.id.clone(),
+            input_id: input.id.clone(),
+            model_id: model.id.clone(),
+            field_ids,
+            span: value.span,
+        });
+    }
+    let mut outcomes = Vec::new();
+    let mut seen = BTreeSet::new();
+    for group in outcome_groups {
+        let Some(action) = actions
+            .iter()
+            .find(|a| top_level_reference_matches(&a.id, &group.action))
+        else {
+            continue;
+        };
+        for value in group.outcomes {
+            if !seen.insert((action.id.clone(), value.id.clone())) {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-OUTCOME-003",
+                        Severity::Error,
+                        "semantic.outcome.duplicate_id",
+                        value.span,
+                    )
+                    .with_argument("action_id", &action.id)
+                    .with_argument("outcome_id", &value.id),
+                );
+                continue;
+            }
+            let id = match CanonicalId::new(format!("{}.{}", action.id, value.id)) {
+                Ok(v) => v,
+                Err(e) => {
+                    diagnostics.push(model_error("RSPDL-OUTCOME-004", e, value.span));
+                    continue;
+                }
+            };
+            let kind = match value.kind {
+                UnlinkedOutcomeKind::Success => OutcomeKind::Success,
+                UnlinkedOutcomeKind::Failure => OutcomeKind::Failure,
+                UnlinkedOutcomeKind::Cancel => OutcomeKind::Cancel,
+                UnlinkedOutcomeKind::Timeout => OutcomeKind::Timeout,
+            };
+            let mut provided_data = Vec::new();
+            for data in value.provided_data {
+                let Some(model) = models
+                    .iter()
+                    .find(|m| top_level_reference_matches(&m.id, &data.model))
+                else {
+                    continue;
+                };
+                let Some(field) = model
+                    .fields
+                    .iter()
+                    .find(|f| member_reference_matches(&f.id, &f.local_id, &data.field))
+                else {
+                    continue;
+                };
+                let mut verification = OutcomeDataVerification::Verified;
+                let mut prerequisite_field_ids = Vec::new();
+                let source = match data.source {
+                    UnlinkedOutcomeDataSource::Lookup { result_id } => {
+                        let valid = lookups.iter().find(|r| {
+                            r.id == result_id
+                                && r.action_id == action.id
+                                && r.model_id == model.id
+                                && r.field_ids.contains(&field.id)
+                        });
+                        if valid.is_none() {
+                            diagnostics.push(
+                                data_diagnostic(
+                                    "RSPDL-OUTCOME-005",
+                                    Severity::Error,
+                                    "semantic.outcome.lookup_source_mismatch",
+                                    data.span,
+                                )
+                                .with_argument("action_id", &action.id)
+                                .with_argument("result_id", &result_id)
+                                .with_argument("field_id", &field.id),
+                            );
+                            continue;
+                        }
+                        if !field.required {
+                            verification = OutcomeDataVerification::Unknown;
+                            diagnostics.push(
+                                data_diagnostic(
+                                    "RSPDL-OUTCOME-U002",
+                                    Severity::Warning,
+                                    "semantic.outcome.optional_data_unknown",
+                                    data.span,
+                                )
+                                .with_argument("field_id", &field.id)
+                                .with_argument("outcome_id", &id),
+                            );
+                        }
+                        OutcomeDataSourceDefinition::Lookup { result_id }
+                    }
+                    UnlinkedOutcomeDataSource::Derivation { target_field } => {
+                        let matches = derivations
+                            .iter()
+                            .filter(|d| {
+                                d.target_field_id == field.id
+                                    && member_reference_matches(
+                                        &d.target_field_id,
+                                        &field.local_id,
+                                        &target_field,
+                                    )
+                            })
+                            .collect::<Vec<_>>();
+                        if matches.len() != 1 {
+                            diagnostics.push(
+                                data_diagnostic(
+                                    "RSPDL-OUTCOME-006",
+                                    Severity::Error,
+                                    "semantic.outcome.derivation_source_mismatch",
+                                    data.span,
+                                )
+                                .with_argument("field_id", &field.id)
+                                .with_argument("count", matches.len().to_string()),
+                            );
+                            continue;
+                        }
+                        let DerivationExpression::Sum { source_field_id } = &matches[0].expression;
+                        prerequisite_field_ids.push(source_field_id.clone());
+                        OutcomeDataSourceDefinition::Derivation {
+                            target_field_id: field.id.clone(),
+                            source_field_id: source_field_id.clone(),
+                        }
+                    }
+                    UnlinkedOutcomeDataSource::Producer { producer_id } => {
+                        let found = productions
+                            .iter()
+                            .filter_map(|p| {
+                                p.field_producers
+                                    .iter()
+                                    .find(|fp| {
+                                        fp.id.as_str() == producer_id
+                                            || fp.id.as_str().rsplit('.').next()
+                                                == Some(producer_id.as_str())
+                                    })
+                                    .map(|fp| (p, fp))
+                            })
+                            .collect::<Vec<_>>();
+                        if found.len() != 1 {
+                            diagnostics.push(
+                                data_diagnostic(
+                                    "RSPDL-OUTCOME-007",
+                                    Severity::Error,
+                                    "semantic.outcome.producer_source_mismatch",
+                                    data.span,
+                                )
+                                .with_argument("producer_id", &producer_id),
+                            );
+                            continue;
+                        }
+                        let (production, producer) = found[0];
+                        if production.action_id.as_ref() != Some(&action.id)
+                            || producer.output_field_id != field.id
+                        {
+                            diagnostics.push(
+                                data_diagnostic(
+                                    "RSPDL-OUTCOME-007",
+                                    Severity::Error,
+                                    "semantic.outcome.producer_source_mismatch",
+                                    data.span,
+                                )
+                                .with_argument("producer_id", &producer.id)
+                                .with_argument("action_id", &action.id),
+                            );
+                            continue;
+                        }
+                        if producer.condition.is_some()
+                            || production
+                                .branches
+                                .iter()
+                                .any(|b| b.decision == CreationDecision::Skip)
+                        {
+                            verification = OutcomeDataVerification::Unknown;
+                            diagnostics.push(
+                                data_diagnostic(
+                                    "RSPDL-OUTCOME-U001",
+                                    Severity::Warning,
+                                    "semantic.outcome.producer_coverage_unknown",
+                                    data.span,
+                                )
+                                .with_argument("producer_id", &producer.id)
+                                .with_argument("outcome_id", &id),
+                            );
+                        }
+                        match &producer.source {
+                            FieldProducerSource::InputField { field_id, .. }
+                            | FieldProducerSource::EventInputField { field_id, .. } => {
+                                prerequisite_field_ids.push(field_id.clone())
+                            }
+                            FieldProducerSource::ActionInput { .. }
+                            | FieldProducerSource::EventInput { .. }
+                            | FieldProducerSource::Template { .. } => {
+                                verification = OutcomeDataVerification::Unknown
+                            }
+                            FieldProducerSource::Constant { .. } => {}
+                        }
+                        OutcomeDataSourceDefinition::Producer {
+                            producer_id: producer.id.clone(),
+                        }
+                    }
+                };
+                if kind != OutcomeKind::Success {
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-OUTCOME-008",
+                            Severity::Error,
+                            "semantic.outcome.non_success_provides_data",
+                            data.span,
+                        )
+                        .with_argument("outcome_id", &id),
+                    );
+                    continue;
+                }
+                provided_data.push(OutcomeDataDefinition {
+                    model_id: model.id.clone(),
+                    field_id: field.id.clone(),
+                    source,
+                    verification,
+                    prerequisite_field_ids,
+                    span: data.span,
+                });
+            }
+            let recovery = value.recovery.map(|r| RecoveryDefinition {
+                kind: match r.kind {
+                    UnlinkedRecoveryKind::Retry => RecoveryKind::Retry,
+                    UnlinkedRecoveryKind::Return => RecoveryKind::Return,
+                    UnlinkedRecoveryKind::Release => RecoveryKind::Release,
+                },
+                screen_id: r.screen.as_ref().and_then(|s| {
+                    screens
+                        .iter()
+                        .find(|x| top_level_reference_matches(&x.id, s))
+                        .map(|x| x.id.clone())
+                }),
+                element_id: r.element.map(|v| v.id().to_owned()),
+                action_id: r.action.as_ref().and_then(|a| {
+                    actions
+                        .iter()
+                        .find(|x| top_level_reference_matches(&x.id, a))
+                        .map(|x| x.id.clone())
+                }),
+                path_id: r.path.map(|v| v.id().to_owned()),
+                span: r.span,
+            });
+            outcomes.push(ActionOutcomeDefinition {
+                id,
+                local_id: value.id,
+                action_id: action.id.clone(),
+                kind,
+                provided_data,
+                recovery,
+                span: value.span,
+            });
+        }
+    }
+    let _ = module_id;
+    for outcome in &mut outcomes {
+        outcome
+            .provided_data
+            .sort_by(|a, b| (&a.field_id, &a.model_id).cmp(&(&b.field_id, &b.model_id)));
+    }
+    lookups.sort_by(|a, b| a.id.cmp(&b.id));
+    outcomes.sort_by(|a, b| a.id.cmp(&b.id));
+    (lookups, outcomes)
+}
+
+enum WorkflowWitness {
+    Missing(String),
+    Unknown,
+    Available,
+}
+
+const MAX_WORKFLOW_WITNESS_STATES: usize = 16_384;
+type WorkflowFieldState = (BTreeSet<CanonicalId>, BTreeSet<CanonicalId>);
+type WorkflowVisitedStates = BTreeMap<CanonicalId, Vec<WorkflowFieldState>>;
+
+fn relevant_workflow_fields(
+    required_field: &CanonicalId,
+    outcomes: &[ActionOutcomeDefinition],
+) -> BTreeSet<CanonicalId> {
+    let mut relevant = BTreeSet::from([required_field.clone()]);
+    loop {
+        let before = relevant.len();
+        let prerequisites = outcomes
+            .iter()
+            .flat_map(|outcome| &outcome.provided_data)
+            .filter(|data| relevant.contains(&data.field_id))
+            .flat_map(|data| data.prerequisite_field_ids.iter().cloned())
+            .collect::<Vec<_>>();
+        relevant.extend(prerequisites);
+        if relevant.len() == before {
+            return relevant;
+        }
+    }
+}
+
+fn transfer_outcome_data(
+    available: &mut BTreeSet<CanonicalId>,
+    unknown: &mut BTreeSet<CanonicalId>,
+    outcome: &ActionOutcomeDefinition,
+    relevant: &BTreeSet<CanonicalId>,
+) {
+    let incoming_available = available.clone();
+    let incoming_unknown = unknown.clone();
+    let mut acquired = BTreeSet::new();
+    let mut maybe_acquired = BTreeSet::new();
+    for data in outcome
+        .provided_data
+        .iter()
+        .filter(|data| relevant.contains(&data.field_id))
+    {
+        let prerequisites_available = data
+            .prerequisite_field_ids
+            .iter()
+            .all(|field| incoming_available.contains(field));
+        let prerequisites_known_or_unknown = data
+            .prerequisite_field_ids
+            .iter()
+            .all(|field| incoming_available.contains(field) || incoming_unknown.contains(field));
+        match data.verification {
+            OutcomeDataVerification::Verified if prerequisites_available => {
+                acquired.insert(data.field_id.clone());
+            }
+            OutcomeDataVerification::Verified if prerequisites_known_or_unknown => {
+                maybe_acquired.insert(data.field_id.clone());
+            }
+            OutcomeDataVerification::Unknown if prerequisites_known_or_unknown => {
+                maybe_acquired.insert(data.field_id.clone());
+            }
+            OutcomeDataVerification::Verified | OutcomeDataVerification::Unknown => {}
+        }
+    }
+    available.extend(acquired);
+    unknown.extend(maybe_acquired);
+    unknown.retain(|field| !available.contains(field));
+}
+
+fn witness_state_is_dominated(
+    visited: &mut WorkflowVisitedStates,
+    screen: &CanonicalId,
+    available: &BTreeSet<CanonicalId>,
+    unknown: &BTreeSet<CanonicalId>,
+) -> bool {
+    let states = visited.entry(screen.clone()).or_default();
+    if states.iter().any(|(seen_available, seen_unknown)| {
+        seen_available.is_subset(available) && seen_unknown.is_subset(unknown)
+    }) {
+        return true;
+    }
+    states.retain(|(seen_available, seen_unknown)| {
+        !available.is_subset(seen_available) || !unknown.is_subset(seen_unknown)
+    });
+    states.push((available.clone(), unknown.clone()));
+    false
+}
+
+#[cfg(test)]
+mod workflow_outcome_transfer_tests {
+    use super::*;
+
+    fn id(value: &str) -> CanonicalId {
+        CanonicalId::new(value).unwrap()
+    }
+
+    fn data(
+        field: &str,
+        verification: OutcomeDataVerification,
+        prerequisites: &[&str],
+    ) -> OutcomeDataDefinition {
+        OutcomeDataDefinition {
+            model_id: id("module.model"),
+            field_id: id(field),
+            source: OutcomeDataSourceDefinition::Lookup {
+                result_id: "lookup".into(),
+            },
+            verification,
+            prerequisite_field_ids: prerequisites.iter().map(|value| id(value)).collect(),
+            span: TextRange { start: 0, end: 0 },
+        }
+    }
+
+    fn outcome(provided_data: Vec<OutcomeDataDefinition>) -> ActionOutcomeDefinition {
+        ActionOutcomeDefinition {
+            id: id("module.action.success"),
+            local_id: "success".into(),
+            action_id: id("module.action"),
+            kind: OutcomeKind::Success,
+            provided_data,
+            recovery: None,
+            span: TextRange { start: 0, end: 0 },
+        }
+    }
+
+    #[test]
+    fn one_outcome_applies_provided_data_as_an_order_independent_batch() {
+        let source = data(
+            "module.model.a_source",
+            OutcomeDataVerification::Verified,
+            &[],
+        );
+        let target = data(
+            "module.model.z_target",
+            OutcomeDataVerification::Verified,
+            &["module.model.a_source"],
+        );
+        let relevant = BTreeSet::from([id("module.model.a_source"), id("module.model.z_target")]);
+
+        for provided_data in [vec![source.clone(), target.clone()], vec![target, source]] {
+            let mut available = BTreeSet::new();
+            let mut unknown = BTreeSet::new();
+            transfer_outcome_data(
+                &mut available,
+                &mut unknown,
+                &outcome(provided_data),
+                &relevant,
+            );
+            assert!(available.contains(&id("module.model.a_source")));
+            assert!(!available.contains(&id("module.model.z_target")));
+            assert!(!unknown.contains(&id("module.model.z_target")));
+        }
+    }
+
+    #[test]
+    fn verified_derivation_propagates_unknown_prerequisite_presence() {
+        let target = data(
+            "module.model.target",
+            OutcomeDataVerification::Verified,
+            &["module.model.source"],
+        );
+        let relevant = BTreeSet::from([id("module.model.source"), id("module.model.target")]);
+        let mut available = BTreeSet::new();
+        let mut unknown = BTreeSet::from([id("module.model.source")]);
+
+        transfer_outcome_data(
+            &mut available,
+            &mut unknown,
+            &outcome(vec![target]),
+            &relevant,
+        );
+
+        assert!(!available.contains(&id("module.model.target")));
+        assert!(unknown.contains(&id("module.model.target")));
+    }
+}
+
+fn workflow_data_witness(
+    start: &CanonicalId,
+    completion: &CanonicalId,
+    field: &CanonicalId,
+    initial_fields: &BTreeSet<CanonicalId>,
+    paths: &[ScreenPathDefinition],
+    acquisitions: &[WorkflowAcquisitionDefinition],
+    outcomes: &[ActionOutcomeDefinition],
+) -> WorkflowWitness {
+    use std::collections::VecDeque;
+    let relevant = relevant_workflow_fields(field, outcomes);
+    let projected_initial = initial_fields
+        .intersection(&relevant)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut queue = VecDeque::from([(
+        start.clone(),
+        projected_initial,
+        BTreeSet::new(),
+        vec![start.to_string()],
+    )]);
+    let mut visited = BTreeMap::new();
+    let mut state_count = 0usize;
+    let mut saw_unknown = false;
+    while let Some((screen, available, unknown, witness)) = queue.pop_front() {
+        state_count += 1;
+        if state_count > MAX_WORKFLOW_WITNESS_STATES {
+            return WorkflowWitness::Unknown;
+        }
+        if witness_state_is_dominated(&mut visited, &screen, &available, &unknown) {
+            continue;
+        }
+        if &screen == completion {
+            if available.contains(field) {
+                continue;
+            }
+            if unknown.contains(field) {
+                saw_unknown = true;
+                continue;
+            }
+            return WorkflowWitness::Missing(witness.join(" -> "));
+        }
+        for path in paths.iter().filter(|path| path.source_screen_id == screen) {
+            let Some(target_id) = &path.target_screen_id else {
+                continue;
+            };
+            let mut next_available = available.clone();
+            let mut next_unknown = unknown.clone();
+            for acquisition in acquisitions.iter().filter(|v| {
+                v.source_screen_id == screen && v.source_element_id == path.source_element_id
+            }) {
+                for acquired in acquisition
+                    .data
+                    .iter()
+                    .map(|data| &data.field_id)
+                    .filter(|field| relevant.contains(*field))
+                {
+                    next_available.insert(acquired.clone());
+                    next_unknown.remove(acquired);
+                }
+            }
+            if let Some(outcome) = path.outcome_id.as_ref().and_then(|id| {
+                outcomes
+                    .iter()
+                    .find(|o| &o.id == id && o.kind == OutcomeKind::Success)
+            }) {
+                transfer_outcome_data(&mut next_available, &mut next_unknown, outcome, &relevant);
+            }
+            let mut next = witness.clone();
+            next.push(format!(
+                "{}.{}",
+                path.source_screen_id, path.source_element_id
+            ));
+            next.push(target_id.to_string());
+            queue.push_back((target_id.clone(), next_available, next_unknown, next));
+        }
+    }
+    if saw_unknown {
+        WorkflowWitness::Unknown
+    } else {
+        WorkflowWitness::Available
+    }
+}
+
+fn link_workflow_data(
+    value: &UnlinkedWorkflowData,
+    models: &[DataModelDefinition],
+) -> Option<WorkflowDataRequirement> {
+    let model = models
+        .iter()
+        .find(|model| top_level_reference_matches(&model.id, &value.model))?;
+    let field = model
+        .fields
+        .iter()
+        .find(|field| member_reference_matches(&field.id, &field.local_id, &value.field))?;
+    Some(WorkflowDataRequirement {
+        model_id: model.id.clone(),
+        field_id: field.id.clone(),
+        span: value.span,
+    })
+}
+
+fn placed_input_fields(elements: &[LayoutElement]) -> BTreeSet<CanonicalId> {
+    let mut fields = BTreeSet::new();
+    for element in elements {
+        match element {
+            LayoutElement::Header { children, .. } | LayoutElement::Section { children, .. } => {
+                fields.extend(placed_input_fields(children))
+            }
+            LayoutElement::Form { inputs, .. } => fields.extend(placed_input_fields(inputs)),
+            LayoutElement::Input { field_id, .. } => {
+                fields.insert(field_id.clone());
+            }
+            _ => {}
+        }
+    }
+    fields
+}
+
+fn button_action(
+    layouts: &[ScreenLayoutDefinition],
+    screen_id: &CanonicalId,
+    element_id: &str,
+) -> Option<CanonicalId> {
+    fn find(elements: &[LayoutElement], element_id: &str) -> Option<CanonicalId> {
+        for element in elements {
+            match element {
+                LayoutElement::Header { children, .. }
+                | LayoutElement::Section { children, .. } => {
+                    if let Some(id) = find(children, element_id) {
+                        return Some(id);
+                    }
+                }
+                LayoutElement::Button {
+                    id,
+                    action_id: Some(action_id),
+                    ..
+                } if id == element_id => return Some(action_id.clone()),
+                _ => {}
+            }
+        }
+        None
+    }
+    layouts
+        .iter()
+        .find(|layout| &layout.screen_id == screen_id)
+        .and_then(|layout| find(&layout.elements, element_id))
+}
+
 /// Everything the document frontmatter contributes to the semantic module.
 #[derive(Debug, Default)]
 struct FrontmatterAnalysis {
@@ -3518,6 +4550,12 @@ fn analyze_frontmatter_structure(
     models: &[DataModelDefinition],
     screens: &[ScreenDefinition],
     actions: &BTreeMap<String, CanonicalId>,
+    roles: &[RoleDefinition],
+    action_definitions: &[ActionDefinition],
+    policies: &[PolicyDefinition],
+    outcomes: &[ActionOutcomeDefinition],
+    mutations: &[ActionDataMutationDefinition],
+    productions: &[ConditionalProductionDefinition],
     field_intents: &[FieldIntentDefinition],
     top_level_ids: &mut BTreeSet<CanonicalId>,
     diagnostics: &mut Vec<Diagnostic>,
@@ -3652,16 +4690,157 @@ fn analyze_frontmatter_structure(
             diagnostics,
         );
 
+        let mut role_ids = layout
+            .roles
+            .iter()
+            .filter_map(|r| {
+                roles
+                    .iter()
+                    .find(|x| top_level_reference_matches(&x.id, r))
+                    .map(|x| x.id.clone())
+            })
+            .collect::<Vec<_>>();
+        role_ids.sort();
+        role_ids.dedup();
+        let mut permissions = layout
+            .permissions
+            .iter()
+            .filter_map(|p| {
+                let role = roles
+                    .iter()
+                    .find(|x| top_level_reference_matches(&x.id, &p.role))?;
+                let action = action_definitions
+                    .iter()
+                    .find(|x| top_level_reference_matches(&x.id, &p.action))?;
+                let model = models
+                    .iter()
+                    .find(|x| top_level_reference_matches(&x.id, &p.model))?;
+                let field_id = p.field.as_ref().and_then(|f| {
+                    model
+                        .fields
+                        .iter()
+                        .find(|x| member_reference_matches(&x.id, &x.local_id, f))
+                        .map(|x| x.id.clone())
+                });
+                if !role_ids.contains(&role.id) {
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-SCREEN-POLICY-002",
+                            Severity::Error,
+                            "semantic.screen_permission.role_not_bound",
+                            p.span,
+                        )
+                        .with_argument("screen_id", &screen_id)
+                        .with_argument("role_id", &role.id),
+                    );
+                    return None;
+                }
+                let exposed = button_action_in_elements(&elements, &action.id);
+                if !exposed {
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-SCREEN-POLICY-003",
+                            Severity::Error,
+                            "semantic.screen_permission.action_not_exposed",
+                            p.span,
+                        )
+                        .with_argument("screen_id", &screen_id)
+                        .with_argument("action_id", &action.id),
+                    );
+                    return None;
+                }
+                let relevant = policies
+                    .iter()
+                    .filter(|x| {
+                        x.role_id == role.id
+                            && x.action_id == action.id
+                            && x.model_id == model.id
+                            && field_id.as_ref().is_some_and(|f| &x.field_id == f)
+                    })
+                    .collect::<Vec<_>>();
+                let verification = if relevant.iter().any(|x| x.effect == PolicyEffect::Deny) {
+                    PolicyVerification::Denied
+                } else if relevant.iter().any(|x| x.effect == PolicyEffect::Allow) {
+                    PolicyVerification::Allowed
+                } else {
+                    PolicyVerification::Unknown
+                };
+                if verification == PolicyVerification::Denied {
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-SCREEN-POLICY-001",
+                            Severity::Error,
+                            "semantic.screen_permission.denied",
+                            p.span,
+                        )
+                        .with_argument("screen_id", &screen_id)
+                        .with_argument("role_id", &role.id)
+                        .with_argument("action_id", &action.id)
+                        .with_argument("model_id", &model.id),
+                    );
+                }
+                if verification == PolicyVerification::Unknown {
+                    diagnostics.push(
+                        data_diagnostic(
+                            "RSPDL-SCREEN-POLICY-U001",
+                            Severity::Warning,
+                            "semantic.screen_permission.verification_unknown",
+                            p.span,
+                        )
+                        .with_argument("screen_id", &screen_id)
+                        .with_argument("role_id", &role.id)
+                        .with_argument("action_id", &action.id)
+                        .with_argument("model_id", &model.id),
+                    );
+                }
+                Some(ScreenPermissionDefinition {
+                    role_id: role.id.clone(),
+                    action_id: action.id.clone(),
+                    model_id: model.id.clone(),
+                    field_id,
+                    verification,
+                    span: p.span,
+                })
+            })
+            .collect::<Vec<_>>();
+        permissions.sort_by(|a, b| {
+            (&a.role_id, &a.action_id, &a.model_id, &a.field_id).cmp(&(
+                &b.role_id,
+                &b.action_id,
+                &b.model_id,
+                &b.field_id,
+            ))
+        });
+
         analysis.layouts.push(ScreenLayoutDefinition {
             screen_id,
+            role_ids,
+            permissions,
             kind: layout.kind,
             elements,
             span: layout.span,
         });
     }
 
-    let mut seen_paths = BTreeSet::<(CanonicalId, String, CanonicalId, Option<String>)>::new();
+    let mut seen_paths = BTreeSet::new();
+    let mut seen_path_ids = BTreeSet::new();
     for path in paths {
+        if path
+            .id
+            .as_ref()
+            .is_some_and(|id| !seen_path_ids.insert(id.clone()))
+        {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-FLOW-005",
+                    Severity::Error,
+                    "semantic.screen_flow.duplicate_path_id",
+                    path.span,
+                )
+                .with_argument("path_id", path.id.as_deref().unwrap_or_default()),
+            );
+            continue;
+        }
         let Some(source_id) = screen_by_id
             .keys()
             .find(|id| top_level_reference_matches(id, &path.source_screen))
@@ -3669,13 +4848,12 @@ fn analyze_frontmatter_structure(
         else {
             continue;
         };
-        let Some(target_id) = screen_by_id
-            .keys()
-            .find(|id| top_level_reference_matches(id, &path.target_screen))
-            .cloned()
-        else {
-            continue;
-        };
+        let target_id = path.target_screen.as_ref().and_then(|target| {
+            screen_by_id
+                .keys()
+                .find(|id| top_level_reference_matches(id, target))
+                .cloned()
+        });
         let element_id = path.source_element.id().to_owned();
 
         let known = analysis
@@ -3697,10 +4875,61 @@ fn analyze_frontmatter_structure(
             continue;
         }
 
+        let action_id = button_action(&analysis.layouts, &source_id, &element_id);
+        let outcome_id = match (&path.outcome, &action_id) {
+            (Some(local), Some(action)) => outcomes
+                .iter()
+                .find(|o| {
+                    o.action_id == *action && (o.local_id == *local || o.id.as_str() == local)
+                })
+                .map(|o| o.id.clone()),
+            (Some(local), _) => {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-OUTCOME-009",
+                        Severity::Error,
+                        "semantic.outcome.path_mismatch",
+                        path.span,
+                    )
+                    .with_argument("outcome_id", local),
+                );
+                None
+            }
+            _ => None,
+        };
+        if path.outcome.is_some() && outcome_id.is_none() {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-OUTCOME-009",
+                    Severity::Error,
+                    "semantic.outcome.path_mismatch",
+                    path.span,
+                )
+                .with_argument("outcome_id", path.outcome.as_deref().unwrap_or_default())
+                .with_argument("screen_id", &source_id)
+                .with_argument("element_id", &element_id),
+            );
+            continue;
+        }
+        let handler = path.handler.map(|h| SameScreenHandlerDefinition {
+            kind: match h.kind {
+                UnlinkedHandlerKind::State => HandlerKind::State,
+                UnlinkedHandlerKind::Message => HandlerKind::Message,
+                UnlinkedHandlerKind::Popup => HandlerKind::Popup,
+                UnlinkedHandlerKind::Loading => HandlerKind::Loading,
+            },
+            id: h.id,
+            content: h.content,
+            span: h.span,
+        });
         let key = (
             source_id.clone(),
             element_id.clone(),
             target_id.clone(),
+            outcome_id.clone(),
+            handler
+                .as_ref()
+                .map(|h| (h.kind as u8, h.id.clone(), h.content.clone())),
             path.label.clone(),
         );
         if !seen_paths.insert(key) {
@@ -3713,19 +4942,37 @@ fn analyze_frontmatter_structure(
                 )
                 .with_argument("screen_id", &source_id)
                 .with_argument("element_id", &element_id)
-                .with_argument("target_screen_id", &target_id),
+                .with_argument(
+                    "target_screen_id",
+                    target_id
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_default(),
+                ),
             );
             continue;
         }
 
         analysis.paths.push(ScreenPathDefinition {
+            id: path.id,
             source_screen_id: source_id,
             source_element_id: element_id,
             target_screen_id: target_id,
+            outcome_id,
+            handler,
             label: path.label.clone(),
             span: path.span,
         });
     }
+
+    validate_outcome_handlers(
+        &analysis.layouts,
+        &analysis.paths,
+        outcomes,
+        mutations,
+        productions,
+        diagnostics,
+    );
 
     // Document-wide judgements are only meaningful about a document that holds
     // together. If anything above failed, the shape being judged is not the shape
@@ -3748,6 +4995,175 @@ fn analyze_frontmatter_structure(
     // Reference *lists* inside these definitions stay sorted, because a set of
     // references has no authored order.
     analysis
+}
+
+fn button_action_in_elements(elements: &[LayoutElement], action: &CanonicalId) -> bool {
+    elements.iter().any(|e| match e {
+        LayoutElement::Button {
+            action_id: Some(a), ..
+        } => a == action,
+        LayoutElement::Header { children, .. }
+        | LayoutElement::Section { children, .. }
+        | LayoutElement::Form {
+            inputs: children, ..
+        } => button_action_in_elements(children, action),
+        _ => false,
+    })
+}
+
+fn validate_outcome_handlers(
+    layouts: &[ScreenLayoutDefinition],
+    paths: &[ScreenPathDefinition],
+    outcomes: &[ActionOutcomeDefinition],
+    mutations: &[ActionDataMutationDefinition],
+    productions: &[ConditionalProductionDefinition],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    fn buttons(
+        elements: &[LayoutElement],
+        screen: &CanonicalId,
+        out: &mut Vec<(CanonicalId, String, CanonicalId, TextRange)>,
+    ) {
+        for e in elements {
+            match e {
+                LayoutElement::Button {
+                    id,
+                    action_id: Some(a),
+                    span,
+                    ..
+                } => out.push((screen.clone(), id.clone(), a.clone(), *span)),
+                LayoutElement::Header { children, .. }
+                | LayoutElement::Section { children, .. }
+                | LayoutElement::Form {
+                    inputs: children, ..
+                } => buttons(children, screen, out),
+                _ => {}
+            }
+        }
+    }
+    let mut declared = Vec::new();
+    for l in layouts {
+        buttons(&l.elements, &l.screen_id, &mut declared);
+    }
+    for (screen, element, action, span) in declared {
+        let expected = outcomes
+            .iter()
+            .filter(|o| o.action_id == action)
+            .collect::<Vec<_>>();
+        if expected.is_empty() {
+            continue;
+        }
+        for outcome in expected {
+            let handlers = paths
+                .iter()
+                .filter(|p| {
+                    p.source_screen_id == screen
+                        && p.source_element_id == element
+                        && p.outcome_id.as_ref() == Some(&outcome.id)
+                })
+                .count();
+            if handlers == 0 {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-OUTCOME-010",
+                        Severity::Error,
+                        "semantic.outcome.handler_missing",
+                        span,
+                    )
+                    .with_argument("screen_id", &screen)
+                    .with_argument("element_id", &element)
+                    .with_argument("outcome_id", &outcome.id),
+                );
+            } else if handlers > 1 {
+                diagnostics.push(
+                    data_diagnostic(
+                        "RSPDL-OUTCOME-011",
+                        Severity::Warning,
+                        "semantic.outcome.handler_ambiguous",
+                        span,
+                    )
+                    .with_argument("screen_id", &screen)
+                    .with_argument("element_id", &element)
+                    .with_argument("outcome_id", &outcome.id),
+                );
+            }
+            if let Some(recovery) = &outcome.recovery {
+                for handler in paths.iter().filter(|p| {
+                    p.source_screen_id == screen
+                        && p.source_element_id == element
+                        && p.outcome_id.as_ref() == Some(&outcome.id)
+                }) {
+                    let origin = handler
+                        .target_screen_id
+                        .as_ref()
+                        .unwrap_or(&handler.source_screen_id);
+                    let reachable = reachable_screens(origin, paths);
+                    let valid = match recovery.kind {
+                        RecoveryKind::Return => recovery.path_id.as_ref().is_some_and(|id| {
+                            paths.iter().any(|p| {
+                                p.id.as_ref() == Some(id) && reachable.contains(&p.source_screen_id)
+                            })
+                        }),
+                        RecoveryKind::Retry | RecoveryKind::Release => match (
+                            &recovery.screen_id,
+                            &recovery.element_id,
+                            &recovery.action_id,
+                        ) {
+                            (Some(s), Some(e), Some(a)) => {
+                                reachable.contains(s)
+                                    && button_action(layouts, s, e).as_ref() == Some(a)
+                                    && (recovery.kind != RecoveryKind::Release
+                                        || mutations.iter().any(|m| &m.action_id == a)
+                                        || productions
+                                            .iter()
+                                            .any(|p| p.action_id.as_ref() == Some(a)))
+                            }
+                            _ => false,
+                        },
+                    };
+                    if !valid {
+                        diagnostics.push(
+                            data_diagnostic(
+                                "RSPDL-RECOVERY-001",
+                                Severity::Error,
+                                "semantic.recovery.target_invalid",
+                                recovery.span,
+                            )
+                            .with_argument("outcome_id", &outcome.id),
+                        );
+                    }
+                    if valid && recovery.kind == RecoveryKind::Release {
+                        diagnostics.push(
+                            data_diagnostic(
+                                "RSPDL-RECOVERY-U001",
+                                Severity::Warning,
+                                "semantic.recovery.release_execution_unknown",
+                                recovery.span,
+                            )
+                            .with_argument("outcome_id", &outcome.id),
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn reachable_screens(start: &CanonicalId, paths: &[ScreenPathDefinition]) -> BTreeSet<CanonicalId> {
+    let mut reached = BTreeSet::from([start.clone()]);
+    loop {
+        let before = reached.len();
+        for p in paths {
+            if reached.contains(&p.source_screen_id)
+                && let Some(t) = &p.target_screen_id
+            {
+                reached.insert(t.clone());
+            }
+        }
+        if reached.len() == before {
+            return reached;
+        }
+    }
 }
 
 /// Depth is a design decision informed by user research, not a semantic rule, so
@@ -3866,7 +5282,7 @@ fn report_unreachable_screens(analysis: &FrontmatterAnalysis, diagnostics: &mut 
     let reached = analysis
         .paths
         .iter()
-        .map(|path| path.target_screen_id.clone())
+        .filter_map(|path| path.target_screen_id.clone())
         .collect::<BTreeSet<_>>();
     let sources = analysis
         .paths
@@ -3944,8 +5360,27 @@ fn link_layout_element(
     placed: &mut BTreeSet<(CanonicalId, CanonicalId)>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<LayoutElement> {
+    if let Some(id) = unlinked_layout_element_id(element) {
+        let span = unlinked_layout_element_span(element);
+        if let Some(existing) = element_ids.get(id) {
+            diagnostics.push(
+                data_diagnostic(
+                    "RSPDL-LAYOUT-003",
+                    Severity::Error,
+                    "semantic.layout.duplicate_element_id",
+                    span,
+                )
+                .with_argument("screen_id", &screen.id)
+                .with_argument("element_id", id)
+                .with_argument("declared_at", existing.start),
+            );
+            return None;
+        }
+        element_ids.insert(id.to_owned(), span);
+    }
     let linked = match element {
-        UnlinkedLayoutElement::Header { children, span } => LayoutElement::Header {
+        UnlinkedLayoutElement::Header { id, children, span } => LayoutElement::Header {
+            id: id.clone(),
             children: link_layout_elements(
                 children,
                 screen,
@@ -3958,7 +5393,8 @@ fn link_layout_element(
             ),
             span: *span,
         },
-        UnlinkedLayoutElement::Section { children, span } => LayoutElement::Section {
+        UnlinkedLayoutElement::Section { id, children, span } => LayoutElement::Section {
+            id: id.clone(),
             children: link_layout_elements(
                 children,
                 screen,
@@ -3971,7 +5407,8 @@ fn link_layout_element(
             ),
             span: *span,
         },
-        UnlinkedLayoutElement::Form { inputs, span } => LayoutElement::Form {
+        UnlinkedLayoutElement::Form { id, inputs, span } => LayoutElement::Form {
+            id: id.clone(),
             inputs: link_layout_elements(
                 inputs,
                 screen,
@@ -3984,15 +5421,17 @@ fn link_layout_element(
             ),
             span: *span,
         },
-        UnlinkedLayoutElement::Heading { text, span } => LayoutElement::Heading {
+        UnlinkedLayoutElement::Heading { id, text, span } => LayoutElement::Heading {
+            id: id.clone(),
             text: text.clone(),
             span: *span,
         },
-        UnlinkedLayoutElement::Placeholder { text, span } => LayoutElement::Placeholder {
+        UnlinkedLayoutElement::Placeholder { id, text, span } => LayoutElement::Placeholder {
+            id: id.clone(),
             text: text.clone(),
             span: *span,
         },
-        UnlinkedLayoutElement::Input { field, span } => {
+        UnlinkedLayoutElement::Input { id, field, span } => {
             let found = screen
                 .operations
                 .iter()
@@ -4038,11 +5477,13 @@ fn link_layout_element(
             }
             placed.insert((screen.id.clone(), definition.id.clone()));
             LayoutElement::Input {
+                id: id.clone(),
                 field_id: definition.id.clone(),
                 span: *span,
             }
         }
         UnlinkedLayoutElement::List {
+            id,
             model,
             fields,
             span,
@@ -4104,6 +5545,7 @@ fn link_layout_element(
                 field_ids.push(candidate.id.clone());
             }
             LayoutElement::List {
+                id: id.clone(),
                 model_id: operation.model_id.clone(),
                 field_ids,
                 span: *span,
@@ -4115,22 +5557,6 @@ fn link_layout_element(
             action,
             span,
         } => {
-            if let Some(existing) = element_ids.get(id) {
-                diagnostics.push(
-                    data_diagnostic(
-                        "RSPDL-LAYOUT-003",
-                        Severity::Error,
-                        "semantic.layout.duplicate_element_id",
-                        *span,
-                    )
-                    .with_argument("screen_id", &screen.id)
-                    .with_argument("element_id", id)
-                    .with_argument("declared_at", existing.start.to_string()),
-                );
-                return None;
-            }
-            element_ids.insert(id.clone(), *span);
-
             let action_id = match action {
                 None => None,
                 Some(reference) => {
@@ -4162,6 +5588,32 @@ fn link_layout_element(
         }
     };
     Some(linked)
+}
+
+fn unlinked_layout_element_id(element: &UnlinkedLayoutElement) -> Option<&str> {
+    match element {
+        UnlinkedLayoutElement::Header { id, .. }
+        | UnlinkedLayoutElement::Section { id, .. }
+        | UnlinkedLayoutElement::Heading { id, .. }
+        | UnlinkedLayoutElement::Form { id, .. }
+        | UnlinkedLayoutElement::Input { id, .. }
+        | UnlinkedLayoutElement::List { id, .. }
+        | UnlinkedLayoutElement::Placeholder { id, .. } => id.as_deref(),
+        UnlinkedLayoutElement::Button { id, .. } => Some(id),
+    }
+}
+
+fn unlinked_layout_element_span(element: &UnlinkedLayoutElement) -> TextRange {
+    match element {
+        UnlinkedLayoutElement::Header { span, .. }
+        | UnlinkedLayoutElement::Section { span, .. }
+        | UnlinkedLayoutElement::Heading { span, .. }
+        | UnlinkedLayoutElement::Form { span, .. }
+        | UnlinkedLayoutElement::Input { span, .. }
+        | UnlinkedLayoutElement::List { span, .. }
+        | UnlinkedLayoutElement::Button { span, .. }
+        | UnlinkedLayoutElement::Placeholder { span, .. } => *span,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

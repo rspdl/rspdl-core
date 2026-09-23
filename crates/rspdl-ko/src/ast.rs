@@ -406,26 +406,32 @@ pub enum ScreenLayoutKindAst {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LayoutElementAst {
     Header {
+        id: Option<String>,
         children: Vec<LayoutElementAst>,
         span: Span,
     },
     Section {
+        id: Option<String>,
         children: Vec<LayoutElementAst>,
         span: Span,
     },
     Heading {
+        id: Option<String>,
         text: String,
         span: Span,
     },
     Form {
+        id: Option<String>,
         inputs: Vec<LayoutElementAst>,
         span: Span,
     },
     Input {
+        id: Option<String>,
         field: FrontmatterRefAst,
         span: Span,
     },
     List {
+        id: Option<String>,
         model: FrontmatterRefAst,
         fields: Vec<FrontmatterRefAst>,
         span: Span,
@@ -439,6 +445,7 @@ pub enum LayoutElementAst {
     },
     /// 선언할 수 없는 자리의 이름표. 지도와 차트가 여기 들어간다.
     Placeholder {
+        id: Option<String>,
         text: String,
         span: Span,
     },
@@ -447,6 +454,10 @@ pub enum LayoutElementAst {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ScreenLayoutAst {
     pub screen: FrontmatterRefAst,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<FrontmatterRefAst>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub permissions: Vec<ScreenPermissionAst>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<ScreenLayoutKindAst>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -454,15 +465,149 @@ pub struct ScreenLayoutAst {
     pub span: Span,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ScreenPermissionAst {
+    pub role: FrontmatterRefAst,
+    pub action: FrontmatterRefAst,
+    pub model: FrontmatterRefAst,
+    pub field: Option<FrontmatterRefAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutcomeKindAst {
+    Success,
+    Failure,
+    Cancel,
+    Timeout,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HandlerKindAst {
+    State,
+    Message,
+    Popup,
+    Loading,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SameScreenHandlerAst {
+    pub kind: HandlerKindAst,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryKindAst {
+    Retry,
+    Return,
+    Release,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RecoveryAst {
+    pub kind: RecoveryKindAst,
+    pub screen: Option<FrontmatterRefAst>,
+    pub element: Option<FrontmatterRefAst>,
+    pub action: Option<FrontmatterRefAst>,
+    pub path: Option<FrontmatterRefAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum OutcomeDataSourceAst {
+    Lookup { result: FrontmatterRefAst },
+    Derivation { target: FrontmatterRefAst },
+    Producer { producer: FrontmatterRefAst },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct OutcomeDataAst {
+    pub model: FrontmatterRefAst,
+    pub field: FrontmatterRefAst,
+    pub source: OutcomeDataSourceAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ActionOutcomeAst {
+    pub id: String,
+    pub kind: OutcomeKindAst,
+    pub provided_data: Vec<OutcomeDataAst>,
+    pub recovery: Option<RecoveryAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ActionOutcomesAst {
+    pub action: FrontmatterRefAst,
+    pub outcomes: Vec<ActionOutcomeAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct LookupResultAst {
+    pub id: String,
+    pub action: FrontmatterRefAst,
+    pub input: FrontmatterRefAst,
+    pub model: FrontmatterRefAst,
+    pub fields: Vec<FrontmatterRefAst>,
+    pub span: Span,
+}
+
 /// 흐름 하나. 출발은 화면 안의 요소이고 도착은 화면이다.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ScreenPathAst {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub source_screen: FrontmatterRefAst,
     pub source_element: FrontmatterRefAst,
-    pub target_screen: FrontmatterRefAst,
+    pub target_screen: Option<FrontmatterRefAst>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<FrontmatterRefAst>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handler: Option<SameScreenHandlerAst>,
     /// 사람이 읽는 설명. 조건식이 아니므로 해석하지 않는다.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowDataAst {
+    pub model: FrontmatterRefAst,
+    pub field: FrontmatterRefAst,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowCompletionAst {
+    pub screen: FrontmatterRefAst,
+    pub required_data: Vec<WorkflowDataAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowAcquisitionAst {
+    pub source_screen: FrontmatterRefAst,
+    pub source_element: FrontmatterRefAst,
+    pub data: Vec<WorkflowDataAst>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowAst {
+    pub declaration: NamedIdAst,
+    pub start_screen: FrontmatterRefAst,
+    pub initial_data: Vec<WorkflowDataAst>,
+    pub acquisitions: Vec<WorkflowAcquisitionAst>,
+    pub completions: Vec<WorkflowCompletionAst>,
     pub span: Span,
 }
 
@@ -476,6 +621,12 @@ pub struct FrontmatterAst {
     pub screens: Vec<ScreenLayoutAst>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<ScreenPathAst>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub action_outcomes: Vec<ActionOutcomesAst>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lookup_results: Vec<LookupResultAst>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub workflows: Vec<WorkflowAst>,
     pub span: Span,
 }
 

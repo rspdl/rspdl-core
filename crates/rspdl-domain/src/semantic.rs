@@ -149,26 +149,38 @@ pub enum ScreenLayoutKind {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LayoutElement {
     Header {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         children: Vec<LayoutElement>,
         span: TextRange,
     },
     Section {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         children: Vec<LayoutElement>,
         span: TextRange,
     },
     Heading {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         text: String,
         span: TextRange,
     },
     Form {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         inputs: Vec<LayoutElement>,
         span: TextRange,
     },
     Input {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         field_id: CanonicalId,
         span: TextRange,
     },
     List {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         model_id: CanonicalId,
         field_ids: Vec<CanonicalId>,
         span: TextRange,
@@ -184,6 +196,8 @@ pub enum LayoutElement {
     /// chart. Naming it and leaving it empty beats forcing it into a vocabulary
     /// that does not fit.
     Placeholder {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         text: String,
         span: TextRange,
     },
@@ -194,10 +208,138 @@ pub enum LayoutElement {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ScreenLayoutDefinition {
     pub screen_id: CanonicalId,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub role_ids: Vec<CanonicalId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub permissions: Vec<ScreenPermissionDefinition>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<ScreenLayoutKind>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub elements: Vec<LayoutElement>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ScreenPermissionDefinition {
+    pub role_id: CanonicalId,
+    pub action_id: CanonicalId,
+    pub model_id: CanonicalId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field_id: Option<CanonicalId>,
+    pub verification: PolicyVerification,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PolicyVerification {
+    Allowed,
+    Denied,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutcomeKind {
+    Success,
+    Failure,
+    Cancel,
+    Timeout,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HandlerKind {
+    State,
+    Message,
+    Popup,
+    Loading,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SameScreenHandlerDefinition {
+    pub kind: HandlerKind,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryKind {
+    Retry,
+    Return,
+    Release,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RecoveryDefinition {
+    pub kind: RecoveryKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen_id: Option<CanonicalId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub element_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<CanonicalId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_id: Option<String>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum OutcomeDataSourceDefinition {
+    Lookup {
+        result_id: String,
+    },
+    Derivation {
+        target_field_id: CanonicalId,
+        source_field_id: CanonicalId,
+    },
+    Producer {
+        producer_id: CanonicalId,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct OutcomeDataDefinition {
+    pub model_id: CanonicalId,
+    pub field_id: CanonicalId,
+    pub source: OutcomeDataSourceDefinition,
+    pub verification: OutcomeDataVerification,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub prerequisite_field_ids: Vec<CanonicalId>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutcomeDataVerification {
+    Verified,
+    Unknown,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ActionOutcomeDefinition {
+    pub id: CanonicalId,
+    pub local_id: String,
+    pub action_id: CanonicalId,
+    pub kind: OutcomeKind,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub provided_data: Vec<OutcomeDataDefinition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<RecoveryDefinition>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct LookupResultDefinition {
+    pub id: String,
+    pub action_id: CanonicalId,
+    pub input_id: CanonicalId,
+    pub model_id: CanonicalId,
+    pub field_ids: Vec<CanonicalId>,
     pub span: TextRange,
 }
 
@@ -209,12 +351,54 @@ pub struct ScreenLayoutDefinition {
 /// state. Consumers address a path by its endpoints.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ScreenPathDefinition {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub source_screen_id: CanonicalId,
     pub source_element_id: String,
-    pub target_screen_id: CanonicalId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_screen_id: Option<CanonicalId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome_id: Option<CanonicalId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handler: Option<SameScreenHandlerDefinition>,
     /// Prose describing when this path is taken. Nothing interprets it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct WorkflowDataRequirement {
+    pub model_id: CanonicalId,
+    pub field_id: CanonicalId,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowCompletionDefinition {
+    pub screen_id: CanonicalId,
+    pub required_data: Vec<WorkflowDataRequirement>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowAcquisitionDefinition {
+    pub source_screen_id: CanonicalId,
+    pub source_element_id: String,
+    pub data: Vec<WorkflowDataRequirement>,
+    pub span: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkflowDefinition {
+    pub id: CanonicalId,
+    pub name: String,
+    pub start_screen_id: CanonicalId,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub initial_data: Vec<WorkflowDataRequirement>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub acquisitions: Vec<WorkflowAcquisitionDefinition>,
+    pub completions: Vec<WorkflowCompletionDefinition>,
     pub span: TextRange,
 }
 
@@ -545,6 +729,12 @@ pub struct SemanticModule {
     pub screen_layouts: Vec<ScreenLayoutDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub screen_paths: Vec<ScreenPathDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub action_outcomes: Vec<ActionOutcomeDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lookup_results: Vec<LookupResultDefinition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub workflows: Vec<WorkflowDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub action_data_mutations: Vec<ActionDataMutationDefinition>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

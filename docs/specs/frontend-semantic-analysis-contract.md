@@ -16,6 +16,7 @@ related:
   - rspdl-compiler-architecture
   - natural-korean-domain-grammar
   - finite-relational-model-finding
+  - stable-screen-elements-and-structured-editing
 problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
@@ -170,6 +171,18 @@ Constraint, policy, conditional production과 relation meta-rule의 anonymous ID
 따라서 같은 stable ID와 의미를 사용하는 서로 다른 Locale frontend는 같은 anonymous ID를 만든다.
 
 ## Conformance evidence
+
+### Typed action outcomes
+
+Frontends may lower explicit screen-role bindings, exact role/action/model/optional-field permission scopes,
+action-owned typed outcomes, source-backed outcome data, same-screen handlers, and bounded recovery declarations.
+The analyzer resolves outcome IDs within their owning action and retains them on each exact source-button path.
+Legacy paths without an outcome remain valid and are unverified by construction (`outcome_id` is absent).
+
+Lookup acquisition requires an existing-model action input whose model and field match the lookup result and the
+successful outcome adopting that result. Derivations and field producers retain prerequisite field IDs; workflow
+analysis transfers their result only when those prerequisites are available on that path. Conditional or nullable
+presence is reported as structured `unknown`, never converted into verified availability.
 
 - frontend unit test는 source reference가 expected stable-ID `SurfaceRef`로 lowering되는지 검증한다.
 - analyzer test는 Locale source 없이 hand-authored `UnlinkedModule`만 사용한다.
