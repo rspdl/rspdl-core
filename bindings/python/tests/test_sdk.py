@@ -30,6 +30,30 @@ class SdkTest(unittest.TestCase):
             response["result"]["files"][0]["module"]["models"][0]["span"]["end"],
             0,
         )
+        self.assertEqual(response["result"]["references"], [])
+
+    def test_compile_returns_resolved_semantic_references(self) -> None:
+        source_text = (
+            REPOSITORY_ROOT
+            / "conformance"
+            / "ko-KR"
+            / "source-provenance"
+            / "normal-policy-lines"
+            / "input.rspdl"
+        ).read_text(encoding="utf-8")
+
+        response = rspdl.compile([{"path": "policy.rspdl", "text": source_text}])
+        references = response["result"]["references"]
+
+        self.assertTrue(
+            any(
+                reference["path"] == "policy.rspdl"
+                and reference["from"]["kind"] == "policies"
+                and reference["to"]["kind"] == "models"
+                and reference["field"] == "model_id"
+                for reference in references
+            )
+        )
 
     def test_compiler_errors_remain_in_the_result(self) -> None:
         response = rspdl.compile([{"path": "invalid.rspdl", "text": "invalid"}])

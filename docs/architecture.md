@@ -3,7 +3,7 @@ id: rspdl-compiler-architecture
 title: RSPDL Compiler Architecture
 type: architecture
 status: proposed
-version: "1.3"
+version: "1.4"
 summary: Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded model finding, cross-language SDK distribution, dependency direction, and tests.
 topics:
   - rust
@@ -32,7 +32,8 @@ problem_refs:
   - frontend-grammar-implementation-drift
   - downstream-analysis-integration-friction
   - semantic-source-provenance-loss
-last_updated: "2026-08-26"
+  - semantic-reference-direction-loss
+last_updated: "2026-09-26"
 owners:
   - rspdl-maintainers
 target_spec: "0.3.0"
@@ -186,6 +187,13 @@ flowchart LR
 
 현재 `compile_files_with_frontend`는 source별 `SemanticModule`을 만든 뒤 module·symbol stable ID의 workspace 중복만 검사한다. import resolution, Canonical Workspace와 전체 Semantic Graph는 후속 범위다.
 
+현재 구현은 전체 workspace linker보다 작은 reference navigation slice를 제공한다.
+`WorkspaceCompilation.references`는 각 정상 `SemanticModule`의 이미 해석된 참조를 typed IR에서
+수집한다. edge는 source file `path`, `from`·`to` symbol locator, 참조 field와 referencing record의
+UTF-8 byte `span`을 가진다. locator는 `kind`, `id`와 local ID에 필요한 `owner_id`로 구성된다.
+결과는 정렬·중복 제거하며 module을 만들지 못한 파일은 edge를 만들지 않는다. 이는 현재 존재하지
+않는 cross-file reference resolution을 추가하거나 전체 Canonical Workspace를 구현하는 계약이 아니다.
+
 ## Crate 책임
 
 ### `rspdl-domain`
@@ -302,6 +310,7 @@ Python과 Node.js가 공유하는 versioned JSON 경계를 소유한다.
 - package SemVer와 독립된 wire schema version
 - compiler diagnostic·finding·`UNKNOWN`을 성공 response 안에 보존하는 failure policy
 - 구조체 field와 정렬된 collection만 사용하는 결정적 serialization
+- compiler가 해석한 semantic reference edge의 additive workspace serialization
 
 SDK는 문법, 의미 규칙, diagnostic rendering과 application projection을 소유하지 않는다. Binding은 JSON 문자열을 전달하고 language-native object로 parse할 뿐 결과 field를 다시 계산하지 않는다. 자세한 배포 계약은 [Python and Node.js SDK Distribution](adr/0004-python-node-sdk-distribution.md)을 따른다.
 

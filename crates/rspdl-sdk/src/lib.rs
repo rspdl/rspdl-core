@@ -299,6 +299,28 @@ mod tests {
     }
 
     #[test]
+    fn compile_response_includes_resolved_semantic_references() {
+        let policy_source = include_str!(
+            "../../../conformance/ko-KR/source-provenance/normal-policy-lines/input.rspdl"
+        );
+        let request = json!({
+            "schema_version": WIRE_SCHEMA_VERSION,
+            "locale": SUPPORTED_LOCALE,
+            "sources": [source("policy.rspdl", policy_source)],
+        });
+        let response: Value =
+            serde_json::from_str(&compile_json(&request.to_string()).unwrap()).unwrap();
+        let references = response["result"]["references"].as_array().unwrap();
+
+        assert!(references.iter().any(|reference| {
+            reference["path"] == "policy.rspdl"
+                && reference["from"]["kind"] == "policies"
+                && reference["to"]["kind"] == "models"
+                && reference["field"] == "model_id"
+        }));
+    }
+
+    #[test]
     fn compile_response_exposes_workflow_contracts() {
         let text = include_str!(
             "../../../conformance/ko-KR/workflow-data/normal-alternative-producers/input.rspdl"

@@ -29,8 +29,24 @@ export interface FileCompilation {
   diagnostics: Diagnostic[]
 }
 
+export interface SymbolLocator {
+  kind: string
+  id: string
+  owner_id?: string
+}
+
+export interface SemanticReference {
+  path: string
+  from: SymbolLocator
+  to: SymbolLocator
+  field: string
+  /** UTF-8 byte range of the referencing semantic record. */
+  span: TextRange
+}
+
 export interface WorkspaceCompilation {
   files: FileCompilation[]
+  references: SemanticReference[]
 }
 
 export interface FileFormat {

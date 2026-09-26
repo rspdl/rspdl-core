@@ -9,8 +9,9 @@ use std::time::Duration;
 use rspdl_domain::{
     ActionDataMutationProvenance, BoundedModelOptions, BoundedModelResult, CanonicalId,
     CanonicalType, CanonicalValue, ConstraintOperand, Diagnostic, Frontend, FrontendOutput,
-    PolicyEffect, RelationOperator, SemanticModule, Severity, SolveOptions, SourceId, TextRange,
-    analyze_with_source, find_bounded_relational_model,
+    PolicyEffect, RelationOperator, SemanticModule, Severity, SolveOptions, SourceId,
+    SymbolLocator, TextRange, analyze_with_source, find_bounded_relational_model,
+    semantic_references,
 };
 use rspdl_ko::KoreanFrontend;
 use rspdl_solver_z3::Z3Solver;
@@ -118,6 +119,16 @@ impl FileCompilation {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct WorkspaceCompilation {
     pub files: Vec<FileCompilation>,
+    pub references: Vec<WorkspaceSemanticReference>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct WorkspaceSemanticReference {
+    pub path: String,
+    pub from: SymbolLocator,
+    pub to: SymbolLocator,
+    pub field: String,
+    pub span: TextRange,
 }
 
 impl WorkspaceCompilation {
@@ -464,7 +475,25 @@ pub fn compile_files_with_frontend(
         file.diagnostics.sort_by(Diagnostic::stable_cmp);
     }
 
-    WorkspaceCompilation { files }
+    let mut references = files
+        .iter()
+        .filter_map(|file| file.module.as_ref().map(|module| (&file.path, module)))
+        .flat_map(|(path, module)| {
+            semantic_references(module)
+                .into_iter()
+                .map(move |reference| WorkspaceSemanticReference {
+                    path: path.clone(),
+                    from: reference.from,
+                    to: reference.to,
+                    field: reference.field,
+                    span: reference.span,
+                })
+        })
+        .collect::<Vec<_>>();
+    references.sort();
+    references.dedup();
+
+    WorkspaceCompilation { files, references }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
