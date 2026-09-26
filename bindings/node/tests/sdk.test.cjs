@@ -23,6 +23,7 @@ test('CommonJS compile returns a versioned workspace result', async () => {
     end: Buffer.byteLength(validSource.slice(0, validSource.indexOf('\n')), 'utf8'),
   })
   assert.ok(response.result.files[0].module.models[0].span.end > 0)
+  assert.deepEqual(response.result.references, [])
 })
 
 test('compiler errors remain in the result', async () => {

@@ -3,7 +3,7 @@ id: frontend-semantic-analysis-contract
 title: Frontend and Semantic Analysis Contract
 type: spec
 status: implemented
-version: "11"
+version: "12"
 summary: Defines stable-ID Unlinked records, semantic product value types, action data mutations, relations, rules, and the structured diagnostic boundary shared by frontends.
 topics:
   - compiler-frontend
@@ -21,7 +21,8 @@ problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss
-last_updated: "2026-08-26"
+  - semantic-reference-direction-loss
+last_updated: "2026-09-26"
 owners:
   - rspdl-maintainers
 target_spec: "0.4.0"
@@ -52,8 +53,25 @@ Locale Source -> Locale AST -> Stable-ID UnlinkedModule -> Link/Type Check -> Se
 - message template은 위 field producer의 `Template { parts: Text | OutputField(SurfaceRef) }` source다. Korean frontend는 `{output field display name}`을 같은 output model의 stable field ID로 lower하고 `{{`, `}}`를 literal brace로 보존한다. common analyzer는 target/result/placeholder field `String`, same-output-model placeholder link, effective Create variant별 dependency producer cardinality, sorted cycle evidence와 canonical `field_evaluation_order`를 판정한다. template은 암시적 문자열 변환, action input, model/relation path, snapshot, localization/pluralization 또는 channel rendering을 표현하지 않는다.
 - relation producer는 declaration ID, tagged trigger/input/output model/relation `SurfaceRef`와 span을 가진 `UnlinkedRelationProducer`로 보존한다. analyzer는 relation linking 뒤 output model이 first endpoint인 binary relation과 Required+Unique constraint를 ExactlyOne output slot으로 도출하고, same-trigger direct ExistingModel input의 endpoint exact match, Action `PreMutation` 또는 Event `TriggerPayload` phase 및 Create variant별 slot cardinality를 판정한다.
 - `SemanticModule`은 모든 참조와 타입이 해석된 Canonical IR이며 source-backed record마다 선언 또는 규칙의 `span`을 보존한다. 여러 문장을 병합하는 screen은 최초 문장을, 각 operation은 자기 문장을 가리킨다.
+- compiler는 `SemanticModule`을 JSON field 이름으로 다시 훑지 않고 typed record를 방문해 해석된
+  semantic reference를 수집한다. 각 reference는 source와 target의 `kind`·`id`, local ID scope의
+  `owner_id`, 관계를 만든 field와 referencing record의 `span`을 보존한다. 선언 ID, `SourceId`,
+  runtime record ID와 일반 문자열은 reference가 아니다.
 - 재계산 dependency는 기존 `DerivationDefinition.recalculate_when_changed_field_ids`와 함께 source-backed `RecalculationDefinition`으로 보존한다.
 - frontend output은 신뢰하지 않는다. 공통 analyzer가 ID 문법, 참조 존재성, 타입과 교차 선언 invariant를 다시 검증한다.
+
+## Reference navigation contract
+
+`WorkspaceCompilation.references`는 정상 module에서 수집한 reference를 file path와 함께 반환한다.
+source 입력 순서와 hash iteration에 독립적으로 정렬하고 동일 edge는 한 번만 반환한다. local ID는
+`path + kind + owner_id + id`로 식별하며 전역 Canonical ID처럼 취급하지 않는다. ID가 없는
+operation·permission·workflow child는 가장 가까운 주소 가능한 semantic owner를 `from`으로 사용하고
+자기 `span`과 field로 관계를 구별한다.
+
+구문 또는 의미 오류로 `module`이 없는 파일은 reference를 만들지 않는다. unresolved reference를
+부분 edge나 `unknown` target으로 근사하지 않고 기존 structured diagnostic만 반환한다. 여러 파일의
+edge를 한 workspace 결과에 모으지만, 다른 파일의 선언을 새로 resolve하는 cross-file linker 계약은
+아니다. wire schema 1의 기존 field를 바꾸지 않는 additive response field다.
 
 ## Rust interface
 

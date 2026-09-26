@@ -13,6 +13,7 @@ pub mod error;
 pub mod frontend;
 pub mod logic;
 pub mod policy_analysis;
+pub mod reference;
 pub mod relational_analysis;
 pub mod semantic;
 pub mod set;
@@ -54,6 +55,7 @@ pub use policy_analysis::{
     PolicyAnalysisQuery, PolicyBranch, PolicyConflict, TotalDecisionAnalysis, TotalDecisionPoint,
     analyze_total_decision_point,
 };
+pub use reference::{SemanticReference, SymbolLocator, semantic_references};
 pub use relational_analysis::{
     BoundedModelConfigurationError, BoundedModelOptions, BoundedModelResult,
     MAX_BOUNDED_SCOPE_PER_MODEL, RelationalAnalysisError, RelationalWitness, VirtualEntity,
