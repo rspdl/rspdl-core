@@ -69,6 +69,29 @@ fn local_ids_remain_distinct_across_workspace_files() {
 }
 
 #[test]
+fn canonical_ids_are_disambiguated_by_symbol_kind() {
+    let source = LOOKUP
+        .replacen("    - id: found\n", "    - id: target_reservation\n", 1)
+        .replacen("    결과: found\n", "    결과: target_reservation\n", 1);
+    let compilation = compile_ko_files(vec![KoSource::new("collision.rspdl", source)]);
+    assert!(!compilation.has_errors());
+
+    let shared_id = "booking.lookup.target_reservation";
+    assert!(compilation.references.iter().any(|reference| {
+        reference.from.kind == "lookup_results"
+            && reference.field == "input_id"
+            && reference.to.kind == "actions.inputs"
+            && reference.to.id == shared_id
+    }));
+    assert!(compilation.references.iter().any(|reference| {
+        reference.from.kind == "screen_paths"
+            && reference.field == "outcome_id"
+            && reference.to.kind == "action_outcomes"
+            && reference.to.id == shared_id
+    }));
+}
+
+#[test]
 fn declaration_ids_and_plain_strings_are_not_false_references() {
     let compilation = compile_ko_files(vec![KoSource::new("inventory.rspdl", NO_REFERENCES)]);
     assert!(!compilation.has_errors());
