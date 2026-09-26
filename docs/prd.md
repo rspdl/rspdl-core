@@ -4,7 +4,7 @@ title: RSPDL Product Requirements
 type: prd
 status: draft
 created: 2026-07-26
-version: "1.3"
+version: "1.4"
 summary: Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context.
 topics:
   - language-design
@@ -26,7 +26,8 @@ problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss
-last_updated: "2026-08-26"
+  - semantic-reference-direction-loss
+last_updated: "2026-09-26"
 owners:
   - rspdl-maintainers
 target_spec: "0.4.0"
@@ -122,6 +123,7 @@ target_spec: "0.4.0"
   - 모델별 finite scope에서 typed attribute constraint, endpoint integrity와 relation meta-rule을 grounding하는 bounded model finder, virtual entity/field/relation witness와 bound 한정 UNSAT rule evidence
   - 공통 `Frontend` trait, stable-ID Unlinked IR과 Locale 독립 linking, type checking 및 data usage analyzer
   - module, 선언, 규칙, screen operation과 recalculation을 포함한 source-backed Semantic IR record의 file-relative source span
+  - 정상 module의 typed Semantic IR에서 수집한 direct semantic reference edge와 file path, source·target locator, 참조 field 및 source span의 결정적 workspace 직렬화
   - runtime request별 `allowed`, `denied`, `conflict`, `unmatched` 분류
 - 아직 구현하지 않은 요구사항은 다음과 같다.
   - 조건에 따른 화면 분기의 의미, 삭제 이후 접근과 path별 데이터 availability
@@ -133,7 +135,7 @@ target_spec: "0.4.0"
   - effective condition에 기반한 unreachable 분석
   - module import와 다국어 의미 동등성
   - 3항 이상 관계, 임의의 quantified formula, 실제 JSON relation binding, relation join/projection/aggregation과 CRUD transition
-  - semantic dependency 기반 영향 분석과 downstream code generation
+  - transitive semantic dependency 기반 영향 분석과 downstream code generation
 - 성공 기준은 다음과 같다.
   - 대표 시나리오에서 데이터 lifecycle과 정책 사각지대를 구현 전에 재현 가능한 evidence로 찾는다.
   - 모든 공개 규칙에 정상, 실패, 경계와 오탐 방지 fixture가 존재한다.
