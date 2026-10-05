@@ -86,6 +86,14 @@ fn marked_bare_references(
         ..
     }) = tokens.get(index)
     {
+        if markers.contains(value) && !parts.is_empty() {
+            return vec![TerminalMatch::new(
+                index + 1,
+                parts.join(" "),
+                tokens[position].span.start,
+                tokens[index - 1].span.end,
+            )];
+        }
         let matches = markers
             .iter()
             .filter_map(|marker| {

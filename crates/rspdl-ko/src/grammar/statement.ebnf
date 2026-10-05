@@ -1,0 +1,11 @@
+pub header = name: @surface_name() id: @canonical_id() ("은" | "는") "다음과" "같이" "정한다" "." ;
+pub trigger = name: @marked_ref("이", "가") kind: ("실행될" | "발생할") "때" "적용한다" "." ;
+pub actor = name: @marked_ref("이", "가") "수행한다" "." ;
+pub binding = name: @surface_name() id: @canonical_id() ("은" | "는") owner: @marked_ref("의") input: @marked_ref("입력을") "사용한다" "." ;
+pub policy = "이" "처리를" kind: ("할" "수" "있다" | "할" "수" "없다" | "자동으로" "시도한다") "." ;
+pub all = "다음" "조건을" "모두" "만족할" "때" "적용한다" "." ;
+pub any = "다음" "조건" "중" "하나" "이상을" "만족할" "때" "적용한다" "." ;
+pub not = "다음" "조건을" "만족하지" "않을" "때" "적용한다" "." ;
+pub effect = binding: @marked_ref("을", "를") kind: ("조회한다" | "삭제한다" | "수정한다") "." ;
+pub assignment = field: @marked_ref("을", "를") value: @statement_operand("로", "으로") "정한다" "." ;
+pub comparison = left: @statement_operand("이", "가") (right: @statement_operand("와", "과") operator: ("같다" | "다르다") | right: @statement_operand("보다") operator: ("작다" | "작거나" "같다" | "크다" | "크거나" "같다")) "." ;

@@ -436,6 +436,7 @@ pub fn format_document(document: &DocumentAst) -> Result<String, FormatError> {
                     marked(&value.relation, "으로", "로"),
                 ));
             }
+            DeclarationAst::Statement(value) => write_statement(&mut output, value),
             DeclarationAst::Policy(value) => {
                 let role = marked(&value.role, "은", "는");
                 let field = marked(&value.field, "을", "를");
@@ -539,9 +540,18 @@ fn constraint(expression: &ConstraintExpressionAst) -> Result<String, FormatErro
                     _ => unreachable!("operator was checked above"),
                 },
             )),
-            operator => Err(FormatError::unsupported_constraint(format!(
-                "필드끼리의 `{operator:?}` 제약은 Korean v0.1 문법으로 format할 수 없습니다."
-            ))),
+            operator => Ok(format!(
+                "{model} {} {}보다 {} 한다.",
+                marked(left, "은", "는"),
+                surface(right),
+                match operator {
+                    RelationOperatorAst::GreaterThan => "커야",
+                    RelationOperatorAst::LessThan => "작아야",
+                    RelationOperatorAst::GreaterThanOrEqual => "크거나 같아야",
+                    RelationOperatorAst::LessThanOrEqual => "작거나 같아야",
+                    _ => unreachable!("equality operators handled above"),
+                },
+            )),
         },
         (OperandAst::Field(left), OperandAst::Literal(literal)) => {
             let left = marked(left, "은", "는");
@@ -1137,6 +1147,128 @@ fn has_final_consonant(value: &str) -> bool {
         .last()
         .filter(|character| ('가'..='힣').contains(character))
         .is_some_and(|character| !(character as u32 - '가' as u32).is_multiple_of(28))
+}
+
+fn statement_surface(value: &str) -> String {
+    format!("`{value}`")
+}
+
+fn statement_operand(value: &StatementOperandAst) -> String {
+    match value {
+        StatementOperandAst::Input(v) => statement_surface(v),
+        StatementOperandAst::InputField { binding, field } => {
+            format!(
+                "{}의 {}",
+                statement_surface(binding),
+                statement_surface(field)
+            )
+        }
+        StatementOperandAst::Literal(v) => literal_text(v),
+    }
+}
+fn statement_condition(output: &mut String, value: &StatementConditionAst, indent: usize) {
+    let padding = "    ".repeat(indent);
+    let (phrase, children): (&str, Vec<&StatementConditionAst>) = match value {
+        StatementConditionAst::True => return,
+        StatementConditionAst::And(xs) => {
+            ("다음 조건을 모두 만족할 때 적용한다.", xs.iter().collect())
+        }
+        StatementConditionAst::Or(xs) => (
+            "다음 조건 중 하나 이상을 만족할 때 적용한다.",
+            xs.iter().collect(),
+        ),
+        StatementConditionAst::Not(x) => ("다음 조건을 만족하지 않을 때 적용한다.", vec![x]),
+        StatementConditionAst::Compare {
+            left,
+            operator,
+            right,
+            ..
+        } => {
+            let (marker, verb) = match operator {
+                RelationOperatorAst::Equal => ("와", "같다"),
+                RelationOperatorAst::NotEqual => ("와", "다르다"),
+                RelationOperatorAst::LessThan => ("보다", "작다"),
+                RelationOperatorAst::LessThanOrEqual => ("보다", "작거나 같다"),
+                RelationOperatorAst::GreaterThan => ("보다", "크다"),
+                RelationOperatorAst::GreaterThanOrEqual => ("보다", "크거나 같다"),
+            };
+            output.push_str(&format!(
+                "{padding}{} 이 {} {marker} {verb}.\n",
+                statement_operand(left),
+                statement_operand(right)
+            ));
+            return;
+        }
+    };
+    output.push_str(&format!("{padding}{phrase}\n"));
+    for child in children {
+        statement_condition(output, child, indent + 1);
+    }
+}
+fn write_statement(output: &mut String, value: &StatementAst) {
+    output.push_str(&format!(
+        "{}({})는 다음과 같이 정한다.\n",
+        statement_surface(&value.declaration.name),
+        value.declaration.id
+    ));
+    let kind = match value.trigger.kind {
+        ProducerTriggerKindAst::Action => "실행될",
+        ProducerTriggerKindAst::Event => "발생할",
+    };
+    output.push_str(&format!(
+        "    {} 이 {kind} 때 적용한다.\n    {} 이 수행한다.\n",
+        statement_surface(&value.trigger.name),
+        if value.actor == "시스템" {
+            "시스템".into()
+        } else {
+            statement_surface(&value.actor)
+        }
+    ));
+    for b in &value.bindings {
+        output.push_str(&format!(
+            "    {}({})는 {} 의 {} 입력을 사용한다.\n",
+            statement_surface(&b.declaration.name),
+            b.declaration.id,
+            statement_surface(&b.owner),
+            statement_surface(&b.input)
+        ));
+    }
+    statement_condition(output, &value.condition, 1);
+    let policy = match value.policy {
+        rspdl_domain::StatementPolicy::Can => "할 수 있다",
+        rspdl_domain::StatementPolicy::Cannot => "할 수 없다",
+        rspdl_domain::StatementPolicy::DoAttempt => "자동으로 시도한다",
+    };
+    output.push_str(&format!("    이 처리를 {policy}.\n"));
+    for effect in &value.effects {
+        match effect {
+            StatementEffectAst::Read { binding, .. } => output.push_str(&format!(
+                "    {} 을 조회한다.\n",
+                statement_surface(binding)
+            )),
+            StatementEffectAst::Delete { binding, .. } => output.push_str(&format!(
+                "    {} 을 삭제한다.\n",
+                statement_surface(binding)
+            )),
+            StatementEffectAst::Update {
+                binding,
+                assignments,
+                ..
+            } => {
+                output.push_str(&format!(
+                    "    {} 을 수정한다.\n",
+                    statement_surface(binding)
+                ));
+                for a in assignments {
+                    output.push_str(&format!(
+                        "        {} 을 {} 로 정한다.\n",
+                        statement_surface(&a.field),
+                        statement_operand(&a.value)
+                    ));
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

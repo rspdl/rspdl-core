@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+#[path = "statement_lowering.rs"]
+mod statement_lowering;
 
 use rspdl_domain::{
     CreationDecision, DataMutationKind, Diagnostic, FieldIntentKind, Frontend, FrontendOutput,
@@ -618,6 +620,7 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
         field_producers: Vec::new(),
         relation_producers: Vec::new(),
         policies: Vec::new(),
+        statements: Vec::new(),
         information_architecture: Vec::new(),
         screen_layouts: Vec::new(),
         screen_paths: Vec::new(),
@@ -1327,6 +1330,12 @@ pub fn lower(document: &DocumentAst) -> LowerOutput {
                     relation: required_reference(relation, value.span),
                     span: value.span,
                 });
+            }
+            DeclarationAst::Statement(value) => {
+                if let Some(statement) = statement_lowering::lower(value, &index, &mut diagnostics)
+                {
+                    module.statements.push(statement);
+                }
             }
             DeclarationAst::Policy(value) => {
                 let role = index.role_reference(&value.role, value.span, &mut diagnostics);

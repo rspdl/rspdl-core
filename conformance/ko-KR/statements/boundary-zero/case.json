@@ -1,0 +1,7 @@
+{
+  "spec_version": "0.3.0",
+  "locale": "ko-KR",
+  "category": "boundary",
+  "expected_module": true,
+  "expected_message_keys": []
+}

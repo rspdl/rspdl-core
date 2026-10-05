@@ -1,0 +1,11 @@
+{
+  "spec_version": "0.4.0",
+  "locale": "ko-KR",
+  "category": "failure",
+  "expected_compile_diagnostics": [
+    {
+      "rule_id": "RSPDL-KO-REF-001",
+      "message_key": "ko.reference.not_found"
+    }
+  ]
+}

@@ -127,6 +127,13 @@ impl<'a> ReferenceCollector<'a> {
     }
 
     fn index_symbols(&mut self) {
+        for statement in &self.module.statements {
+            self.index_canonical("statements", &statement.id);
+            for binding in &statement.bindings {
+                self.index_local("statements.bindings", binding.id.as_str(), &statement.id);
+            }
+        }
+
         self.index_canonical("module", &self.module.id);
         for value in &self.module.enums {
             self.index_canonical("enums", &value.id);
@@ -354,7 +361,162 @@ impl<'a> ReferenceCollector<'a> {
         }
     }
 
+    fn collect_statement_operand(
+        &mut self,
+        from: &SymbolLocator,
+        owner: &CanonicalId,
+        operand: &crate::StatementOperand,
+    ) {
+        use crate::StatementOperand::*;
+        match operand {
+            Input {
+                binding_id,
+                value_type,
+                span,
+                ..
+            } => {
+                self.push_local(
+                    from,
+                    "statements.bindings",
+                    owner,
+                    binding_id.as_str(),
+                    "condition.binding_id",
+                    *span,
+                );
+                self.push_type(from, value_type, "condition.value_type", *span);
+            }
+            InputField {
+                binding_id,
+                model_id,
+                field_id,
+                value_type,
+                span,
+                ..
+            } => {
+                self.push_local(
+                    from,
+                    "statements.bindings",
+                    owner,
+                    binding_id.as_str(),
+                    "operand.binding_id",
+                    *span,
+                );
+                self.push(from, "models", model_id, "operand.model_id", *span);
+                self.push(from, "models.fields", field_id, "operand.field_id", *span);
+                self.push_type(from, value_type, "operand.value_type", *span);
+            }
+            Constant { value, span } => {
+                self.push_type(from, value.value_type(), "operand.value_type", *span);
+                if let Some(variant) = value.as_enum_variant() {
+                    self.push(from, "enums.variants", variant, "operand.variant_id", *span);
+                }
+            }
+        }
+    }
+    fn collect_statement_condition(
+        &mut self,
+        from: &SymbolLocator,
+        owner: &CanonicalId,
+        condition: &crate::StatementCondition,
+    ) {
+        use crate::StatementCondition::*;
+        match condition {
+            True => {}
+            Compare { left, right, .. } => {
+                self.collect_statement_operand(from, owner, left);
+                self.collect_statement_operand(from, owner, right);
+            }
+            And(xs) | Or(xs) => {
+                for c in xs {
+                    self.collect_statement_condition(from, owner, c);
+                }
+            }
+            Not(c) => self.collect_statement_condition(from, owner, c),
+        }
+    }
     fn collect(mut self) -> Vec<SemanticReference> {
+        for statement in &self.module.statements {
+            let from = self
+                .canonical("statements", &statement.id)
+                .expect("indexed statement");
+            let (trigger_kind, input_kind, trigger_id) = match &statement.trigger {
+                ProductionTriggerDefinition::Action(id) => ("actions", "actions.inputs", id),
+                ProductionTriggerDefinition::Event(id) => ("events", "events.inputs", id),
+            };
+            self.push(
+                &from,
+                trigger_kind,
+                trigger_id,
+                "trigger",
+                statement.trigger_span,
+            );
+            if let crate::StatementActor::Role(id) = &statement.actor {
+                self.push(&from, "roles", id, "actor", statement.actor_span);
+            }
+            for binding in &statement.bindings {
+                let binding_from = self
+                    .local("statements.bindings", &statement.id, binding.id.as_str())
+                    .expect("indexed binding");
+                self.push(
+                    &binding_from,
+                    input_kind,
+                    &binding.input_id,
+                    "input_id",
+                    binding.input_span,
+                );
+                match &binding.kind {
+                    crate::StatementBindingKind::ExistingModel { model_id } => {
+                        self.push(&binding_from, "models", model_id, "model_id", binding.span)
+                    }
+                    crate::StatementBindingKind::Value { value_type } => {
+                        self.push_type(&binding_from, value_type, "value_type", binding.span)
+                    }
+                }
+            }
+            self.collect_statement_condition(&from, &statement.id, &statement.condition);
+            for effect in &statement.effects {
+                let (binding_id, model_id, span) = match effect {
+                    crate::StatementEffect::Read {
+                        binding_id,
+                        model_id,
+                        span,
+                    }
+                    | crate::StatementEffect::Delete {
+                        binding_id,
+                        model_id,
+                        span,
+                    }
+                    | crate::StatementEffect::Update {
+                        binding_id,
+                        model_id,
+                        span,
+                        ..
+                    } => (binding_id, model_id, *span),
+                };
+                self.push_local(
+                    &from,
+                    "statements.bindings",
+                    &statement.id,
+                    binding_id.as_str(),
+                    "effects.binding_id",
+                    span,
+                );
+                self.push(&from, "models", model_id, "effects.model_id", span);
+                if let crate::StatementEffect::Update { assignments, .. } = effect {
+                    for assignment in assignments {
+                        self.push(
+                            &from,
+                            "models.fields",
+                            &assignment.field_id,
+                            "effects.assignments.field_id",
+                            assignment.span,
+                        );
+                        self.collect_statement_operand(&from, &statement.id, &assignment.value);
+                    }
+                }
+            }
+        }
+
         for value in &self.module.models {
             for field in &value.fields {
                 let from = self

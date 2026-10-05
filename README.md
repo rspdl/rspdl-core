@@ -35,6 +35,9 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 현재 구현은 다음을 지원합니다.
 
 - 한국어 module, enum, record field와 field constraint
+- 같은 record의 field 사이 대소 비교 제약과 실제 날짜·날짜시간 순서 위반 검사
+- 같은 날짜 순서 제약을 입력 범위·오류 표시·저장 직전 검사에 연결하는 [프로젝트 일정 application 예제](docs/guides/project-schedule-validation.md)
+- 자연 한국어 처리 규칙 블록의 Action/Event 계기, System/Role 주체, 명시적 입력 binding, 복합 조건과 허용·금지·자동 시도 의도를 공통 statement IR로 보존하고 참조·타입·규칙 내부 변경 충돌을 검사
 - 소수, 날짜, 시간, UTC 날짜시간, 고정 기간, 위도와 경도의 canonical 값·범위 검증·타입별 대소 비교
 - 통화·백분율·닫힌 단위 수량, 좌표쌍, UUID/이메일/URL/IP/CIDR code refinement와 typed list/set/map/reference의 type identity 및 runtime validation
 - 문장형 화면 생성·입력·조회·수정·삭제 선언과 field provenance 검증
@@ -65,7 +68,19 @@ RSPDL은 명시된 의도를 Canonical Semantic IR로 손실 없이 전달하는
 - source·target locator와 provenance를 가진 결정적 semantic reference edge 출력
 - 같은 versioned JSON contract를 사용하는 Python 3.11+와 Node.js 22/24 native SDK
 
-화면 간 흐름은 머리말에 선언할 수 있게 되었으나 **조건에 따른 분기의 의미**는 아직 다루지 않습니다 — 경로의 조건은 사람이 읽는 설명 문자열이며 분석 대상이 아닙니다. 삭제 이후 접근, 실제 relation data binding과 join 실행, 3항 이상 관계·임의 양화식, 일반 계산식, 조건부 정책의 한국어 문법·compiler 진단 연결, default·override와 unreachable 분석은 목표 범위이지만 아직 구현되지 않았습니다. 특히 relation fan-out/join·snapshot과 가격 산술·통화·환율·반올림은 아직 지원하지 않습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
+화면 간 흐름은 머리말에 선언할 수 있게 되었으나 **조건에 따른 분기의 의미**는 아직 다루지 않습니다 — 경로의 조건은 사람이 읽는 설명 문자열이며 분석 대상이 아닙니다. 삭제 이후 접근, 실제 relation data binding과 join 실행, 3항 이상 관계·임의 양화식, 일반 계산식, 일반 조건부 정책의 전체 조건 공간 분석·runtime 평가 연결, default·override와 unreachable 분석은 목표 범위이지만 아직 구현되지 않았습니다. 특히 relation fan-out/join·snapshot과 가격 산술·통화·환율·반올림은 아직 지원하지 않습니다. 현재와 목표를 구분한 상세 요구사항은 [PRD](docs/prd.md)를 참고해 주세요.
+
+### 통합 statement의 현재 검증 범위
+
+새 통합 statement의 첫 구현은 **컴파일 단계의 참조·타입 및 명백한 규칙 내부 충돌 검사**다.
+`자동 시도`는 성공 보장이 아니며, 현재 core는 해당 규칙을 실행하지 않는다.
+`check`는 statement 실행·권한 평가 미지원 진단 `RSPDL-STMT-090`을 반환하고,
+bounded model finding도 statement가 있으면 `Unsupported`를 반환한다.
+기존 데이터 제약 검사는 계속 수행한다. Event payload는 읽기만 허용하며, 새 statement의
+수정·삭제 대상은 Action의 명시적 기존 record 입력으로 제한한다.
+조건 전체 공간의 충돌·누락, 관계 selector, 산술·달력, timer, snapshot과 동시성은
+[통합 문장 RFC와 이슈별 계획](docs/rfcs/0013-unified-statements.md)을 따른다.
+실제 문형은 [통합 statement 예제](examples/unified-statements.rspdl)에서 확인할 수 있다.
 
 ## 짧은 예시
 

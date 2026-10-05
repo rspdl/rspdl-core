@@ -149,7 +149,11 @@ pub fn find_bounded_relational_model<S: ConstraintSolver>(
     solver: &S,
     options: BoundedModelOptions,
 ) -> Result<BoundedModelResult, RelationalAnalysisError<S::Error>> {
-    let mut unsupported = Vec::new();
+    let mut unsupported = module
+        .statements
+        .iter()
+        .map(|s| format!("statement:{}", s.id))
+        .collect::<Vec<_>>();
     if !module.derivations.is_empty() {
         unsupported.push("derivation".to_owned());
     }

@@ -11,3 +11,4 @@ __pycache__/
 /bindings/node/npm/
 /bindings/node/rspdl.*.node
 .env
+/examples/project-schedule/saved-project.json

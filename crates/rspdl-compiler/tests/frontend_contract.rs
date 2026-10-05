@@ -21,6 +21,7 @@ impl Frontend for TestFrontend {
         };
         FrontendOutput {
             module: Some(UnlinkedModule {
+                statements: Vec::new(),
                 declaration: declaration("Test module", "test", span(0, 10)),
                 span: span(0, 10),
                 enums: Vec::new(),

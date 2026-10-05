@@ -14,6 +14,8 @@ topics:
   - diagnostics
   - conformance
 related:
+  - project-schedule-validation
+  - unified-statements
   - rspdl-product-vision
   - rspdl-compiler-architecture
   - problem-driven-development
@@ -27,7 +29,7 @@ problem_refs:
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss
   - semantic-reference-direction-loss
-last_updated: "2026-09-26"
+last_updated: "2026-10-05"
 owners:
   - rspdl-maintainers
 target_spec: "0.4.0"
@@ -105,6 +107,7 @@ target_spec: "0.4.0"
   - 오류와 유사하지만 허용해야 하는 오탐 방지 사례
   - 입력 순서와 반복 실행이 결과를 바꾸지 않는 결정론 사례
 - 현재 구현 범위는 다음과 같다.
+  - 두 날짜 필드의 ordered invariant를 compiler IR 기반 입력 범위, 위반 근거 표시와 저장 직전 재검사에 연결한 로컬 application 예제. 제품 배포나 원문 정책의 같은 날 허용 여부 확정을 의미하지 않으며 [실행·검증 계약](guides/project-schedule-validation.md)을 따른다.
   - 한국어 module, enum, record field, field constraint, role, action과 조건 없는 allow 또는 deny policy
   - 문장형 화면 create/read/update/delete와 field input/read/update 선언
   - 문서 머리말의 정보구조 분류 트리, 의미 단위 화면 레이아웃과 요소 기준 화면 흐름 선언 및 문장형 화면 조작과의 대조 검증
@@ -128,7 +131,7 @@ target_spec: "0.4.0"
 - 아직 구현하지 않은 요구사항은 다음과 같다.
   - 조건에 따른 화면 분기의 의미, 삭제 이후 접근과 path별 데이터 availability
   - relation/join 기반 교차 모델 집계 실행과 일반 계산식
-  - 조건부 정책의 한국어 표면 문법, Canonical IR lowering과 compiler structured diagnostic 연결
+  - 조건부 정책의 runtime 평가와 전체 condition-space compiler 분석 연결 (통합 문장의 한국어 CFG·typed IR·구조/타입 진단은 compile-only로 지원)
   - 다중 입력 domain과 일반 effect compatibility, 조건부 field requiredness, explicit default와 override
   - snapshot/retain lifecycle analysis, 조건부 Event field/relation producer와 structured diagnostic 확장
   - relation path 기반 다수 output 생성, 실제 relation JSON binding, output delivery, 일반 expression·통화·반올림·가격표 snapshot과 field composition
@@ -141,6 +144,35 @@ target_spec: "0.4.0"
   - 모든 공개 규칙에 정상, 실패, 경계와 오탐 방지 fixture가 존재한다.
   - 모든 호환 구현체와 Locale이 동일한 의미 결과를 생성한다.
   - 한 source 변경의 영향을 stable ID로 추적하고 소비자가 필요한 context만 선택할 수 있다.
+
+## 통합 문장 요구사항과 단계 경계
+
+[데이터, 불변 조건과 자연 한국어 통합 문장](rfcs/0013-unified-statements.md)은 데이터·불변 조건·
+문장을 공유하는 의미 모델을 제안한다. 작성자는 label 목록이나 자유 NLP 대신 결정적인 자연 한국어
+문장/블록을 사용한다. 공통 IR은 계기, 행위자, typed 입력 binding, And/Or/Not 조건,
+Can/Cannot/DoAttempt와 데이터 효과를 별도로 보존하며 stable ID와 source provenance를 유지해야 한다.
+자동 시도는 성공이나 eventual completion 보장이 아니다. source 순서는 priority가 아니고
+명시하지 않은 default/override, 시간·관계·lifecycle 동작은 추측하지 않는다.
+
+2026-10-05 최초 전달 및 검증을 완료한 범위는 두 경로다. 첫째, named Action/Event 계기와 System/Role 행위자,
+직접 trigger-input alias, 복합 비교 조건, Can/Cannot/DoAttempt와 bound existing record의
+Read/Delete/Update field assignment를 한국어 CFG에서 typed IR과 common analysis까지 연결한다.
+이 경로는 compile-only이며 `LinkedAndTypeCheckedOnly` 상태를 명시한다. Action input은
+PreMutation, Event payload는 TriggerPayload phase를 보존하고 Event binding은 Read만 허용한다.
+선택 field operand는 presence 처리 전까지 거부한다. 새 statement module의 check/check_files는
+RSPDL-STMT-090, domain find_model은 Unsupported로 경계를 보고하며 runtime 실행이나 일반
+조건 공간 분석을 보장하지 않는다. 둘째,
+field-to-field Date/DateTime 순서 invariant를 runtime check까지 연결하여 프로젝트 일정과 근태의
+역전 데이터를 검출한다. 동일한 ordered 타입의 strict/inclusive 비교와 optional 부재 skip을
+공개 fixture로 검증했다. `./scripts/check.sh`는 exit 0으로 완료했고 Rust 388개/Python 문서 4개·
+script 10개 검사, strict workspace Clippy와 formatting이 통과했다.
+
+Shared selector/expression/pre/post context, timer, 관계 join, 일반 산술·달력 계산, snapshot,
+post-state invariant, 다수 생성과 실제 runtime mutation은 후속 요구사항이다. 기존 API는 공존하며
+creation은 기존 conditional production을 사용한다. Wire는 빈 statements를 생략하는 additive 변경이며
+Rust UnlinkedModule/SemanticModule struct literal에는 새 statements field가 필요하다. 이 단계가 기존 모든 construct의 완전한 정규화나
+[#43–50](https://github.com/rspdl/rspdl-core/issues/43)의 해결 완료를 뜻하지 않는다.
+RFC의 coverage matrix는 사례별 반례, 제품 미결정과 단계별 falsifiable 완료 기준을 정의한다.
 
 ## Constraints
 
@@ -167,3 +199,4 @@ target_spec: "0.4.0"
 - [Field Provenance, Screen Usage, Action Data Mutations, and Sum Derivation Grammar](rfcs/0005-field-provenance-and-sum-derivation.md)
 - [Total Policy Condition Spaces and SMT-First Consistency Analysis](rfcs/0006-total-policy-condition-space-analysis.md)
 - [Conditional Data Production for Notifications and Prices](rfcs/0008-conditional-data-production.md)
+- [Unified Statements](rfcs/0013-unified-statements.md)

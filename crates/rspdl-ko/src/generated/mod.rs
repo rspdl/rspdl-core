@@ -1,4 +1,4 @@
-mod adapter;
+use crate::grammar_adapter as adapter;
 mod constraint;
 mod creation;
 mod declarations;

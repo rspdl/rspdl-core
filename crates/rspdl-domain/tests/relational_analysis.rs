@@ -164,6 +164,7 @@ fn model_with_field(
 
 fn empty_module() -> SemanticModule {
     SemanticModule {
+        statements: Vec::new(),
         id: CanonicalId::new("test").unwrap(),
         name: "Test".into(),
         span: Default::default(),
@@ -420,5 +421,45 @@ fn solver_unknown_is_not_accepted_as_a_virtual_model() {
             message_key: "model_finding.unknown".into(),
             reason: "test timeout".into(),
         }
+    );
+}
+
+#[test]
+fn unified_statements_are_unsupported_before_solver_execution() {
+    use rspdl_domain::*;
+    struct MustNotSolve;
+    impl ConstraintSolver for MustNotSolve {
+        type Error = Infallible;
+        fn solve(
+            &self,
+            _: &ConstraintProblem,
+            _: SolveOptions,
+        ) -> Result<SolveResult, Self::Error> {
+            panic!("unsupported statement must be rejected before solving")
+        }
+    }
+    let mut module = empty_module();
+    module.statements.push(StatementDefinition {
+        id: id("test.statement"),
+        name: "Statement".into(),
+        trigger_span: Default::default(),
+        actor_span: Default::default(),
+        trigger: ProductionTriggerDefinition::Action(id("test.action")),
+        actor: StatementActor::System,
+        bindings: vec![],
+        condition: StatementCondition::True,
+        policy: StatementPolicy::DoAttempt,
+        effects: vec![],
+        analysis_status: StatementAnalysisStatus::LinkedAndTypeCheckedOnly,
+        span: Default::default(),
+    });
+    let result = find_bounded_relational_model(
+        &module,
+        &MustNotSolve,
+        BoundedModelOptions::new(1, SolveOptions::default()).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        matches!(result,BoundedModelResult::Unsupported{constructs,..} if constructs==["statement:test.statement"])
     );
 }

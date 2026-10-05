@@ -24,6 +24,13 @@ jobs:
           persist-credentials: false
       - name: Verify knowledge, release metadata, formatting, lint, and tests
         run: ./scripts/check.sh
+      - name: Set up Node.js for the application example
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22.13.0"
+          package-manager-cache: false
+      - name: Verify the project schedule application example
+        run: ./scripts/check-project-schedule.sh
 
   licenses:
     name: Dependency licenses and sources

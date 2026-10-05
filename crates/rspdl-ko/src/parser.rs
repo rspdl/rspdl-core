@@ -12,10 +12,10 @@ pub struct ParseOutput {
 }
 
 #[derive(Clone, Debug)]
-struct Line {
-    indent: usize,
-    tokens: Vec<Token>,
-    span: Span,
+pub(crate) struct Line {
+    pub(crate) indent: usize,
+    pub(crate) tokens: Vec<Token>,
+    pub(crate) span: Span,
 }
 
 pub fn parse(source: &str) -> ParseOutput {
@@ -99,6 +99,9 @@ pub fn parse(source: &str) -> ParseOutput {
         let body = &lines[cursor + 1..block_end];
         let kind = declaration_kind(line);
         let result = match kind {
+            Some(DeclarationKind::Statement) => {
+                crate::statement::parse(line, body).map(DeclarationAst::Statement)
+            }
             Some(DeclarationKind::Enum) => {
                 parse_enum(line, body, &mut diagnostics).map(DeclarationAst::Enum)
             }
@@ -196,7 +199,7 @@ pub fn parse(source: &str) -> ParseOutput {
 
         let expects_block = matches!(
             kind,
-            Some(DeclarationKind::Enum | DeclarationKind::DataModel)
+            Some(DeclarationKind::Enum | DeclarationKind::DataModel | DeclarationKind::Statement)
         );
         if expects_block {
             cursor = block_end;
@@ -240,6 +243,7 @@ fn logical_lines(tokens: &[Token]) -> Vec<Line> {
 
 #[derive(Clone, Copy)]
 enum DeclarationKind {
+    Statement,
     Enum,
     DataModel,
     Relation,
@@ -273,6 +277,7 @@ enum RelationalConstraintDeclarationKind {
 
 fn declaration_kind(line: &Line) -> Option<DeclarationKind> {
     match word_at(line, 0) {
+        _ if crate::statement::is_header(line) => Some(DeclarationKind::Statement),
         _ if is_enum_header(line) => Some(DeclarationKind::Enum),
         _ if is_data_model_header(line) => Some(DeclarationKind::DataModel),
         _ if is_role_sentence(line) => Some(DeclarationKind::Role),
@@ -1738,7 +1743,48 @@ fn parse_constraint_sentence(
         });
     }
 
-    let (operator, literal) = cursor.comparison_literal()?;
+    let comparison_start = cursor.index;
+    let comparison = cursor.comparison_literal();
+    if comparison.is_err() {
+        cursor.index = comparison_start;
+        let (right, _) = cursor.marked_ref(&["보다"])?;
+        // Numeric spellings remain literal syntax, including invalid numbers.
+        if !matches!(
+            cursor.tokens[comparison_start].kind,
+            TokenKind::QuotedIdentifier(_)
+        ) && right
+            .strip_prefix('-')
+            .unwrap_or(&right)
+            .chars()
+            .all(|c| c.is_ascii_digit())
+        {
+            return Err(cursor.error("ko.syntax.field_comparison_invalid"));
+        }
+        let operator = match cursor.next_word() {
+            Some("커야") => RelationOperatorAst::GreaterThan,
+            Some("작아야") => RelationOperatorAst::LessThan,
+            Some("크거나") => {
+                cursor.expect_word("같아야")?;
+                RelationOperatorAst::GreaterThanOrEqual
+            }
+            Some("작거나") => {
+                cursor.expect_word("같아야")?;
+                RelationOperatorAst::LessThanOrEqual
+            }
+            _ => return Err(cursor.error("ko.syntax.field_comparison_invalid")),
+        };
+        cursor.expect_word("한다")?;
+        cursor.expect_end()?;
+        lint_marker(&left, &marker, "은", "는", line.span, diagnostics);
+        return Ok(ConstraintExpressionAst {
+            model,
+            left: OperandAst::Field(left),
+            operator,
+            right: OperandAst::Field(right),
+            span: line.span,
+        });
+    }
+    let (operator, literal) = comparison?;
     cursor.expect_word("한다")?;
     cursor.expect_end()?;
     lint_marker(&left, &marker, "은", "는", line.span, diagnostics);
