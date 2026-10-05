@@ -101,6 +101,47 @@ class ServerTests(unittest.TestCase):
                 finally:
                     app.close()
 
+    def test_http_client_boundary_preserves_saved_data(self):
+        server = HTTPServer(('127.0.0.1', 0), handler_for(self.app))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f'http://127.0.0.1:{server.server_port}'
+        good = {'start_date': '2026-10-05', 'end_date': '2026-10-06'}
+        body = json.dumps({'record': good}).encode()
+        try:
+            # Browser fetch supplies Origin; direct API clients may omit it.
+            for extra in ({'Origin': base}, {}):
+                request = Request(base + '/api/save', body, {'Content-Type': 'application/json; charset=utf-8', **extra})
+                with urlopen(request) as response:
+                    self.assertTrue(json.load(response)['saved'])
+            original = self.data.read_bytes()
+            for headers, expected in [
+                ({'Content-Type': 'application/json', 'Origin': 'https://unrelated.example'}, 403),
+                ({'Content-Type': 'application/json', 'Origin': 'null'}, 403),
+                ({'Content-Type': 'text/plain'}, 415),
+                ({'Content-Type': 'text/plain', 'Origin': 'https://unrelated.example'}, 403),
+                ({'Content-Type': 'application/json', 'Host': 'unrelated.example'}, 403),
+                ({'Content-Type': 'application/json', 'Host': '127.0.0.1:1'}, 403),
+            ]:
+                for endpoint in ('/api/check', '/api/save'):
+                    with self.subTest(headers=headers, endpoint=endpoint):
+                        with patch.object(self.app, 'check', wraps=self.app.check) as check:
+                            with self.assertRaises(HTTPError) as error:
+                                urlopen(Request(base + endpoint, body, headers))
+                            self.assertEqual(error.exception.code, expected)
+                            self.assertIsNone(error.exception.headers.get('Access-Control-Allow-Origin'))
+                            check.assert_not_called()
+                        self.assertEqual(self.data.read_bytes(), original)
+            for headers in ({'Host': 'unrelated.example'}, {'Origin': 'https://unrelated.example'}):
+                with self.subTest(schema_headers=headers):
+                    with self.assertRaises(HTTPError) as error:
+                        urlopen(Request(base + '/api/schema', headers=headers))
+                    self.assertEqual(error.exception.code, 403)
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+
     def test_http_direct_save_and_routes(self):
         server = HTTPServer(('127.0.0.1', 0), handler_for(self.app))
         thread = threading.Thread(target=server.serve_forever, daemon=True)

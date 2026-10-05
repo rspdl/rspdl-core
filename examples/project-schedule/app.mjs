@@ -5,19 +5,24 @@ const status = document.querySelector('#status');
 const evidence = document.querySelector('#evidence');
 let schema, projection, revision = 0, timer, saving = false;
 const controls = new Map();
+/** Read the current date strings keyed by canonical field ID. */
 const values = () => Object.fromEntries([...controls].map(([id, control]) => [id, control.input.value]));
+/** Clear field messages before displaying evidence for the current revision. */
 function clearErrors() {
   for (const c of controls.values()) { c.error.textContent = ''; c.input.removeAttribute('aria-invalid'); }
 }
+/** Attach a compiler-derived message to a known projected field. */
 function fieldError(id, text) {
   const c = controls.get(id);
   if (c) { c.error.textContent += `${text} `; c.input.setAttribute('aria-invalid', 'true'); }
 }
+/** Fetch same-origin schema or send a JSON candidate to the local API. */
 async function request(url, body) {
   const response = await fetch(url, body === undefined ? {} : { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
   if (!response.ok) throw new Error(`서버 요청 실패 (${response.status})`);
   return response.json();
 }
+/** Render CLI evidence and reject inconsistent acceptance or save claims. */
 function renderReport(result) {
   const report = result.report;
   if (!report?.compilation || !Array.isArray(report.runtime_diagnostics) || !Array.isArray(report.constraint_violations) || typeof result.accepted !== 'boolean' || typeof result.saved !== 'boolean') throw new Error('검증 응답 형식이 올바르지 않습니다.');
@@ -44,6 +49,7 @@ function renderReport(result) {
   if (result.accepted && hasErrors || result.saved && !result.accepted) throw new Error('검증 결과가 일치하지 않습니다.');
   status.textContent = result.saved ? '프로젝트 일정이 저장되었습니다.' : result.accepted ? '입력한 일정이 규칙을 충족합니다. 저장할 수 있습니다.' : messages.join('\n') || '검증을 통과하지 못했습니다. 입력값을 확인하세요.';
 }
+/** Check current fields and display the response only while its revision is current. */
 async function validate(endpoint, current) {
   try {
     const record = Object.fromEntries(projection.fields.filter(f => controls.get(f.id).input.value !== '').map(f => [f.local_id, controls.get(f.id).input.value]));
@@ -53,6 +59,7 @@ async function validate(endpoint, current) {
     if (current === revision) { clearErrors(); status.textContent = `검증할 수 없습니다. 저장 완료로 처리하지 않았습니다. ${error.message}`; }
   }
 }
+/** Refresh projected date bounds and debounce authoritative CLI validation. */
 function changed() {
   revision++; clearTimeout(timer); clearErrors();
   const projected = bounds(projection, values());

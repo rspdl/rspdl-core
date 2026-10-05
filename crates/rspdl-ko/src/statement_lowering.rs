@@ -9,6 +9,7 @@ struct Scope<'a> {
     index: &'a StableIdIndex,
     trigger: SurfaceRef,
     kind: ProductionTriggerKind,
+    inputs: std::collections::BTreeMap<String, Option<SurfaceRef>>,
 }
 impl Scope<'_> {
     fn binding(&self, name: &str, span: Span, d: &mut Vec<Diagnostic>) -> Option<SurfaceRef> {
@@ -20,6 +21,7 @@ impl Scope<'_> {
             .collect::<Vec<_>>();
         resolve_symbols(symbols.iter(), name, "statement_binding", span, d)
     }
+    /// Resolves an input once at its declaration, retaining owner mismatch diagnostics.
     fn input(&self, b: &StatementBindingAst, d: &mut Vec<Diagnostic>) -> Option<SurfaceRef> {
         let owner = match self.kind {
             ProductionTriggerKind::Action => self.index.action_reference(&b.owner, b.span, d),
@@ -44,26 +46,27 @@ impl Scope<'_> {
             }
         }
     }
+    /// Reuses the declared input without repeating its root reference diagnostics.
+    /// Duplicate stable IDs are excluded from the cache to avoid choosing an alias.
     fn model(&self, binding: &SurfaceRef, d: &mut Vec<Diagnostic>) -> Option<SurfaceRef> {
         let b = self
             .value
             .bindings
             .iter()
             .find(|b| b.declaration.id == binding.id())?;
-        let input = self.input(b, d)?;
+        let input = self.inputs.get(binding.id())?.as_ref()?;
         match self.kind {
-            ProductionTriggerKind::Action => self.index.action_input_model_reference(
-                Some(&self.trigger),
-                Some(&input),
-                b.span,
-                d,
-            ),
+            ProductionTriggerKind::Action => {
+                self.index
+                    .action_input_model_reference(Some(&self.trigger), Some(input), b.span, d)
+            }
             ProductionTriggerKind::Event => {
                 self.index
-                    .event_input_model_reference(Some(&self.trigger), Some(&input), b.span, d)
+                    .event_input_model_reference(Some(&self.trigger), Some(input), b.span, d)
             }
         }
     }
+    /// Leaves unresolved fields as placeholders when the binding has no model.
     fn field(
         &self,
         b: &SurfaceRef,
@@ -153,6 +156,7 @@ impl Scope<'_> {
         }
     }
 }
+/// Lowers statement bindings before their uses so each input is resolved once.
 pub(super) fn lower(
     value: &StatementAst,
     index: &StableIdIndex,
@@ -170,11 +174,12 @@ pub(super) fn lower(
             index.event_reference(&value.trigger.name, value.trigger_span, d)
         }
     }?;
-    let scope = Scope {
+    let mut scope = Scope {
         value,
         index,
         trigger: trigger.clone(),
         kind,
+        inputs: std::collections::BTreeMap::new(),
     };
     let actor = if value.actor == "시스템" {
         UnlinkedStatementActor::System
@@ -187,9 +192,17 @@ pub(super) fn lower(
     let bindings = value
         .bindings
         .iter()
-        .map(|b| UnlinkedStatementBinding {
-            declaration: declaration(&b.declaration, true),
-            input: required_reference(scope.input(b, d), b.span),
+        .map(|b| {
+            let input = scope.input(b, d);
+            scope
+                .inputs
+                .entry(b.declaration.id.clone())
+                .and_modify(|cached| *cached = None)
+                .or_insert_with(|| input.clone());
+            UnlinkedStatementBinding {
+                declaration: declaration(&b.declaration, true),
+                input: required_reference(input, b.span),
+            }
         })
         .collect();
     let condition = scope.condition(&value.condition, d);

@@ -74,6 +74,12 @@ GET `/api/schema`는 `{source, compilation}`을, POST `/api/check`와 `/api/save
 `{record: {...}}`에 대해 `{accepted, saved, report}`를 반환한다. `compilation`과 `report`는
 단일 파일 CLI의 JSON 결과다. compiler 프로세스 실패·시간 초과는 성공한 검사 결과로 바꾸지 않는다.
 
+HTTP 요청은 실행 포트에 맞는 `Host: 127.0.0.1:<port>`만 허용한다. `Origin`이 있으면
+`http://127.0.0.1:<port>`와 일치해야 하며, POST는 `application/json`을 요구한다.
+잘못된 Host/Origin은 403, 지원하지 않는 Content-Type은 415로 CLI 실행 전에 거부한다.
+Origin이 없는 직접 JSON API 클라이언트는 허용한다. 이 검사는 다른 웹사이트의 요청을 제한하는
+로컬 예제의 경계이며 사용자 인증을 제공하지 않는다.
+
 날짜 선택 제한은 application projection이고 유효성 판정은 compiler 책임이다. UI의 범위 계산은
 서버 저장 검사를 대체하지 않는다. core에 브라우저 component나 view model API를 추가하지 않는다.
 
@@ -95,12 +101,14 @@ SDK 회귀 검사는 `crates/rspdl-sdk/tests/project_schedule.rs`에, applicatio
 `examples/project-schedule/`에 있다. `./scripts/check-project-schedule.sh`는 실제 CLI를 빌드한 뒤
 서버 통합 검사와 Node의 날짜 범위·진단 projection 검사를 실행한다.
 
-2026-10-05 검증 결과:
+2026-10-05 리뷰 수정 후 검증 결과:
 
-- `./scripts/check.sh`: Rust 393개, Python 14개 테스트와 formatting·strict Clippy 통과.
+- `./scripts/check.sh`: Rust 400개, Python 14개 테스트와 formatting·strict Clippy 통과.
   이 합계에 새 SDK 경계 검사 5개가 포함된다.
-- `./scripts/check-project-schedule.sh`: 실제 CLI를 사용하는 서버 검사 6개와 Node 검사 14개 통과.
+- `./scripts/check-project-schedule.sh`: 실제 CLI를 사용하는 서버 검사 7개와 Node 검사 14개 통과.
   Node 검사는 실제 compile/check JSON의 날짜 표현도 검증하며 CLI가 없으면 생략하지 않는다.
+  서버 검사는 잘못된 Host/Origin 및 text/plain 요청이 CLI 실행 전에 차단되고 저장 파일이
+  유지되는지 확인한다. 같은 출처의 브라우저 요청과 Origin 없는 직접 JSON 요청은 허용한다.
 - Chromium에서 실제 입력·저장, 엄격한 같은 날 거부, 포함 비교의 같은 날 저장, 역전 위반의
   날짜·필드·원문 표시, 입력 비우기, 오래된 응답 무시와 모바일 폭을 확인했다. 잘못된 원문과
   예제 지원 밖 원문은 화면을 시작하지 않고 직접 저장 요청도 거부했다.

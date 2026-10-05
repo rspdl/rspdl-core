@@ -164,7 +164,7 @@ RSPDL-STMT-090, domain find_model은 Unsupported로 경계를 보고하며 runti
 조건 공간 분석을 보장하지 않는다. 둘째,
 field-to-field Date/DateTime 순서 invariant를 runtime check까지 연결하여 프로젝트 일정과 근태의
 역전 데이터를 검출한다. 동일한 ordered 타입의 strict/inclusive 비교와 optional 부재 skip을
-공개 fixture로 검증했다. `./scripts/check.sh`는 exit 0으로 완료했고 Rust 388개/Python 문서 4개·
+공개 fixture로 검증했다. 리뷰 수정 후 `./scripts/check.sh`는 exit 0으로 완료했고 Rust 400개/Python 문서 4개·
 script 10개 검사, strict workspace Clippy와 formatting이 통과했다.
 
 Shared selector/expression/pre/post context, timer, 관계 join, 일반 산술·달력 계산, snapshot,

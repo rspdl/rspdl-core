@@ -659,13 +659,17 @@ pub struct StatementBindingAst {
     pub input: String,
     pub span: Span,
 }
+/// A statement value serialized with the same tagged shape as other operands.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum StatementOperandAst {
     Input(String),
     InputField { binding: String, field: String },
     Literal(LiteralAst),
 }
+/// A recursive condition whose tagged definition preserves group structure.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
 pub enum StatementConditionAst {
     True,
     Compare {
@@ -684,7 +688,9 @@ pub struct StatementAssignmentAst {
     pub value: StatementOperandAst,
     pub span: Span,
 }
+/// A statement effect serialized with an explicit kind and definition.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "definition", rename_all = "snake_case")]
 pub enum StatementEffectAst {
     Read {
         binding: String,

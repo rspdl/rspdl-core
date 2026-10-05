@@ -190,6 +190,12 @@ fn field_ordering_conformance_is_deterministic() {
             first.runtime_diagnostics
         );
         if let Some(evidence) = expected["expected_violation_evidence"].as_array() {
+            assert_eq!(
+                first.constraint_violations.len(),
+                evidence.len(),
+                "{}",
+                case.display()
+            );
             for (violation, evidence) in first.constraint_violations.iter().zip(evidence) {
                 assert_eq!(
                     violation.model_id.to_string(),

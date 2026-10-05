@@ -7,6 +7,7 @@ use rspdl_grammar_compiler::{Capture, InputAdapter, ParseMatch, TerminalMatch};
 include!(concat!(env!("OUT_DIR"), "/statement_grammar.rs"));
 struct Adapter;
 impl InputAdapter<Token> for Adapter {
+    /// Delegates fixed terminals to the shared Korean adapter, preserving token offsets.
     fn match_literal(
         &self,
         tokens: &[Token],
@@ -15,6 +16,9 @@ impl InputAdapter<Token> for Adapter {
     ) -> Option<TerminalMatch> {
         adapter::KoreanTokenAdapter.match_literal(tokens, position, literal)
     }
+    /// Enumerates contextual token prefixes with source byte ranges. Operand captures
+    /// encode literal, quoted input, and field access distinctly; unknown matchers yield
+    /// no candidates, and an ownership particle prevents a bare-input prefix match.
     fn match_contextual(
         &self,
         tokens: &[Token],
@@ -109,14 +113,17 @@ impl InputAdapter<Token> for Adapter {
         }
     }
 }
+/// Parses one complete line against a generated clause rule; mismatches return `None`.
 fn clause(line: &Line, rule: &str) -> Option<ParseMatch> {
     generated_statement_grammar()
         .parse(rule, &line.tokens, &Adapter)
         .ok()
 }
+/// Extracts a required generated capture, panicking if the grammar contract is broken.
 fn cap(p: &ParseMatch, n: &str) -> String {
     p.capture(n).expect("grammar capture").value.clone()
 }
+/// Builds a named declaration from required captures with the caller-owned line span.
 fn named(p: &ParseMatch, span: Span) -> NamedIdAst {
     NamedIdAst {
         name: cap(p, "name"),
@@ -124,9 +131,12 @@ fn named(p: &ParseMatch, span: Span) -> NamedIdAst {
         span,
     }
 }
+/// Uses the statement syntax diagnostic for a malformed clause or indentation range.
 fn error(span: Span) -> Diagnostic {
     Diagnostic::error("RSPDL-KO-SYN-060", "ko.syntax.statement_invalid", span)
 }
+/// Recognizes the fixed statement ending before validating the full header, allowing
+/// malformed declarations such as a missing ID to receive statement diagnostics.
 pub(crate) fn is_header(line: &Line) -> bool {
     // Recognize the unambiguous fixed ending even when the declaration ID is missing.
     line.tokens
@@ -137,6 +147,8 @@ pub(crate) fn is_header(line: &Line) -> bool {
             .iter()
             .any(|t| matches!(&t.kind,TokenKind::Word(v) if v == "다음과"))
 }
+/// Decodes adapter-produced tagged captures; quoted names remain inputs even when
+/// they resemble literals. Panics on invalid internal JSON encoding.
 fn operand(c: &Capture) -> StatementOperandAst {
     let v = &c.value[1..];
     match c.value.as_bytes()[0] {
@@ -162,11 +174,16 @@ fn operand(c: &Capture) -> StatementOperandAst {
         }
     }
 }
+/// Returns the exclusive subtree boundary at the first equal-or-shallower indentation,
+/// or EOF. `start` must index an existing parent line.
 fn children_end(lines: &[Line], start: usize) -> usize {
     (start + 1..lines.len())
         .find(|&i| lines[i].indent <= lines[start].indent)
         .unwrap_or(lines.len())
 }
+/// Parses equal-indented siblings and their owned subtrees, combining siblings with
+/// AND while preserving explicit groups. Empty input, malformed nesting, and leaf
+/// children fail at the offending line (or the default span for empty input).
 fn condition(lines: &[Line]) -> Result<StatementConditionAst, Diagnostic> {
     if lines.is_empty() {
         return Err(error(Span::default()));
@@ -228,6 +245,8 @@ fn condition(lines: &[Line]) -> Result<StatementConditionAst, Diagnostic> {
         Ok(StatementConditionAst::And(conditions))
     }
 }
+/// Wraps sibling conditions in an explicit AND/OR group without flattening a single
+/// nested group; rejects empty input through the condition parser.
 fn condition_group(lines: &[Line], or: bool) -> Result<StatementConditionAst, Diagnostic> {
     if lines.is_empty() {
         return Err(error(Span::default()));
@@ -248,6 +267,10 @@ fn condition_group(lines: &[Line], or: bool) -> Result<StatementConditionAst, Di
         StatementConditionAst::And(values)
     })
 }
+/// Parses a header and its body, requiring one trigger, actor, policy, and an effect.
+/// Body clauses must begin at indent one; update children are assignments and nesting
+/// above 64 is rejected. Missing clauses use the header span; malformed clauses use
+/// their line span. An absent guard becomes `True`.
 pub(crate) fn parse(header: &Line, lines: &[Line]) -> Result<StatementAst, Diagnostic> {
     let p = clause(header, "header").ok_or_else(|| error(header.span))?;
     if let Some(line) = lines.iter().find(|l| l.indent > 64) {
