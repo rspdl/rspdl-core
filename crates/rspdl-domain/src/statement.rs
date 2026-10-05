@@ -126,6 +126,8 @@ pub enum StatementOperand {
     },
 }
 impl StatementOperand {
+    /// Returns the declared input type or the canonical constant type used for checking
+    /// comparisons and assignments; this does not evaluate the operand.
     pub fn value_type(&self) -> &CanonicalType {
         match self {
             Self::Input { value_type, .. } | Self::InputField { value_type, .. } => value_type,

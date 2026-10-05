@@ -24,6 +24,7 @@ problem_refs:
   - data-lifecycle-modeling-gap
   - policy-consistency-blind-spots
   - semantic-source-provenance-loss
+  - semantic-reference-direction-loss
 last_updated: "2026-10-05"
 owners:
   - rspdl-maintainers
@@ -183,6 +184,12 @@ Body item의 source 순서는 의미 순서나 priority가 아니다. Parser는 
 Binding과 effect 내부의 assignment는 여러 개를 허용한다. 이 cardinality 조건은 CFG 반복의 의미
 검증이며 위 예시의 항목 순서만 유효하다는 뜻이 아니다.
 
+공개 parse JSON의 statement operand·condition·effect는 기존 AST와 같은 `kind` discriminator와
+snake_case variant 이름을 사용한다. Payload는 operand의 `value`, condition/effect의 `definition`에
+들어간다. Semantic reference의 operand dependency는 조건과 assignment 모두 `operand.binding_id`와
+`operand.value_type`를 사용하고 원래 참조 위치로 사용처를 구분한다. Binding 입력은 선언에서 한 번
+해석하며, 같은 잘못된 입력을 여러 필드에서 사용해도 입력 참조 오류를 반복해서 추가하지 않는다.
+
 표면 조사 변형은 generated CFG에 구체화한다. `모두`는 And, `중 하나 이상`은 Or,
 `만족하지 않을 때`는 Not로 lowering한다. Not group은 자식 하나만 허용하고 빈 그룹은 거부한다.
 Condition grouping과 precedence는 indentation AST에 명시적으로 남는다. 자연어 `하나 이상`은
@@ -312,15 +319,16 @@ S2의 직접 binding/복합 조건 일부를 A로 전달하지만 S2의 relation
 기존 API는 단계적 migration 동안 공존한다. Wire 결과는 additive이며 빈 `statements`는 생략한다.
 Rust `UnlinkedModule`/`SemanticModule` struct literal에는 새 `statements` field가 필요하므로
 Rust source compatibility 전체를 보장하는 변경은 아니다. 전체 RFC의 `proposed` 상태와
-#43–50의 미완료 범위는 유지한다.
+이슈 #43–50의 미완료 범위는 유지한다.
 
 ## 검증 결과 — 2026-10-05
 
-`./scripts/check.sh`가 exit 0으로 완료했다. Rust 45 result suite(빈 doctest suite 포함)에서
-388 tests passed / 0 failed였고, Python 문서 4개와 script 10개 검사가 통과했다.
+리뷰 수정 후 `./scripts/check.sh`가 exit 0으로 완료했다. Rust 48 result suite(빈 doctest suite 포함)에서
+400 tests passed / 0 failed였고, Python 문서 4개와 script 10개 검사가 통과했다.
 Workspace strict Clippy(`-D warnings`), 전체 formatting과 release metadata 동기화 검사도 통과했다.
 
 실제 conformance integration은 statement 9 case에서 18 tests, field ordering 8 case에서
-6 tests가 통과했다. Korean frontend의 121 tests는 위 Rust 388개에 포함되며 별도 합산하지 않는다.
+6 tests가 통과했다. Korean frontend의 121 unit tests와 AST JSON·binding 진단 회귀 검사 6개,
+compiler operand reference 회귀 검사 1개는 위 Rust 400개에 포함되며 별도 합산하지 않는다.
 이 결과는 위 A/B 경계를 검증하며 timer, runtime statement 실행, 전체 조건 공간 분석이나
 일곱 제품 사례의 완료를 증명하지 않는다.

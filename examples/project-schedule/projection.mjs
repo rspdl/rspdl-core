@@ -5,6 +5,7 @@ export const operators = {
   greater_than: { direction: 1, strict: true, label: '보다 뒤여야 합니다' },
   greater_than_or_equal: { direction: 1, strict: false, label: '보다 뒤이거나 같아야 합니다' },
 };
+/** Accepts Gregorian YYYY-MM-DD dates in years 0001–9999, including leap-day checks. */
 export function validDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
@@ -12,6 +13,7 @@ export function validDate(value) {
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   return day <= [31, leap ? 29 : 28,31,30,31,30,31,31,30,31,30,31][month-1];
 }
+/** Shifts a valid date by the caller-supplied integer count of UTC days; returns null for invalid input or year overflow. */
 export function shiftDate(value, days) {
   if (!validDate(value)) return null;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -19,9 +21,14 @@ export function shiftDate(value, days) {
   const year = date.getUTCFullYear();
   return year >= 1 && year <= 9999 ? date.toISOString().slice(0,10) : null;
 }
+/** Extracts an IR half-open UTF-8 byte span; throws if its slice splits a code point. */
 export function ruleSource(source, span) {
   return new TextDecoder('utf-8', { fatal: true }).decode(new TextEncoder().encode(source).slice(span.start, span.end));
 }
+/**
+ * Accepts error-free IR for one model with two required date fields and supported
+ * field-to-field ordering rules. Throws when compilation or this example contract fails.
+ */
 export function project(compilation) {
   if (!compilation?.module || !Array.isArray(compilation.diagnostics) || compilation.diagnostics.some(d => d.severity === 'error')) throw new Error('기획 컴파일에 실패했습니다.');
   const module = compilation.module;
@@ -33,6 +40,11 @@ export function project(compilation) {
   if (!module.constraints?.length || module.constraints.some(c => c.model_id !== model.id || c.left?.kind !== 'field' || c.right?.kind !== 'field' || !ids.has(c.left.value) || !ids.has(c.right.value) || c.left.value === c.right.value || !operators[c.operator])) throw new Error('지원하지 않는 날짜 규칙 projection입니다.');
   return { model, fields, constraints: module.constraints };
 }
+/**
+ * Intersects per-field min/max hints from valid peer dates, shifting strict bounds by
+ * one UTC day. Invalid peers are ignored; year overflow marks a field unavailable.
+ * Requires a validated projection; server validation still decides rule satisfaction.
+ */
 export function bounds(projection, values) {
   const result = Object.fromEntries(projection.fields.map(f => [f.id, {}]));
   for (const rule of projection.constraints) {
@@ -49,6 +61,7 @@ export function bounds(projection, values) {
   return result;
 }
 
+/** Returns a valid canonical date representation; throws for unsupported value shapes. */
 export function displayDate(value) {
   if (value?.value_type?.kind === 'date' && value?.representation?.kind === 'date' && validDate(value.representation.value)) return value.representation.value;
   throw new Error('지원하지 않는 날짜 검증 값 형식입니다.');

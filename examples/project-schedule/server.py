@@ -13,11 +13,14 @@ MAX_BODY = 64 * 1024
 
 
 class BackendError(Exception):
-    pass
+    """The CLI could not provide the structured evidence needed for acceptance."""
 
 
 class Application:
+    """Check candidates against one immutable source snapshot and persist accepted data."""
+
     def __init__(self, source=HERE / 'project.rspdl', rspdl=HERE.parent.parent / 'target/debug/rspdl', data_file=HERE / 'saved-project.json', timeout=5):
+        """Snapshot and compile the source once for the lifetime of this application."""
         self.source = Path(source).read_bytes().decode('utf-8')
         self.rspdl = str(Path(os.environ.get('RSPDL_BIN', str(rspdl))).resolve())
         self.data_file = Path(data_file).resolve()
@@ -28,9 +31,11 @@ class Application:
         self.compile_code, self.compilation = self.invoke('compile')
 
     def close(self):
+        """Release the temporary source snapshot."""
         self._directory.cleanup()
 
     def invoke(self, command, data=None):
+        """Run the CLI with a timeout and require an object-shaped JSON report."""
         args = [self.rspdl, command, str(self.snapshot)]
         if data is not None:
             args += ['--data', str(data)]
@@ -45,6 +50,7 @@ class Application:
         return result.returncode, report
 
     def schema(self):
+        """Return the source snapshot and its compilation for the browser projection."""
         return {'source': self.source, 'compilation': self.compilation}
 
     def supported_schema(self):
@@ -78,6 +84,7 @@ class Application:
         )
 
     def check(self, record, save=False):
+        """Ask the CLI to validate a candidate, saving only complete accepted evidence."""
         if not isinstance(record, dict) or '$id' in record:
             raise ValueError('record must be an object without a client-supplied $id')
         models = (self.compilation.get('module') or {}).get('models', [])
@@ -106,6 +113,7 @@ class Application:
         return {'accepted': accepted, 'saved': accepted and save, 'report': report}
 
     def persist(self, candidate):
+        """Atomically replace the saved candidate after flushing it to disk."""
         self.data_file.parent.mkdir(parents=True, exist_ok=True)
         descriptor, name = tempfile.mkstemp(prefix='.project-', dir=self.data_file.parent)
         try:
@@ -121,8 +129,14 @@ class Application:
 
 
 def handler_for(app):
+    """Serve the loopback demo, allowing JSON API clients from its own origin.
+
+    Origin-less direct API clients are intentional; this is not authentication.
+    Host and Origin use the exact bound IPv4 address and actual server port.
+    """
     class Handler(BaseHTTPRequestHandler):
         def respond(self, status, payload):
+            """Send a JSON response without granting cross-origin browser access."""
             body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
             self.send_response(status)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -130,7 +144,20 @@ def handler_for(app):
             self.end_headers()
             self.wfile.write(body)
 
+        def intended_client(self):
+            """Reject foreign hosts and origins before serving data or running the CLI."""
+            host = f'127.0.0.1:{self.server.server_port}'
+            hosts = self.headers.get_all('Host', [])
+            origins = self.headers.get_all('Origin', [])
+            if hosts != [host] or (origins and origins != [f'http://{host}']):
+                self.respond(403, {'error': 'Expected the local demo host and origin'})
+                return False
+            return True
+
         def do_GET(self):
+            """Serve the schema and allowlisted UI assets to intended clients."""
+            if not self.intended_client():
+                return
             if self.path == '/api/schema':
                 return self.respond(200, app.schema())
             static = {'/': ('index.html', 'text/html'), '/index.html': ('index.html', 'text/html'), '/app.mjs': ('app.mjs', 'text/javascript'), '/projection.mjs': ('projection.mjs', 'text/javascript')}
@@ -148,8 +175,14 @@ def handler_for(app):
             self.wfile.write(body)
 
         def do_POST(self):
+            """Require same-origin or direct JSON requests before checking or saving."""
+            if not self.intended_client():
+                return
             if self.path not in ('/api/check', '/api/save'):
                 return self.respond(404, {'error': 'Not found'})
+            content_types = self.headers.get_all('Content-Type', [])
+            if len(content_types) != 1 or content_types[0].split(';', 1)[0].strip().lower() != 'application/json':
+                return self.respond(415, {'error': 'Expected application/json Content-Type'})
             try:
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 0 < length <= MAX_BODY or self.headers.get('Transfer-Encoding'):
@@ -167,6 +200,7 @@ def handler_for(app):
 
 
 def main():
+    """Run the demo on IPv4 loopback and clean up its snapshot on shutdown."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--source', type=Path, default=HERE / 'project.rspdl')

@@ -1,6 +1,7 @@
 use crate::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Appends a statement-scoped error at the supplied source byte range.
 fn error(d: &mut Vec<Diagnostic>, code: &str, key: &str, span: TextRange) {
     d.push(Diagnostic::error(
         code,
@@ -8,10 +9,13 @@ fn error(d: &mut Vec<Diagnostic>, code: &str, key: &str, span: TextRange) {
         span,
     ));
 }
+/// Accepts an exact canonical ID, or a final ID segment for an unqualified reference.
 fn matches(id: &CanonicalId, r: &SurfaceRef) -> bool {
     id.as_str() == r.id()
         || (!r.id().contains('.') && id.as_str().rsplit('.').next() == Some(r.id()))
 }
+/// Resolves exactly one matching declaration; missing and ambiguous references both
+/// return `None` so callers can attach their context-specific diagnostic.
 fn resolve<'a, T>(
     values: &'a [T],
     id: impl Fn(&T) -> &CanonicalId,
@@ -26,6 +30,9 @@ fn resolve<'a, T>(
     }
 }
 
+/// Links trigger-owned inputs, actors, guards, and effects without executing policy.
+/// Statements with any new diagnostic are omitted; IDs remain reserved in `used` even
+/// when later checks fail. Output is sorted canonically and retains diagnostic spans.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn analyze_statements(
     values: Vec<UnlinkedStatement>,
@@ -317,6 +324,7 @@ pub(crate) fn analyze_statements(
     result.sort_by(|a, b| a.id.cmp(&b.id));
     result
 }
+/// Produces a source-position-independent key for deterministic effect ordering.
 fn effect_key(e: &StatementEffect) -> String {
     semantic_key(e)
 }
@@ -328,6 +336,7 @@ struct Context<'a> {
     enums: &'a [EnumDefinition],
 }
 impl<'a> Context<'a> {
+    /// Resolves a statement-local binding ID exactly, reporting failure at the reference.
     fn binding(&self, r: &SurfaceRef, d: &mut Vec<Diagnostic>) -> Option<&'a StatementBinding> {
         let value = self.bindings.iter().find(|b| b.id.as_str() == r.id());
         if value.is_none() {
@@ -342,6 +351,8 @@ impl<'a> Context<'a> {
         }
         value
     }
+    /// Resolves a field only within its bound model; ambiguity and wrong ownership
+    /// produce a diagnostic at the field reference rather than a global fallback.
     fn field(
         &self,
         model: &CanonicalId,
@@ -366,6 +377,9 @@ impl<'a> Context<'a> {
         }
         value
     }
+    /// Links scalar inputs, required model fields, or typed literals while retaining
+    /// their source ranges. Named literals need an expected type; optional fields and
+    /// model-valued inputs are unsupported and return `None` with a diagnostic.
     fn operand(
         &self,
         o: UnlinkedStatementOperand,
@@ -444,6 +458,9 @@ impl<'a> Context<'a> {
             }
         }
     }
+    /// Recursively type-checks guards, inferring literal types from the other operand.
+    /// Rejects empty groups and unsupported comparisons; group children are sorted
+    /// semantically without flattening their boolean structure.
     fn condition(
         &self,
         c: UnlinkedStatementCondition,
@@ -516,6 +533,7 @@ impl<'a> Context<'a> {
         }
     }
 }
+/// Excludes collection and reference types from the supported comparison operands.
 fn scalar(t: &CanonicalType) -> bool {
     !matches!(
         t,
@@ -526,10 +544,14 @@ fn scalar(t: &CanonicalType) -> bool {
     )
 }
 
+/// Produces a source-position-independent key for deterministic guard ordering.
 fn condition_key(c: &StatementCondition) -> String {
     semantic_key(c)
 }
+/// Serializes semantic content after recursively dropping `span` fields so source
+/// relocation cannot change canonical ordering. Panics if serialization fails.
 fn semantic_key(c: &impl serde::Serialize) -> String {
+    /// Removes source ranges from objects and their nested arrays before comparison.
     fn clean(v: &mut serde_json::Value) {
         match v {
             serde_json::Value::Object(m) => {

@@ -361,6 +361,7 @@ impl<'a> ReferenceCollector<'a> {
         }
     }
 
+    /// Emits operand dependencies with labels shared by conditions and assignments.
     fn collect_statement_operand(
         &mut self,
         from: &SymbolLocator,
@@ -380,10 +381,10 @@ impl<'a> ReferenceCollector<'a> {
                     "statements.bindings",
                     owner,
                     binding_id.as_str(),
-                    "condition.binding_id",
+                    "operand.binding_id",
                     *span,
                 );
-                self.push_type(from, value_type, "condition.value_type", *span);
+                self.push_type(from, value_type, "operand.value_type", *span);
             }
             InputField {
                 binding_id,
@@ -413,6 +414,7 @@ impl<'a> ReferenceCollector<'a> {
             }
         }
     }
+    /// Walks nested conditions without changing operand labels or source ranges.
     fn collect_statement_condition(
         &mut self,
         from: &SymbolLocator,
