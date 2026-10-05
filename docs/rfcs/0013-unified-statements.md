@@ -144,7 +144,9 @@ quoted name 처리는 기존 lexer 규칙에 맞춰 CFG 충돌 검사로 확정�
         상태를 "처리"로 정한다.
 ```
 
-계기·행위자·binding·modality·effect와 비교 atom은 generated `statement.ebnf`로 고정한다.
+계기·행위자·binding·modality·effect와 비교 atom의 실제 허용 문형은
+[실행 문법 `statement.ebnf`](../../crates/rspdl-ko/src/grammar/statement.ebnf)를 기준으로 한다.
+아래 EBNF는 문장과 블록의 구성 설명이며, 토큰 경계·공백·quoted name 처리는 실행 문법과 adapter를 따른다.
 비교는 `같다`, `다르다`, `작다`, `작거나 같다`, `크다`, `크거나 같다`를 사용하며
 input alias, alias field와 typed literal만 operand로 받는다. 임의 텍스트를 조건으로 저장하지 않는다.
 
@@ -153,10 +155,10 @@ statement = name, canonical-id, ("은" | "는"), " 다음과 같이 정한다.",
             INDENT, body-item, { body-item }, DEDENT ;
 body-item = trigger-sentence | actor-sentence | binding-sentence
           | condition-group | modality-sentence | effect-sentence ;
-trigger-sentence = action-name, "이 실행될 때 적용한다."
-                 | event-name, "이 발생할 때 적용한다." ;
-actor-sentence = "시스템이 수행한다." | role-name, "이 수행한다." ;
-binding-sentence = name, canonical-id, "은 ", trigger-name, "의 ", input-name,
+trigger-sentence = action-name, ("이" | "가"), " 실행될 때 적용한다."
+                 | event-name, ("이" | "가"), " 발생할 때 적용한다." ;
+actor-sentence = "시스템이 수행한다." | role-name, ("이" | "가"), " 수행한다." ;
+binding-sentence = name, canonical-id, ("은" | "는"), " ", trigger-name, "의 ", input-name,
                    " 입력을 사용한다." ;
 condition-group = group-sentence, NEWLINE, INDENT,
                   condition-item, { condition-item }, DEDENT ;
@@ -168,15 +170,15 @@ typed-comparison = operand, ("이" | "가"), operand, ("와" | "과"),
                    ("같다" | "다르다"), "."
                  | operand, ("이" | "가"), operand, "보다",
                    ("작다" | "작거나 같다" | "크다" | "크거나 같다"), "." ;
-operand = binding-name | binding-name, "의", field-name
+operand = binding-name | binding-name, "의", field-name | enum-variant-name
         | integer-literal | boolean-literal | string-literal ;
 modality-sentence = "이 처리를 할 수 있다." | "이 처리를 할 수 없다."
                   | "이 처리를 자동으로 시도한다." ;
-effect-sentence = binding-name, "을 조회한다."
-                | binding-name, "을 삭제한다."
-                | binding-name, "을 수정한다.", NEWLINE, INDENT,
+effect-sentence = binding-name, ("을" | "를"), " 조회한다."
+                | binding-name, ("을" | "를"), " 삭제한다."
+                | binding-name, ("을" | "를"), " 수정한다.", NEWLINE, INDENT,
                   assignment, { assignment }, DEDENT ;
-assignment = field-name, "를 ", typed-expression, "로 정한다." ;
+assignment = field-name, ("을" | "를"), " ", operand, ("로" | "으로"), " 정한다." ;
 ```
 
 Body item의 source 순서는 의미 순서나 priority가 아니다. Parser는 반복 item을 받아서
@@ -324,7 +326,7 @@ Rust source compatibility 전체를 보장하는 변경은 아니다. 전체 RFC
 ## 검증 결과 — 2026-10-05
 
 리뷰 수정 후 `./scripts/check.sh`가 exit 0으로 완료했다. Rust 48 result suite(빈 doctest suite 포함)에서
-400 tests passed / 0 failed였고, Python 문서 4개와 script 10개 검사가 통과했다.
+400 tests passed / 0 failed였고, Python 14개 테스트가 통과했다.
 Workspace strict Clippy(`-D warnings`), 전체 formatting과 release metadata 동기화 검사도 통과했다.
 
 실제 conformance integration은 statement 9 case에서 18 tests, field ordering 8 case에서
