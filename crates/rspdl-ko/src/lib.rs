@@ -8,9 +8,12 @@ mod formatter;
 mod frontmatter;
 #[cfg(test)]
 mod generated;
+#[path = "generated/adapter.rs"]
+mod grammar_adapter;
 mod lowering;
 mod parser;
 mod scanner;
+mod statement;
 
 pub use ast::{
     ActionAst, ActionDataMutationAst, ActionInputAst, ActionInputKindAst, ActionOutcomeAst,
@@ -23,8 +26,9 @@ pub use ast::{
     PolicyEffectAst, RecalculationAst, RecoveryAst, RecoveryKindAst, RelationOperatorAst,
     RelationProducerAst, RoleAst, SameScreenHandlerAst, ScreenAst, ScreenLayoutAst,
     ScreenLayoutKindAst, ScreenOperationKindAst, ScreenPathAst, ScreenPermissionAst,
-    SumDerivationAst, TypeReferenceAst, WorkflowAcquisitionAst, WorkflowAst, WorkflowCompletionAst,
-    WorkflowDataAst,
+    StatementAssignmentAst, StatementAst, StatementBindingAst, StatementConditionAst,
+    StatementEffectAst, StatementOperandAst, SumDerivationAst, TypeReferenceAst,
+    WorkflowAcquisitionAst, WorkflowAst, WorkflowCompletionAst, WorkflowDataAst,
 };
 pub use diagnostic::render_diagnostic;
 pub use formatter::{FormatError, FormatOutput, format_document, format_source};

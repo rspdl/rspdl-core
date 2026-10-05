@@ -1,0 +1,9 @@
+{
+  "spec_version": "0.3.0",
+  "locale": "ko-KR",
+  "category": "boundary",
+  "expected_module": false,
+  "expected_message_keys": [
+    "semantic.statement.optional_operand_unsupported"
+  ]
+}

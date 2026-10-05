@@ -10,7 +10,9 @@ pub constraint_statement =
       |
         left: @marked_ref("은", "는")
         (
-            greater_attached: @integer_before("보다") "커야" "한다"
+            ordered_right: @ordered_field()
+            ordered_operator: ("커야" | "작아야" | "크거나" "같아야" | "작거나" "같아야") "한다"
+          | greater_attached: @integer_before("보다") "커야" "한다"
           | less_attached: @integer_before("보다") "작아야" "한다"
           | string_greater: @string_before("보다") "커야" "한다"
           | string_less: @string_before("보다") "작아야" "한다"

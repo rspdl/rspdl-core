@@ -502,6 +502,18 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
         }
     }
 
+    let statements = crate::statement_analysis::analyze_statements(
+        module.statements,
+        &module_id,
+        &actions,
+        &events,
+        &roles,
+        &models,
+        &enums,
+        &mut top_level_ids,
+        &mut diagnostics,
+    );
+
     diagnostics.sort_by(Diagnostic::stable_cmp);
     if diagnostics.iter().any(Diagnostic::is_error) {
         return AnalysisOutput {
@@ -513,6 +525,7 @@ pub fn analyze_with_source(module: UnlinkedModule, source_id: SourceId) -> Analy
 
     AnalysisOutput {
         module: Some(SemanticModule {
+            statements,
             id: module_id,
             name: module.declaration.name,
             span: module_span,
@@ -5675,7 +5688,7 @@ fn resolve_operand(
     }
 }
 
-fn literal_value(
+pub(crate) fn literal_value(
     literal: &UnlinkedLiteral,
     expected: &CanonicalType,
     enums: &BTreeMap<String, EnumDefinition>,

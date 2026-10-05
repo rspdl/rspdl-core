@@ -645,6 +645,8 @@ pub struct UnlinkedWorkflow {
 /// Locale-neutral, unresolved semantic intent produced by a frontend.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct UnlinkedModule {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub statements: Vec<crate::UnlinkedStatement>,
     pub declaration: UnlinkedDeclaration,
     pub span: TextRange,
     pub enums: Vec<UnlinkedEnum>,

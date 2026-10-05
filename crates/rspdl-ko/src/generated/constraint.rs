@@ -55,6 +55,14 @@ pub(crate) fn parse_constraint(tokens: &[Token]) -> Result<GeneratedConstraint, 
     }
 
     let left = required_capture(&parsed, "left");
+    if let Some(right) = parsed.capture("ordered_right") {
+        return Ok(GeneratedConstraint {
+            model,
+            left,
+            right: GeneratedConstraintRight::Field(right.clone()),
+            operator: relation_operator(&required_capture(&parsed, "ordered_operator").value),
+        });
+    }
     let (operator, literal) = literal_comparison(&parsed)
         .expect("validated constraint grammar always selects a literal comparison alternative");
     Ok(GeneratedConstraint {
@@ -69,6 +77,10 @@ fn relation_operator(value: &str) -> RelationOperatorAst {
     match value {
         "같아야" => RelationOperatorAst::Equal,
         "달라야" => RelationOperatorAst::NotEqual,
+        "커야" => RelationOperatorAst::GreaterThan,
+        "작아야" => RelationOperatorAst::LessThan,
+        "크거나 같아야" => RelationOperatorAst::GreaterThanOrEqual,
+        "작거나 같아야" => RelationOperatorAst::LessThanOrEqual,
         _ => unreachable!("grammar only captures supported field relation operators"),
     }
 }
@@ -182,6 +194,18 @@ impl InputAdapter<Token> for ConstraintTokenAdapter {
     ) -> Vec<TerminalMatch> {
         match matcher {
             "marked_ref" => match_marked_ref(tokens, position, arguments),
+            "ordered_field" => match_marked_ref(tokens, position, &["보다".to_owned()])
+                .into_iter()
+                .filter(|capture| {
+                    matches!(tokens[position].kind, TokenKind::QuotedIdentifier(_))
+                        || !capture
+                            .value
+                            .strip_prefix('-')
+                            .unwrap_or(&capture.value)
+                            .chars()
+                            .all(|c| c.is_ascii_digit())
+                })
+                .collect(),
             "integer" => integer(tokens, position),
             "integer_before" => integer_before(tokens, position, arguments),
             "string_equal" => string_literal(tokens, position, "이어야"),
@@ -407,6 +431,12 @@ mod tests {
     #[test]
     fn generated_constraint_matches_handwritten_ast_for_every_supported_shape() {
         let cases = [
+            "항목의 값은 다른 값보다 커야 한다.",
+            "항목의 값은 `다른 값`보다 커야 한다.",
+            "항목의 값은 `0`보다 커야 한다.",
+            "항목의 값은 다른 값보다 작아야 한다.",
+            "항목의 값은 다른 값보다 크거나 같아야 한다.",
+            "항목의 값은 다른 값보다 작거나 같아야 한다.",
             "항목의 값은 0보다 커야 한다.",
             "항목의 값은 -1 보다 커야 한다.",
             "항목의 값은 0 이상이어야 한다.",
@@ -454,6 +484,9 @@ mod tests {
             "항목의 값은 승인 완료와 달라야 한다.",
             "항목의 값과 다른 값이 같아야 한다.",
             "항목의 값과 다른 값은 같다 한다.",
+            "항목의 값은 다른 값보다 커야.",
+            "항목의 값은 다른 값보다 크거나 한다.",
+            "항목의 값은 다른 값보다 크거나 달라야 한다.",
         ];
         for sentence in cases {
             assert!(handwritten_constraint(sentence).is_err(), "{sentence}");
@@ -492,6 +525,18 @@ mod tests {
             };
             assert_eq!(value, expected);
         }
+    }
+
+    #[test]
+    fn generated_ordered_field_capture_excludes_comparison_marker() {
+        let sentence = "항목의 값은 다른 값보다 크거나 같아야 한다.";
+        let generated = parse_constraint(&constraint_tokens(sentence)).unwrap();
+        let GeneratedConstraintRight::Field(right) = generated.right else {
+            panic!("ordered field comparison should retain a field operand");
+        };
+        assert_eq!(right.value, "다른 값");
+        assert_eq!(&sentence[right.start..right.end], "다른 값");
+        assert_eq!(generated.operator, RelationOperatorAst::GreaterThanOrEqual);
     }
 
     #[test]

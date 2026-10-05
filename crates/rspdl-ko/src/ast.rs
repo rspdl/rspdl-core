@@ -370,6 +370,7 @@ pub enum DeclarationAst {
     FieldProducer(FieldProducerAst),
     RelationProducer(RelationProducerAst),
     Policy(PolicyAst),
+    Statement(StatementAst),
 }
 
 /// 머리말이 다른 선언을 가리키는 방법.
@@ -636,4 +637,66 @@ pub struct DocumentAst {
     pub frontmatter: Option<FrontmatterAst>,
     pub module: ModuleAst,
     pub declarations: Vec<DeclarationAst>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct StatementAst {
+    pub declaration: NamedIdAst,
+    pub trigger: ProducerTriggerAst,
+    pub actor: String,
+    pub trigger_span: Span,
+    pub actor_span: Span,
+    pub bindings: Vec<StatementBindingAst>,
+    pub condition: StatementConditionAst,
+    pub policy: rspdl_domain::StatementPolicy,
+    pub effects: Vec<StatementEffectAst>,
+    pub span: Span,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct StatementBindingAst {
+    pub declaration: NamedIdAst,
+    pub owner: String,
+    pub input: String,
+    pub span: Span,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub enum StatementOperandAst {
+    Input(String),
+    InputField { binding: String, field: String },
+    Literal(LiteralAst),
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub enum StatementConditionAst {
+    True,
+    Compare {
+        left: StatementOperandAst,
+        operator: RelationOperatorAst,
+        right: StatementOperandAst,
+        span: Span,
+    },
+    And(Vec<Self>),
+    Or(Vec<Self>),
+    Not(Box<Self>),
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct StatementAssignmentAst {
+    pub field: String,
+    pub value: StatementOperandAst,
+    pub span: Span,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub enum StatementEffectAst {
+    Read {
+        binding: String,
+        span: Span,
+    },
+    Delete {
+        binding: String,
+        span: Span,
+    },
+    Update {
+        binding: String,
+        assignments: Vec<StatementAssignmentAst>,
+        span: Span,
+    },
 }

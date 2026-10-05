@@ -1,0 +1,10 @@
+{
+  "records": {
+    "schedule.project": [
+      {
+        "$id": "p",
+        "start": "2026-10-05"
+      }
+    ]
+  }
+}

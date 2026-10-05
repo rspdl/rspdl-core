@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>프로젝트 일정 등록</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#182a37;background:#f3f6f8}body{margin:0;padding:5vh 20px}main{max-width:620px;margin:auto;background:white;padding:clamp(24px,5vw,44px);border:1px solid #dce4e9;border-radius:18px}h1{font-size:1.8rem;margin:12px 0}p{line-height:1.65}.eyebrow{color:#49677c;font-size:.85rem;letter-spacing:.1em}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin:32px 0}label{display:block;font-weight:650;margin-bottom:10px}input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #8598a5;border-radius:7px;font:inherit}input[aria-invalid=true]{border-color:#b3212b}.hint,.error{font-size:.9rem;min-height:1.4em;margin:8px 0}.hint{color:#526777}.error{color:#a31d27}button{border:0;border-radius:8px;background:#155c78;color:white;padding:13px 22px;font:inherit;cursor:pointer}button:disabled{opacity:.5;cursor:wait}input:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #68b5d5;outline-offset:3px}#status{white-space:pre-wrap}details{margin-top:28px;border-top:1px solid #dce4e9;padding-top:18px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem}summary{cursor:pointer;color:#526777}@media(max-width:450px){.fields{grid-template-columns:1fr;gap:12px}}
+</style>
+<main><div class="eyebrow">PROJECT SCHEDULE</div><h1>프로젝트 일정 등록</h1><p>시작일과 마감일을 입력하세요. 기획에 선언된 일정 규칙을 확인한 뒤 저장합니다.</p>
+<form id="schedule" novalidate><div class="fields">
+<div><label id="start-label" for="start_date">시작일</label><input type="date" id="start_date" required aria-describedby="start-hint start-error"><p class="hint" id="start-hint"></p><p class="error" id="start-error"></p></div>
+<div><label id="end-label" for="end_date">마감일</label><input type="date" id="end_date" required aria-describedby="end-hint end-error"><p class="hint" id="end-hint"></p><p class="error" id="end-error"></p></div>
+</div><button id="save" disabled>일정 저장</button></form>
+<p id="status" role="status" aria-live="polite">기획을 불러오는 중입니다.</p>
+<details><summary>기획과 검증 근거</summary><pre id="source"></pre><pre id="evidence"></pre></details></main>
+<script type="module" src="./app.mjs"></script></html>

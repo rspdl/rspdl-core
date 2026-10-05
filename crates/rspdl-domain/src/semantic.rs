@@ -710,6 +710,8 @@ pub struct PolicyDefinition {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SemanticModule {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub statements: Vec<crate::StatementDefinition>,
     pub id: CanonicalId,
     pub name: String,
     pub span: TextRange,

@@ -16,6 +16,7 @@ related:
   - rspdl-compiler-architecture
   - package-release-guide
   - problem-driven-development
+  - project-schedule-validation
   - rspdl-language-prd
   - rspdl-product-vision
   - data-lifecycle-modeling-gap
@@ -35,9 +36,10 @@ related:
   - total-policy-condition-space-analysis
   - typed-action-outcomes-and-recovery
   - typed-domains-and-logic-core
+  - unified-statements
   - workflow-completion-data-availability
   - frontend-semantic-analysis-contract
-last_updated: "2026-09-26"
+last_updated: "2026-10-05"
 owners:
   - rspdl-maintainers
 ---
@@ -55,6 +57,7 @@ owners:
 | `rspdl-compiler-architecture` | `architecture` | `proposed` | [RSPDL Compiler Architecture](architecture.md) | Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded model finding, cross-language SDK distribution, dependency direction, and tests. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `frontend-grammar-implementation-drift`, `downstream-analysis-integration-friction`, `semantic-source-provenance-loss`, `semantic-reference-direction-loss` | `rust`, `compiler-architecture`, `ko-KR`, `semantic-ir`, `diagnostics`, `conformance` |
 | `package-release-guide` | `guide` | `active` | [Python and Node.js Package Release Guide](guides/releasing-packages.md) | Configures Release Please, PyPI and npm so a reviewed Release PR merge publishes tested native packages. | `downstream-analysis-integration-friction` | `release`, `pypi`, `npm`, `trusted-publishing`, `native-package` |
 | `problem-driven-development` | `guide` | `active` | [Problem-driven Development](guides/problem-driven-development.md) | Defines how contributors trace every product or language change from a durable causal problem through evidence and conformance tests. | - | `contribution-workflow`, `intent-traceability`, `problem-topic`, `definition-of-done` |
+| `project-schedule-validation` | `guide` | `active` | [프로젝트 일정 입력과 저장 검증 예제](guides/project-schedule-validation.md) | Connects one compiled date-order invariant to date input bounds, compiler-backed validation, and guarded local saving in an application example. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `semantic-source-provenance-loss` | `date-ordering`, `application-projection`, `input-validation`, `diagnostics` |
 | `rspdl-language-prd` | `prd` | `draft` | [RSPDL Product Requirements](prd.md) | Defines the product and language requirements for turning explicit planning intent into deterministic, explainable implementation context. | `screen-structure-spec-divergence`, `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `semantic-source-provenance-loss`, `semantic-reference-direction-loss` | `language-design`, `data-lifecycle`, `policy-analysis`, `semantic-ir`, `diagnostics`, `conformance` |
 | `rspdl-product-vision` | `prd` | `active` | [RSPDL Product Vision](product/vision.md) | Defines the product promise of moving policy and data decisions before implementation while preserving explicitly modeled intent. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `product-vision`, `planning-to-implementation`, `shift-left-validation`, `canonical-intent` |
 | `data-lifecycle-modeling-gap` | `problem` | `active` | [Data Lifecycle Modeling Gap](problems/0001-data-lifecycle-modeling-gap.md) | Planning artifacts often omit when data comes into existence, changes, disappears, and remains available to dependent behavior. | - | `data-lifecycle`, `state-transition`, `derivation`, `deletion-impact` |
@@ -74,5 +77,6 @@ owners:
 | `total-policy-condition-space-analysis` | `rfc` | `proposed` | [Total Policy Condition Spaces and SMT-First Consistency Analysis](rfcs/0006-total-policy-condition-space-analysis.md) | Defines closed policy vocabulary, exhaustive condition-space coverage, explicit override semantics, and SMT-first consistency analysis. | `policy-consistency-blind-spots`, `data-lifecycle-modeling-gap` | `policy-analysis`, `smt`, `condition-coverage`, `totality`, `override`, `closed-vocabulary` |
 | `typed-action-outcomes-and-recovery` | `rfc` | `implemented` | [행동 결과, 역할 연결과 제한된 복구 의무](rfcs/0012-typed-action-outcomes-and-recovery.md) | Defines typed action outcomes, explicit screen-role bindings, outcome-specific data provenance, and bounded recovery obligations without inferring business policy. | `screen-structure-spec-divergence`, `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `action-outcome`, `screen-role`, `workflow-data`, `recovery`, `timeout` |
 | `typed-domains-and-logic-core` | `rfc` | `proposed` | [정규화 타입·도메인과 논리 IR 코어](rfcs/0002-typed-domains-and-logic-core.md) | Defines normalized value domains, typed set and Boolean IR, and its boundary with finite relational model finding. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `type-system`, `data-model`, `domains`, `set-algebra`, `smt` |
+| `unified-statements` | `rfc` | `proposed` | [데이터, 불변 조건과 자연 한국어 통합 문장](rfcs/0013-unified-statements.md) | Proposes a shared typed statement model and staged natural Korean CFG for explicit permissions, automatic attempts, effects, and data invariants. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `semantic-source-provenance-loss` | `unified-statement`, `natural-korean-cfg`, `data-invariant`, `condition-expression`, `selector`, `pre-post-state` |
 | `workflow-completion-data-availability` | `rfc` | `implemented` | [업무 완료 경로의 데이터 가용성 계약](rfcs/0010-workflow-completion-data-availability.md) | Defines explicit workflow starts, completion obligations, preconditions, and submit-bound input acquisition with conservative path analysis. | `data-lifecycle-modeling-gap`, `screen-structure-spec-divergence`, `semantic-source-provenance-loss` | `workflow`, `data-lifecycle`, `path-analysis`, `completion-contract`, `frontmatter`, `canonical-ir` |
 | `frontend-semantic-analysis-contract` | `spec` | `implemented` | [Frontend and Semantic Analysis Contract](specs/frontend-semantic-analysis-contract.md) | Defines stable-ID Unlinked records, semantic product value types, action data mutations, relations, rules, and the structured diagnostic boundary shared by frontends. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `semantic-source-provenance-loss`, `semantic-reference-direction-loss` | `compiler-frontend`, `unlinked-ir`, `semantic-analysis`, `locale-independence`, `conformance` |

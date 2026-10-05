@@ -1,0 +1,17 @@
+{
+  "expected_violations": 1,
+  "spec_version": "0.4.0",
+  "locale": "ko-KR",
+  "category": "failure",
+  "expected_compile_diagnostics": [],
+  "expected_violation_evidence": [
+    {
+      "model_id": "schedule.project",
+      "record_id": "p",
+      "left_field_id": "schedule.project.end",
+      "right_field_id": "schedule.project.start",
+      "left": "2026-10-04",
+      "right": "2026-10-05"
+    }
+  ]
+}

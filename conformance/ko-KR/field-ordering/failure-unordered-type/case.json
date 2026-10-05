@@ -1,0 +1,11 @@
+{
+  "spec_version": "0.4.0",
+  "locale": "ko-KR",
+  "category": "failure",
+  "expected_compile_diagnostics": [
+    {
+      "rule_id": "RSPDL-TYPE-001",
+      "message_key": "semantic.constraint.order_requires_ordered_type"
+    }
+  ]
+}

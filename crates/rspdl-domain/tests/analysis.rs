@@ -29,6 +29,7 @@ fn reference(id: &str) -> SurfaceRef {
 
 fn empty_module(name: &str) -> UnlinkedModule {
     UnlinkedModule {
+        statements: Vec::new(),
         declaration: declaration(name, Some("expense")),
         span: span(),
         enums: Vec::new(),
@@ -2706,5 +2707,186 @@ fn output_templates_are_linked_and_analyzed_without_source_order_inference() {
             .module
             .as_ref()
             .map(|module| &module.conditional_productions[0].field_evaluation_order),
+    );
+}
+
+fn unified_statement_module() -> UnlinkedModule {
+    use rspdl_domain::*;
+    let mut module = policy_module(["Module", "Model", "Amount", "Manager", "Change"]);
+    module.actions[0].inputs.push(UnlinkedActionInput {
+        declaration: declaration("Target", Some("target")),
+        kind: UnlinkedActionInputKind::ExistingModel {
+            model: reference("request"),
+        },
+        span: span(),
+    });
+    module.statements.push(UnlinkedStatement {
+        actor_span: TextRange::default(),
+        declaration: declaration("Statement", Some("statement")),
+        trigger: UnlinkedProductionTrigger {
+            kind: ProductionTriggerKind::Action,
+            reference: reference("change"),
+        },
+        actor: UnlinkedStatementActor::Role(reference("manager")),
+        bindings: vec![UnlinkedStatementBinding {
+            declaration: declaration("Bound", Some("bound")),
+            input: reference("target"),
+        }],
+        condition: UnlinkedStatementCondition::Compare {
+            left: UnlinkedStatementOperand::InputField {
+                binding: reference("bound"),
+                field: reference("amount"),
+            },
+            operator: RelationOperator::GreaterThanOrEqual,
+            right: UnlinkedStatementOperand::Literal(UnlinkedLiteral::Integer {
+                value: "0".into(),
+                span: span(),
+            }),
+        },
+        policy: StatementPolicy::DoAttempt,
+        effects: vec![
+            UnlinkedStatementEffect::Read {
+                binding: reference("bound"),
+                span: span(),
+            },
+            UnlinkedStatementEffect::Update {
+                binding: reference("bound"),
+                assignments: vec![UnlinkedStatementAssignment {
+                    field: reference("amount"),
+                    value: UnlinkedStatementOperand::Literal(UnlinkedLiteral::Integer {
+                        value: "0".into(),
+                        span: span(),
+                    }),
+                    span: span(),
+                }],
+                span: span(),
+            },
+        ],
+        span: span(),
+    });
+    module
+}
+
+#[test]
+fn unified_statements_link_typed_refs_and_keep_analysis_limits_explicit() {
+    use rspdl_domain::*;
+    let output = analyze(unified_statement_module());
+    assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    let module = output.module.unwrap();
+    let statement = &module.statements[0];
+    assert_eq!(statement.policy, StatementPolicy::DoAttempt);
+    assert_eq!(
+        statement.analysis_status,
+        StatementAnalysisStatus::LinkedAndTypeCheckedOnly
+    );
+    assert_eq!(statement.bindings[0].phase, ProducerPhase::PreMutation);
+    assert_eq!(
+        statement.bindings[0].input_id.as_str(),
+        "expense.change.target"
+    );
+    assert_eq!(statement.effects.len(), 2);
+    let references = semantic_references(&module);
+    assert!(
+        references
+            .iter()
+            .any(|r| r.from.kind == "statements" && r.to.id == "expense.change")
+    );
+    assert!(
+        references
+            .iter()
+            .any(|r| r.from.kind == "statements.bindings" && r.to.id == "expense.change.target")
+    );
+    assert!(
+        references
+            .iter()
+            .any(|r| r.from.kind == "statements" && r.to.id == "expense.request.amount")
+    );
+}
+
+#[test]
+fn unified_statements_reject_alias_writes_delete_access_and_wrong_input_owner() {
+    use rspdl_domain::*;
+    let mut module = unified_statement_module();
+    module.statements[0]
+        .bindings
+        .push(UnlinkedStatementBinding {
+            declaration: declaration("Alias", Some("alias")),
+            input: reference("target"),
+        });
+    let UnlinkedStatementEffect::Update { assignments, .. } =
+        module.statements[0].effects[1].clone()
+    else {
+        panic!()
+    };
+    module.statements[0]
+        .effects
+        .push(UnlinkedStatementEffect::Update {
+            binding: reference("alias"),
+            assignments,
+            span: span(),
+        });
+    let output = analyze(module);
+    assert!(output.module.is_none());
+    let diagnostic = output
+        .diagnostics
+        .iter()
+        .find(|d| d.rule_id == "RSPDL-STMT-008")
+        .unwrap();
+    assert_eq!(
+        diagnostic.argument("input_id"),
+        Some("expense.change.target")
+    );
+    assert_eq!(
+        diagnostic.argument("field_id"),
+        Some("expense.request.amount")
+    );
+    let mut module = unified_statement_module();
+    module.statements[0]
+        .effects
+        .push(UnlinkedStatementEffect::Delete {
+            binding: reference("bound"),
+            span: span(),
+        });
+    assert!(
+        analyze(module)
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_id == "RSPDL-STMT-009")
+    );
+    let mut module = unified_statement_module();
+    module.statements[0].bindings[0].input = reference("expense.other.target");
+    assert!(
+        analyze(module)
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_id == "RSPDL-STMT-004")
+    );
+}
+
+#[test]
+fn unified_statements_reject_optional_and_nonmatching_assignment_types() {
+    let mut module = unified_statement_module();
+    module.models[0].fields[0].required = false;
+    assert!(
+        analyze(module)
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_id == "RSPDL-STMT-011")
+    );
+    let mut module = unified_statement_module();
+    if let rspdl_domain::UnlinkedStatementEffect::Update { assignments, .. } =
+        &mut module.statements[0].effects[1]
+    {
+        assignments[0].value =
+            rspdl_domain::UnlinkedStatementOperand::Literal(UnlinkedLiteral::Boolean {
+                value: false,
+                span: span(),
+            });
+    }
+    assert!(
+        analyze(module)
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_id == "RSPDL-STMT-006")
     );
 }

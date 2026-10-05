@@ -430,6 +430,7 @@ pub fn compile_files_with_frontend(
             .chain(module.roles.iter().map(|value| &value.id))
             .chain(module.actions.iter().map(|value| &value.id))
             .chain(module.events.iter().map(|value| &value.id))
+            .chain(module.statements.iter().map(|value| &value.id))
             .chain(
                 module
                     .conditional_productions
@@ -675,6 +676,7 @@ pub fn check_ko(source: &str, runtime_json: &str, _options: CheckOptions) -> Che
         &mut report.runtime_diagnostics,
     );
     report.policy_results = execute_policies(&[module], &runtime);
+    report_unsupported_statements(&[module], &mut report.runtime_diagnostics);
     report.constraint_violations.sort_by(|left, right| {
         (&left.model_id, &left.record_id, &left.constraint_id).cmp(&(
             &right.model_id,
@@ -730,6 +732,7 @@ pub fn check_ko_files(
         &mut report.runtime_diagnostics,
     );
     report.policy_results = execute_policies(&modules, &runtime);
+    report_unsupported_statements(&modules, &mut report.runtime_diagnostics);
     report.constraint_violations.sort_by(|left, right| {
         (&left.model_id, &left.record_id, &left.constraint_id).cmp(&(
             &right.model_id,
@@ -741,6 +744,24 @@ pub fn check_ko_files(
         .runtime_diagnostics
         .sort_by(RuntimeDiagnostic::stable_cmp);
     report
+}
+
+/// Compilation validates statement references, types and local effect compatibility.
+/// Runtime checking does not yet evaluate trigger payloads or statement permissions.
+/// Keep that missing capability observable instead of returning an empty success.
+fn report_unsupported_statements(
+    modules: &[&SemanticModule],
+    diagnostics: &mut Vec<RuntimeDiagnostic>,
+) {
+    for module in modules {
+        for statement in &module.statements {
+            diagnostics.push(
+                runtime_error("RSPDL-STMT-090", "$", "runtime.statement.unsupported")
+                    .with_argument("statement_id", &statement.id)
+                    .with_argument("capability", "statement_evaluation"),
+            );
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
