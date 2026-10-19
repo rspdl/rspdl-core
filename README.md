@@ -240,6 +240,8 @@ console.log(response.result.files[0].diagnostics)
 
 ## 문서 지도
 
+- [평가용 제품 사례 3개](docs/guides/evaluation-products.md): 수리 접수·교육 증빙·시설 점검의 전체 요구사항 119개와 Sol·사람 판정 기준. 모델 비교는 미실행이다.
+
 - [Product Vision](docs/product/vision.md): 누구의 어떤 고통을 왜 해결하는가
 - [PRD](docs/prd.md): 제품·언어 요구사항과 현재 구현 경계
 - [Data Lifecycle Modeling Gap](docs/problems/0001-data-lifecycle-modeling-gap.md): 데이터 존재 시점과 연산 공백
