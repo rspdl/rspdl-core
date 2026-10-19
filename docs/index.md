@@ -14,6 +14,7 @@ related:
   - python-node-sdk-distribution
   - rust-korean-first-frontend
   - rspdl-compiler-architecture
+  - evaluation-products
   - package-release-guide
   - problem-driven-development
   - project-schedule-validation
@@ -39,7 +40,7 @@ related:
   - unified-statements
   - workflow-completion-data-availability
   - frontend-semantic-analysis-contract
-last_updated: "2026-10-05"
+last_updated: "2026-10-19"
 owners:
   - rspdl-maintainers
 ---
@@ -55,6 +56,7 @@ owners:
 | `python-node-sdk-distribution` | `adr` | `accepted` | [Python and Node.js SDK Distribution](adr/0004-python-node-sdk-distribution.md) | Selects a shared JSON SDK facade with PyO3 and napi-rs native packages plus OIDC-based coordinated releases. | `downstream-analysis-integration-friction` | `python`, `nodejs`, `sdk`, `native-bindings`, `package-release` |
 | `rust-korean-first-frontend` | `adr` | `accepted` | [Rust와 한국어 우선 독립 Locale Frontend](adr/0001-rust-korean-first-frontends.md) | Selects Rust, a Korean-first rollout, and independent deterministic frontends that lower surface names to a shared stable-ID Unlinked IR. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `rust`, `korean-first`, `controlled-language`, `locale-frontends`, `deterministic-parsing` |
 | `rspdl-compiler-architecture` | `architecture` | `proposed` | [RSPDL Compiler Architecture](architecture.md) | Defines the stable-ID frontend boundary, locale-neutral analyzer, bounded model finding, cross-language SDK distribution, dependency direction, and tests. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `frontend-grammar-implementation-drift`, `downstream-analysis-integration-friction`, `semantic-source-provenance-loss`, `semantic-reference-direction-loss` | `rust`, `compiler-architecture`, `ko-KR`, `semantic-ir`, `diagnostics`, `conformance` |
+| `evaluation-products` | `guide` | `draft` | [제품 전체 요구사항의 평가용 사례 3개](guides/evaluation-products.md) | Defines three evaluation-only product briefs with separate human and Sol rubrics, supported-grammar reviews, and an unexecuted paired comparison protocol. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots` | `evaluation`, `product-planning`, `data-lifecycle` |
 | `package-release-guide` | `guide` | `active` | [Python and Node.js Package Release Guide](guides/releasing-packages.md) | Configures Release Please, PyPI and npm so a reviewed Release PR merge publishes tested native packages. | `downstream-analysis-integration-friction` | `release`, `pypi`, `npm`, `trusted-publishing`, `native-package` |
 | `problem-driven-development` | `guide` | `active` | [Problem-driven Development](guides/problem-driven-development.md) | Defines how contributors trace every product or language change from a durable causal problem through evidence and conformance tests. | - | `contribution-workflow`, `intent-traceability`, `problem-topic`, `definition-of-done` |
 | `project-schedule-validation` | `guide` | `active` | [프로젝트 일정 입력과 저장 검증 예제](guides/project-schedule-validation.md) | Connects one compiled date-order invariant to date input bounds, compiler-backed validation, and guarded local saving in an application example. | `data-lifecycle-modeling-gap`, `policy-consistency-blind-spots`, `semantic-source-provenance-loss` | `date-ordering`, `application-projection`, `input-validation`, `diagnostics` |

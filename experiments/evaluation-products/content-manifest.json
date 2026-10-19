@@ -1,0 +1,134 @@
+{
+  "id": "rspdl-evaluation-products-v1",
+  "content_version": "1",
+  "prepared_date": "2026-10-19",
+  "status": "authored_and_reviewed_not_executed",
+  "grammar_source_git_head": "837290a83911e160f27835f246a5bd7df21107b1",
+  "grammar_source_changed_in_this_task": false,
+  "author_and_reviewer_model": "gpt-6.1-sol",
+  "roles_per_product": [
+    "author",
+    "grammar_reviewer",
+    "fairness_reviewer"
+  ],
+  "products": [
+    {
+      "id": "E01",
+      "directory": "cases/E01-repair",
+      "requirements": 35,
+      "models": 5,
+      "screens": 8,
+      "actions": 8,
+      "human_walkthroughs": 3
+    },
+    {
+      "id": "E02",
+      "directory": "cases/E02-training",
+      "requirements": 42,
+      "models": 7,
+      "screens": 8,
+      "actions": 10,
+      "external_events": 1,
+      "human_walkthroughs": 3
+    },
+    {
+      "id": "E03",
+      "directory": "cases/E03-inspection",
+      "requirements": 42,
+      "models": 6,
+      "screens": 8,
+      "actions": 13,
+      "external_events": 1,
+      "human_walkthroughs": 3
+    }
+  ],
+  "independent_product_count": 3,
+  "generation_model_runs": 0,
+  "model_performance_measured": false,
+  "new_evaluation_test_code_or_reference_implementation": false,
+  "compiler_execution_for_cases": "not_performed; cargo unavailable",
+  "execution_settings": "not frozen; complete run-record-template.md before first execution",
+  "snapshot_scope": "case content and protocol only; not an executed experiment manifest",
+  "files": [
+    {
+      "path": "docs/guides/evaluation-products.md",
+      "sha256": "9b18e9eef4a3abadbd0b27b2358d18ce8bc54ea49a644b39401bcb7b9c90e26c"
+    },
+    {
+      "path": "experiments/evaluation-products/README.md",
+      "sha256": "228c16719af85089bc8fcb4710d8b7ca47d355bcffa304dd15c09e4daaff0614"
+    },
+    {
+      "path": "experiments/evaluation-products/case-catalog.md",
+      "sha256": "189f15bc04dce993dd965b65cb40770ed7a258c0043c933b3ec8a6f0dc6b5f10"
+    },
+    {
+      "path": "experiments/evaluation-products/cases/E01-repair/evaluator.md",
+      "sha256": "e1d3a0d4dddc246717fbafe7a7ac6ef46302323c832c808adb2b3013e06ae2eb"
+    },
+    {
+      "path": "experiments/evaluation-products/cases/E01-repair/input.md",
+      "sha256": "79df137d4e5de3cb354fb58a3b62984a279a7cb17fd9893d9fb1802af162b452"
+    },
+    {
+      "path": "experiments/evaluation-products/cases/E02-training/evaluator.md",
+      "sha256": "064c930d447f7dda4f850413cfd82e7246af97f7f8aec829432748acfd74ca92"
+    },
+    {
+      "path": "experiments/evaluation-products/cases/E02-training/input.md",
+      "sha256": "448c88d7117e2b1ebc9670187dd457fd37ff00bfd62b10607a592932d2cb10d2"
+    },
+    {
+      "path": "experiments/evaluation-products/cases/E03-inspection/evaluator.md",
+      "sha256": "94c46feb4ab2b0d88c6cfe2f2c2680ccd9ac656f3a5350205fd00e67fecee8a7"
+    },
+    {
+      "path": "experiments/evaluation-products/cases/E03-inspection/input.md",
+      "sha256": "f0494d4a77d68bbf56adc0aabc7bb13e1feccd75c8b8bd2ba5b92b4b71f6a3c7"
+    },
+    {
+      "path": "experiments/evaluation-products/generation-protocol.md",
+      "sha256": "40b44c73639b7ca33d0e27bb8c601d55b53afb25c73541d05d6d0f7017f71925"
+    },
+    {
+      "path": "experiments/evaluation-products/judge-instructions.md",
+      "sha256": "611968465af429173155eebd43afc624b301ad81c19b5eaf1c0f40a0599d3eb7"
+    },
+    {
+      "path": "experiments/evaluation-products/public-contract.md",
+      "sha256": "ff20074276d3669522603f5020a0bdebf9f23fa962980454c99179aa21303c1c"
+    },
+    {
+      "path": "experiments/evaluation-products/reviews/E01-fairness.md",
+      "sha256": "73cc8971bfdc74bb55397504330e7a745adb139207a20bd462504d0c6999585b"
+    },
+    {
+      "path": "experiments/evaluation-products/reviews/E01-grammar.md",
+      "sha256": "a33b564a482a74d246ca5cab2d495f70802de471a0d0851022111e5e419cee4e"
+    },
+    {
+      "path": "experiments/evaluation-products/reviews/E02-fairness.md",
+      "sha256": "db3155b2de5e421cbfdcce8656bd2571d7c3237d51543c0f618b83d7876c588f"
+    },
+    {
+      "path": "experiments/evaluation-products/reviews/E02-grammar.md",
+      "sha256": "a261558f484ba993e90b6bf3d55453da87a80e02d521609ebc962a96304880d8"
+    },
+    {
+      "path": "experiments/evaluation-products/reviews/E03-fairness.md",
+      "sha256": "a6c86016045b031ba5a57257f1cd3beacb1dbbdda1fd4f6e7114c81c808a1517"
+    },
+    {
+      "path": "experiments/evaluation-products/reviews/E03-grammar.md",
+      "sha256": "6e1bb0bc867f698b1a118c381d992dcc533e7635dee4c7f3f44032370611c632"
+    },
+    {
+      "path": "experiments/evaluation-products/reviews/integration.md",
+      "sha256": "2022e9b0ff7a367c5ec4ac8684f761f5b27ccd76e88d3c64bf3bce5cd7b7c4b8"
+    },
+    {
+      "path": "experiments/evaluation-products/run-record-template.md",
+      "sha256": "848b2e1163f38ab6a07cbcc23ec653c60acccceb37e615b6b956409a1a1d8e11"
+    }
+  ]
+}
