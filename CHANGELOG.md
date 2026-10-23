@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.5](https://github.com/rspdl/rspdl-core/compare/rspdl-v0.1.4...rspdl-v0.1.5) (2026-10-23)
+
+
+### Features
+
+* add unified statements and date ordering checks ([#43](https://github.com/rspdl/rspdl-core/issues/43), [#44](https://github.com/rspdl/rspdl-core/issues/44), [#47](https://github.com/rspdl/rspdl-core/issues/47)) ([8f39453](https://github.com/rspdl/rspdl-core/commit/8f39453441cafac5e8a46fd3924eb7abc18874f4))
+* expose semantic reference graph ([#42](https://github.com/rspdl/rspdl-core/issues/42)) ([7833186](https://github.com/rspdl/rspdl-core/commit/783318694ddb3fd4d3f21aab6035a4b2585a3203))
+
+
+### Bug Fixes
+
+* address statement contract and schedule review findings ([81d2f7c](https://github.com/rspdl/rspdl-core/commit/81d2f7cddd63d2f6494843d05ac6865912958c2f))
+
 ## [0.1.4](https://github.com/rspdl/rspdl-core/compare/rspdl-v0.1.3...rspdl-v0.1.4) (2026-09-23)
 
 
